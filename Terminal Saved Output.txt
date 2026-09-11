@@ -1,0 +1,24 @@
+export NVM_DIR="$HOME/.nvm"
+
+        export PATH="/Users/abrahampokuadu/anaconda3/bin:$PATH"
+    fi
+fi
+unset __conda_setup
+# <<< conda initialize <<<
+
+==> Searching for similarly named formulae and casks...
+==> Searching for similarly named formulae and casks...
+export NVM_DIR="$HOME/.nvm"
+[ -s "/opt/homebrew/opt/nvm/nvm.sh" ] && \. "/opt/homebrew/opt/nvm/nvm.sh"
+export NVM_DIR="$HOME/.nvm"
+  [ -s "/opt/homebrew/opt/nvm/nvm.sh" ] && \. "/opt/homebrew/opt/nvm/nvm.sh"  #$
+  [ -s "/opt/homebrew/opt/nvm/etc/bash_completion.d/nvm" ] && \. "/opt/homebrew$
+
+
+
+
+
+
+
+
+

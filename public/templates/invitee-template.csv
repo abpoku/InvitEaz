@@ -1,0 +1,5 @@
+First Name,Last Name,Email,Phone,Group Name,Group Leader,Adult/Child,Plus-One Allowed,Notes
+Robert,Johnson,robert.johnson@example.com,555-010-1234,Johnson Family,Yes,Adult,one,
+Mary,Johnson,mary.johnson@example.com,555-010-1234,Johnson Family,No,Adult,none,
+James,Johnson,,,Johnson Family,No,Child,none,Allergic to peanuts
+Priya,Patel,priya.patel@example.com,555-010-9876,,,Adult,multiple,Vegetarian

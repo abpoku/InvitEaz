@@ -1,0 +1,58 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html {
+    -webkit-font-smoothing: antialiased;
+  }
+  body {
+    @apply bg-paper text-ink font-sans;
+  }
+  h1, h2, h3, h4 {
+    @apply font-serif text-ink;
+  }
+  ::selection {
+    background: #E4A6B7;
+    color: #310B18;
+  }
+  :focus-visible {
+    outline: 2px solid #9C2B4E;
+    outline-offset: 2px;
+  }
+}
+
+@layer components {
+  .btn {
+    @apply inline-flex items-center justify-center gap-2 rounded px-4 py-2.5 text-[0.925rem] font-medium transition-colors duration-150 disabled:opacity-50 disabled:pointer-events-none;
+  }
+  .btn-primary {
+    @apply btn bg-wine-500 text-paper hover:bg-wine-600;
+  }
+  .btn-secondary {
+    @apply btn bg-transparent border border-ink/15 text-ink hover:border-ink/35 hover:bg-ink/[0.03];
+  }
+  .btn-ghost {
+    @apply btn text-ink-soft hover:text-ink hover:bg-ink/[0.04];
+  }
+  .btn-danger {
+    @apply btn bg-clay-500 text-paper hover:bg-clay-600;
+  }
+  .card {
+    @apply bg-white border border-paper-line rounded-lg shadow-card;
+  }
+  .input {
+    @apply w-full rounded border border-paper-line bg-white px-3 py-2 text-ink placeholder:text-ink-faint focus-visible:outline-2 focus-visible:outline-wine-500 focus-visible:outline-offset-1;
+  }
+  .label {
+    @apply block text-sm font-medium text-ink-soft mb-1.5;
+  }
+  .chip {
+    @apply inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-medium;
+  }
+}
+
+.font-serif-italic {
+  font-family: "Iowan Old Style", "Palatino Linotype", Georgia, serif;
+  font-style: italic;
+}
