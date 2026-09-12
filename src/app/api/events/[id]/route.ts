@@ -10,7 +10,7 @@ const MATERIAL_FIELDS = ["event_date", "event_time", "venue_name", "address", "c
 export async function GET(_req: Request, { params }: { params: { id: string } }) {
   const access = await requireEventRole(params.id, "viewer");
   if (!access.ok) return NextResponse.json({ error: access.message }, { status: access.status });
-  const event = getEventById(params.id);
+  const event = await getEventById(params.id);
   if (!event) return NextResponse.json({ error: "Event not found." }, { status: 404 });
   return NextResponse.json({ event: { ...event, effective_status: computeEffectiveStatus(event) }, role: access.role });
 }
@@ -18,7 +18,7 @@ export async function GET(_req: Request, { params }: { params: { id: string } })
 export async function PATCH(req: Request, { params }: { params: { id: string } }) {
   const access = await requireEventRole(params.id, "admin");
   if (!access.ok) return NextResponse.json({ error: access.message }, { status: access.status });
-  const event = getEventById(params.id);
+  const event = await getEventById(params.id);
   if (!event) return NextResponse.json({ error: "Event not found." }, { status: 404 });
 
   const body = await req.json();
@@ -43,24 +43,24 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
   const materialChange = MATERIAL_FIELDS.some((f) => patch[f] !== undefined && patch[f] !== (event as any)[f]);
   const changeSummary = materialChange ? summarizeChange(event, patch) : null;
 
-  updateEvent(params.id, patch);
-  logAudit(params.id, access.user.email, "event.edited", Object.keys(patch).join(", "));
+  await updateEvent(params.id, patch);
+  await logAudit(params.id, access.user.email, "event.edited", Object.keys(patch).join(", "));
 
   if (materialChange && event.status === "published" && changeSummary) {
-    const invitees = listInvitees(params.id).filter((i) => i.email);
-    const updated = getEventById(params.id)!;
+    const invitees = (await listInvitees(params.id)).filter((i) => i.email);
+    const updated = (await getEventById(params.id))!;
     for (const inv of invitees) {
       sendEventUpdateEmail(updated, inv.email!, inv.first_name, inv.token, changeSummary).catch(() => {});
     }
   }
 
-  return NextResponse.json({ event: getEventById(params.id) });
+  return NextResponse.json({ event: await getEventById(params.id) });
 }
 
 export async function DELETE(_req: Request, { params }: { params: { id: string } }) {
   const access = await requireEventRole(params.id, "owner");
   if (!access.ok) return NextResponse.json({ error: access.message }, { status: access.status });
-  deleteEvent(params.id);
+  await deleteEvent(params.id);
   return NextResponse.json({ ok: true });
 }
 

@@ -2,9 +2,15 @@ import { listResponsesForEvent, listQuestions, getAnswersForResponse } from "@/l
 import { StatusBadge } from "@/components/StatusBadge";
 import { formatDateTime } from "@/lib/utils";
 
-export default function ResponsesPage({ params }: { params: { id: string } }) {
-  const questions = listQuestions(params.id);
-  const responses = listResponsesForEvent(params.id) as any[];
+export default async function ResponsesPage({ params }: { params: { id: string } }) {
+  const questions = await listQuestions(params.id);
+  const responses = (await listResponsesForEvent(params.id)) as any[];
+  const responsesWithAnswers = await Promise.all(
+    responses.map(async (r) => ({
+      response: r,
+      answers: new Map((await getAnswersForResponse(r.id)).map((a) => [a.question_id, a.value])),
+    }))
+  );
 
   return (
     <div className="p-8">
@@ -33,8 +39,7 @@ export default function ResponsesPage({ params }: { params: { id: string } }) {
               </tr>
             </thead>
             <tbody>
-              {responses.map((r) => {
-                const answers = new Map(getAnswersForResponse(r.id).map((a) => [a.question_id, a.value]));
+              {responsesWithAnswers.map(({ response: r, answers }) => {
                 return (
                   <tr key={r.id} className="border-b border-paper-line last:border-0 hover:bg-paper-soft/40">
                     <td className="px-5 py-3 text-ink whitespace-nowrap">{r.first_name} {r.last_name}</td>

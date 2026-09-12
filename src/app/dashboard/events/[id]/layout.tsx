@@ -11,13 +11,13 @@ export default async function EventLayout({ children, params }: { children: Reac
   const user = await getCurrentUser();
   if (!user) redirect("/login");
 
-  const event = getEventById(params.id);
+  const event = await getEventById(params.id);
   if (!event) notFound();
 
-  const membership = getMembership(params.id, user.id);
+  const membership = await getMembership(params.id, user.id);
   if (!membership) notFound();
 
-  const stats = getEventStats(params.id);
+  const stats = await getEventStats(params.id);
   const status = computeEffectiveStatus(event);
 
   return (

@@ -1,8 +1,8 @@
 # InvitEaz — invite with ease
 
 The simplest way to manage your event guest list and RSVPs. Built with
-Next.js 14, TypeScript, and a self-contained SQLite database — clone it,
-run it, deploy it.
+Next.js 14, TypeScript, and Postgres — deploys cleanly to Vercel (or any
+Node host) with a free managed database.
 
 Covers the full MVP: planner accounts, event creation, a drag-free RSVP form
 builder, manual + spreadsheet (CSV/XLSX) invitee import with validation,
@@ -12,11 +12,18 @@ roles, CSV exports, and a free/paid plan structure.
 
 ## Quick start
 
-```bash
-npm install
-cp .env.example .env.local   # then edit NEXTAUTH_SECRET at minimum
-npm run dev
-```
+1. Get a Postgres database. Easiest free option: [neon.tech](https://neon.tech) —
+   create a project and copy its connection string. (Or run Postgres locally
+   if you prefer.)
+2. ```bash
+   npm install
+   cp .env.example .env.local
+   # edit .env.local: set NEXTAUTH_SECRET and DATABASE_URL
+   npm run dev
+   ```
+
+The schema (`src/lib/schema.sql`) is created automatically against your
+database the first time the app runs — no separate migration step.
 
 Open http://localhost:3000. Register a planner account and create your first
 event — or run the seed script for a ready-made demo:
@@ -25,10 +32,6 @@ event — or run the seed script for a ready-made demo:
 npm run db:seed
 # then log in with demo@inviteaz.app / password123
 ```
-
-The database is a single SQLite file created automatically at
-`data/inviteaz.db` the first time the app runs. No separate database server
-to install.
 
 ## Environment variables
 
@@ -49,39 +52,29 @@ has a sensible default:
 
 ## Deploying
 
-This app needs a persistent filesystem for its SQLite file, so it's best
-suited to a platform that gives you one:
+**Vercel + Neon (recommended, free):**
 
-- **Railway / Render / Fly.io**: connect the GitHub repo, add a persistent
-  volume mounted at (for example) `/data`, set `DATABASE_FILE=/data/inviteaz.db`
-  plus `NEXTAUTH_SECRET` and `NEXT_PUBLIC_APP_URL`, and deploy. Build command
-  `npm run build`, start command `npm start`.
-- **A VPS** (Droplet, EC2, etc.): `git clone`, `npm install`, `npm run build`,
-  run with `npm start` behind a process manager (pm2, systemd) and a reverse
-  proxy (Caddy/nginx) for TLS.
-- **Docker**: a minimal `Dockerfile` isn't included, but this is a standard
-  Next.js app — `node:20-slim`, `npm ci && npm run build`, `npm start`, with
-  a volume mounted at whatever `DATABASE_FILE` points to.
+1. Push this repo to GitHub and import it into Vercel.
+2. In the Vercel dashboard, go to **Storage** → **Marketplace** → install
+   **Neon** (Postgres). This provisions a free database and injects
+   `DATABASE_URL` into your project automatically.
+3. Add `NEXTAUTH_SECRET` and `NEXT_PUBLIC_APP_URL` (your Vercel deployment
+   URL) as environment variables.
+4. Deploy. The schema initializes itself on first request.
 
-**Serverless platforms (Vercel, Netlify Functions) will not work as-is** —
-their filesystems are ephemeral/read-only at runtime, so a file-based SQLite
-database won't persist writes. To deploy there, swap the database layer
-(`src/lib/db.ts` and `src/lib/models/*.ts`) for a hosted Postgres database
-(Neon, Supabase, Vercel Postgres) using `pg` or an ORM of your choice — the
-SQL in `src/lib/schema.sql` is close to standard SQL and is a good starting
-point for a Postgres migration (mainly: swap `TEXT` timestamp defaults for
-`TIMESTAMPTZ DEFAULT now()`, and `INTEGER` booleans for real `BOOLEAN`).
+Any other Node host works too (Railway, Render, Fly, a VPS) — just set
+`DATABASE_URL`, `NEXTAUTH_SECRET`, and `NEXT_PUBLIC_APP_URL`, run
+`npm run build`, then `npm start`.
 
 ## Architecture
 
 - **Framework**: Next.js 14 (App Router), TypeScript, Tailwind CSS.
-- **Database**: SQLite via `better-sqlite3`, with a hand-written schema
-  (`src/lib/schema.sql`) and typed query functions in `src/lib/models/*` —
-  no ORM. This was a deliberate choice for this build: Prisma's engine
-  binaries are fetched from a domain that wasn't reachable in the sandbox
-  this was built in, and a query layer this size is easy to audit and cheap
-  to run anywhere Node runs, including a small VPS with no separate database
-  process to manage.
+- **Database**: Postgres via `pg` (node-postgres), with a hand-written
+  schema (`src/lib/schema.sql`) and typed async query functions in
+  `src/lib/models/*` — no ORM. Timestamp columns are plain `TEXT` holding
+  ISO-8601 strings written by the application (rather than relying on
+  driver-specific `Date` handling), which keeps every value predictable
+  across environments.
 - **Auth**: NextAuth (credentials provider) with bcrypt-hashed passwords and
   JWT sessions — no external auth service required.
 - **Email**: `nodemailer` with an SMTP transport when configured, and a
@@ -136,7 +129,7 @@ src/
     api/                      all backend routes
   components/                shared + feature UI components
   lib/
-    db.ts                     SQLite connection
+    db.ts                     Postgres connection pool + query helpers
     schema.sql                 full database schema
     models/                     typed query functions per entity
     auth.ts, session.ts          NextAuth config + permission helpers

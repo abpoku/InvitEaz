@@ -6,6 +6,6 @@ export async function POST(req: Request, { params }: { params: { id: string } })
   const access = await requireEventRole(params.id, "admin");
   if (!access.ok) return NextResponse.json({ error: access.message }, { status: access.status });
   const body = await req.json();
-  reorderQuestions(params.id, body.orderedIds || []);
+  await reorderQuestions(params.id, body.orderedIds || []);
   return NextResponse.json({ ok: true });
 }

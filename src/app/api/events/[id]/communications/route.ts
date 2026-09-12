@@ -8,21 +8,21 @@ import { sendInvitationEmail, sendReminderEmail, sendCustomEmail } from "@/lib/n
 export async function GET(_req: Request, { params }: { params: { id: string } }) {
   const access = await requireEventRole(params.id, "viewer");
   if (!access.ok) return NextResponse.json({ error: access.message }, { status: access.status });
-  return NextResponse.json({ communications: listCommunications(params.id) });
+  return NextResponse.json({ communications: await listCommunications(params.id) });
 }
 
 export async function POST(req: Request, { params }: { params: { id: string } }) {
   const access = await requireEventRole(params.id, "admin");
   if (!access.ok) return NextResponse.json({ error: access.message }, { status: access.status });
 
-  const event = getEventById(params.id);
+  const event = await getEventById(params.id);
   if (!event) return NextResponse.json({ error: "Event not found." }, { status: 404 });
 
   const body = await req.json();
   const { type, subject, message, audience, groupId, inviteeIds } = body;
   if (!subject || !message) return NextResponse.json({ error: "Subject and message are required." }, { status: 400 });
 
-  let invitees = listInvitees(params.id).filter((i) => i.email);
+  let invitees = (await listInvitees(params.id)).filter((i) => i.email);
 
   if (audience === "attending") invitees = invitees.filter((i) => i.status === "attending");
   else if (audience === "declined") invitees = invitees.filter((i) => i.status === "declined");
@@ -48,7 +48,7 @@ export async function POST(req: Request, { params }: { params: { id: string } })
     sent += 1;
   }
 
-  logCommunication({
+  await logCommunication({
     eventId: params.id,
     type: type || "custom",
     subject,

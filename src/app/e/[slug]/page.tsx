@@ -4,8 +4,8 @@ import { EnvelopeMark } from "@/components/EnvelopeMark";
 import { formatDate, formatTime } from "@/lib/utils";
 import { PublicSignupForm } from "@/components/rsvp/PublicSignupForm";
 
-export default function PublicEventPage({ params }: { params: { slug: string } }) {
-  const event = getEventBySlug(params.slug);
+export default async function PublicEventPage({ params }: { params: { slug: string } }) {
+  const event = await getEventBySlug(params.slug);
   if (!event || event.status === "draft") notFound();
 
   const status = computeEffectiveStatus(event);

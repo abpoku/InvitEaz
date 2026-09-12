@@ -6,9 +6,9 @@ import { formatDate, formatTime } from "@/lib/utils";
 import { ShareCard } from "@/components/ShareCard";
 
 export default async function EventOverviewPage({ params }: { params: { id: string } }) {
-  const event = getEventById(params.id)!;
-  const invitees = listInvitees(params.id);
-  const questions = listQuestions(params.id);
+  const event = (await getEventById(params.id))!;
+  const invitees = await listInvitees(params.id);
+  const questions = await listQuestions(params.id);
 
   const steps = [
     { done: !!event.name && !!event.event_date, label: "Event details added", href: `/dashboard/events/${params.id}/settings` },

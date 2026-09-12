@@ -3,18 +3,15 @@
  * event, a few RSVP questions, and a handful of invitees so you can click
  * around the product immediately after cloning it.
  */
-import { getDb } from "../src/lib/db";
 import { createUser, getUserByEmail } from "../src/lib/models/users";
 import { createEvent, updateEvent } from "../src/lib/models/events";
 import { createQuestion } from "../src/lib/models/rsvp";
 import { createGroup, createInvitee, setGroupLeader } from "../src/lib/models/invitees";
 
 async function main() {
-  getDb(); // ensure schema is initialized
-
-  let user = getUserByEmail("demo@inviteaz.app");
+  let user = await getUserByEmail("demo@inviteaz.app");
   if (!user) {
-    user = createUser({
+    user = await createUser({
       email: "demo@inviteaz.app",
       password: "password123",
       firstName: "Dana",
@@ -30,7 +27,7 @@ async function main() {
   future.setDate(future.getDate() + 30);
   const dateStr = future.toISOString().slice(0, 10);
 
-  const event = createEvent(user.id, {
+  const event = await createEvent(user.id, {
     name: "Annual Community Gala",
     date: dateStr,
     time: "18:00",
@@ -51,25 +48,26 @@ async function main() {
     groupRsvpMode: "primary_contact",
     defaultPlusOnePolicy: "one",
   });
-  updateEvent(event.id, { status: "published" });
+  await updateEvent(event.id, { status: "published" });
 
-  createQuestion(event.id, { label: "Meal preference", type: "single_choice", options: ["Chicken", "Vegetarian", "Vegan"], required: true, showIfAttending: "yes" });
-  createQuestion(event.id, { label: "Any dietary restrictions?", type: "short_text", showIfAttending: "yes" });
-  createQuestion(event.id, { label: "Will you need transportation from the hotel block?", type: "yes_no", showIfAttending: "yes" });
-  createQuestion(event.id, { label: "Would you like updates about next year's event?", type: "yes_no", showIfAttending: "no" });
+  await createQuestion(event.id, { label: "Meal preference", type: "single_choice", options: ["Chicken", "Vegetarian", "Vegan"], required: true, showIfAttending: "yes" });
+  await createQuestion(event.id, { label: "Any dietary restrictions?", type: "short_text", showIfAttending: "yes" });
+  await createQuestion(event.id, { label: "Will you need transportation from the hotel block?", type: "yes_no", showIfAttending: "yes" });
+  await createQuestion(event.id, { label: "Would you like updates about next year's event?", type: "yes_no", showIfAttending: "no" });
 
-  const group = createGroup(event.id, "Johnson Family");
-  const { invitee: leader } = createInvitee(event.id, { firstName: "Maria", lastName: "Johnson", email: "maria@example.com", groupId: group.id });
-  setGroupLeader(group.id, leader.id);
-  createInvitee(event.id, { firstName: "Tom", lastName: "Johnson", email: "tom@example.com", groupId: group.id });
-  createInvitee(event.id, { firstName: "Lily", lastName: "Johnson", isAdult: false, groupId: group.id });
+  const group = await createGroup(event.id, "Johnson Family");
+  const { invitee: leader } = await createInvitee(event.id, { firstName: "Maria", lastName: "Johnson", email: "maria@example.com", groupId: group.id });
+  await setGroupLeader(group.id, leader.id);
+  await createInvitee(event.id, { firstName: "Tom", lastName: "Johnson", email: "tom@example.com", groupId: group.id });
+  await createInvitee(event.id, { firstName: "Lily", lastName: "Johnson", isAdult: false, groupId: group.id });
 
-  createInvitee(event.id, { firstName: "Alex", lastName: "Rivera", email: "alex@example.com", plusOnePolicy: "one" });
-  createInvitee(event.id, { firstName: "Priya", lastName: "Nair", email: "priya@example.com", plusOnePolicy: "none" });
-  createInvitee(event.id, { firstName: "Sam", lastName: "Okafor", phone: "555-0110", plusOnePolicy: "multiple" });
+  await createInvitee(event.id, { firstName: "Alex", lastName: "Rivera", email: "alex@example.com", plusOnePolicy: "one" });
+  await createInvitee(event.id, { firstName: "Priya", lastName: "Nair", email: "priya@example.com", plusOnePolicy: "none" });
+  await createInvitee(event.id, { firstName: "Sam", lastName: "Okafor", phone: "555-0110", plusOnePolicy: "multiple" });
 
   console.log(`\nDemo event created: ${event.name} (${event.id})`);
   console.log("Log in at /login with demo@inviteaz.app / password123 to explore it.");
+  process.exit(0);
 }
 
 main().catch((err) => {

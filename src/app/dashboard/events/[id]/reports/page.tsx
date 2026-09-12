@@ -2,12 +2,19 @@ import { getEventStats } from "@/lib/models/events";
 import { listQuestions, questionReport } from "@/lib/models/rsvp";
 import { listInvitees } from "@/lib/models/invitees";
 
-export default function ReportsPage({ params }: { params: { id: string } }) {
-  const stats = getEventStats(params.id);
-  const questions = listQuestions(params.id);
-  const invitees = listInvitees(params.id);
+export default async function ReportsPage({ params }: { params: { id: string } }) {
+  const stats = await getEventStats(params.id);
+  const questions = await listQuestions(params.id);
+  const invitees = await listInvitees(params.id);
   const adults = invitees.filter((i) => i.is_adult && i.status === "attending").length;
   const children = invitees.filter((i) => !i.is_adult && i.status === "attending").length;
+
+  const questionReports = await Promise.all(
+    questions.map(async (q) => ({
+      question: q,
+      rows: (await questionReport(params.id, q.id)).filter((r) => r.value),
+    }))
+  );
 
   return (
     <div className="p-8 max-w-4xl space-y-8">
@@ -48,8 +55,7 @@ export default function ReportsPage({ params }: { params: { id: string } }) {
         <div>
           <h3 className="font-serif text-lg text-ink">Question breakdown</h3>
           <div className="mt-4 grid md:grid-cols-2 gap-5">
-            {questions.map((q) => {
-              const rows = questionReport(params.id, q.id).filter((r) => r.value);
+            {questionReports.map(({ question: q, rows }) => {
               const max = Math.max(1, ...rows.map((r) => r.count));
               return (
                 <div key={q.id} className="card p-5">

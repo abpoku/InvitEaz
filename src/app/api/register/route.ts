@@ -19,7 +19,7 @@ export async function POST(req: Request) {
     if (!parsed.success) {
       return NextResponse.json({ error: parsed.error.issues[0].message }, { status: 400 });
     }
-    const user = createUser(parsed.data);
+    const user = await createUser(parsed.data);
     return NextResponse.json({ id: user.id, email: user.email });
   } catch (err: any) {
     return NextResponse.json({ error: err.message || "Something went wrong." }, { status: 400 });

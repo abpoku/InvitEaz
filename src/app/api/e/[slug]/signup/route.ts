@@ -11,7 +11,7 @@ const schema = z.object({
 });
 
 export async function POST(req: Request, { params }: { params: { slug: string } }) {
-  const event = getEventBySlug(params.slug);
+  const event = await getEventBySlug(params.slug);
   if (!event) return NextResponse.json({ error: "Event not found." }, { status: 404 });
   if (event.visibility === "invite_only") {
     return NextResponse.json({ error: "This event is invitation-only." }, { status: 403 });
@@ -24,6 +24,6 @@ export async function POST(req: Request, { params }: { params: { slug: string } 
   const parsed = schema.safeParse(body);
   if (!parsed.success) return NextResponse.json({ error: parsed.error.issues[0].message }, { status: 400 });
 
-  const { invitee, invitation } = createInvitee(event.id, { ...parsed.data, email: parsed.data.email || undefined });
+  const { invitee, invitation } = await createInvitee(event.id, { ...parsed.data, email: parsed.data.email || undefined });
   return NextResponse.json({ token: invitation.token, inviteeId: invitee.id });
 }

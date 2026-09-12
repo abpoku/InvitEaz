@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { getDb } from "@/lib/db";
+import { query, queryOne } from "@/lib/db";
 import { computeEffectiveStatus, type EventRow, logAudit } from "@/lib/models/events";
 import { listInvitees } from "@/lib/models/invitees";
 import { sendReminderEmail } from "@/lib/notify";
@@ -21,8 +21,7 @@ async function handle(req: Request) {
     if (header !== secret) return NextResponse.json({ error: "Unauthorized." }, { status: 401 });
   }
 
-  const db = getDb();
-  const events = db.prepare("SELECT * FROM events WHERE status = 'published'").all() as EventRow[];
+  const events = await query<EventRow>("SELECT * FROM events WHERE status = 'published'");
 
   let remindersSent = 0;
   const today = new Date().toISOString().slice(0, 10);
@@ -37,17 +36,16 @@ async function handle(req: Request) {
     if (!isFinalWindow && !isFirstWindow) continue;
 
     const marker = `reminder.${isFinalWindow ? "final" : "first"}.${today}`;
-    const already = db
-      .prepare("SELECT id FROM audit_logs WHERE event_id = ? AND action = ?")
-      .get(event.id, marker);
+    const already = await queryOne("SELECT id FROM audit_logs WHERE event_id = ? AND action = ?", [event.id, marker]);
     if (already) continue;
 
-    const invitees = listInvitees(event.id).filter((i) => i.email && !["attending", "declined"].includes(i.status));
+    const allInvitees = await listInvitees(event.id);
+    const invitees = allInvitees.filter((i) => i.email && !["attending", "declined"].includes(i.status));
     for (const inv of invitees) {
       await sendReminderEmail(event, inv.email!, inv.first_name, inv.token, isFinalWindow).catch(() => {});
       remindersSent += 1;
     }
-    logAudit(event.id, "system", marker, `${invitees.length} reminder(s) sent`);
+    await logAudit(event.id, "system", marker, `${invitees.length} reminder(s) sent`);
   }
 
   return NextResponse.json({ ok: true, remindersSent });

@@ -34,7 +34,7 @@ const schema = z.object({
 export async function GET() {
   const user = await getCurrentUser();
   if (!user) return NextResponse.json({ error: "Sign in required." }, { status: 401 });
-  return NextResponse.json({ events: listEventsForUser(user.id) });
+  return NextResponse.json({ events: await listEventsForUser(user.id) });
 }
 
 export async function POST(req: Request) {
@@ -47,7 +47,7 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: parsed.error.issues[0].message }, { status: 400 });
   }
 
-  const existing = listEventsForUser(user.id).filter((e) => e.status !== "cancelled");
+  const existing = (await listEventsForUser(user.id)).filter((e) => e.status !== "cancelled");
   const limit = PLAN_LIMITS[user.plan].activeEvents;
   if (existing.length >= limit) {
     return NextResponse.json(
@@ -56,7 +56,7 @@ export async function POST(req: Request) {
     );
   }
 
-  const event = createEvent(user.id, parsed.data);
-  logAudit(event.id, user.email, "event.created", event.name);
+  const event = await createEvent(user.id, parsed.data);
+  await logAudit(event.id, user.email, "event.created", event.name);
   return NextResponse.json({ event });
 }

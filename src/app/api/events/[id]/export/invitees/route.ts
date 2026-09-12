@@ -12,7 +12,7 @@ export async function GET(_req: Request, { params }: { params: { id: string } })
   const access = await requireEventRole(params.id, "viewer");
   if (!access.ok) return new Response(access.message, { status: access.status });
 
-  const invitees = listInvitees(params.id);
+  const invitees = await listInvitees(params.id);
   const headers = ["First Name", "Last Name", "Email", "Phone", "Group", "Adult/Child", "Plus-One Policy", "RSVP Status", "RSVP Link", "Notes"];
   const lines = [headers.join(",")];
   for (const i of invitees) {

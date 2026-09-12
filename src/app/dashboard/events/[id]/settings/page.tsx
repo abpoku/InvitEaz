@@ -5,8 +5,8 @@ import { CoPlannersPanel } from "@/components/settings/CoPlannersPanel";
 import { DangerZone } from "@/components/settings/DangerZone";
 
 export default async function SettingsPage({ params }: { params: { id: string } }) {
-  const event = getEventById(params.id)!;
-  const members = listMembers(params.id) as any[];
+  const event = (await getEventById(params.id))!;
+  const members = (await listMembers(params.id)) as any[];
   const user = await getCurrentUser();
   const isOwner = event.owner_id === user!.id;
 

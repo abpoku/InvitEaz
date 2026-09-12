@@ -1,5 +1,5 @@
-import { getDb } from "@/lib/db";
-import { newId, defaultRsvpDeadline, uniqueSlug, isPastDeadline, eventStartDateTime } from "@/lib/utils";
+import { query, queryOne, exec } from "@/lib/db";
+import { newId, defaultRsvpDeadline, isPastDeadline, eventStartDateTime } from "@/lib/utils";
 
 export type EventStatus = "draft" | "published" | "rsvp_closed" | "completed" | "cancelled";
 export type LocationType = "physical" | "virtual" | "hybrid";
@@ -53,7 +53,7 @@ export function computeEffectiveStatus(event: EventRow): EventStatus {
   return "published";
 }
 
-export function createEvent(ownerId: string, input: {
+export async function createEvent(ownerId: string, input: {
   name: string;
   date: string;
   time: string;
@@ -77,39 +77,39 @@ export function createEvent(ownerId: string, input: {
   visibility?: Visibility;
   groupRsvpMode?: GroupRsvpMode;
   defaultPlusOnePolicy?: PlusOnePolicy;
-}): EventRow {
-  const db = getDb();
+}): Promise<EventRow> {
   const id = newId("evt");
-  const slug = uniqueSlugSync(input.name, id);
+  const slug = await uniqueSlugFor(input.name, id);
   const deadline = input.rsvpDeadline || defaultRsvpDeadline(input.date, input.time);
   const isCustom = !!input.rsvpDeadline;
 
-  db.prepare(
+  await exec(
     `INSERT INTO events (
       id, owner_id, name, slug, description, event_date, event_time, end_time,
       location_type, venue_name, address, city, state, zip, country,
       meeting_url, meeting_instructions, organizer_name, organizer_contact,
       website, dress_code, instructions, rsvp_deadline, rsvp_deadline_is_custom,
       status, visibility, group_rsvp_mode, default_plus_one_policy
-    ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`
-  ).run(
-    id, ownerId, input.name, slug, input.description || null, input.date, input.time, input.endTime || null,
-    input.locationType, input.venueName || null, input.address || null, input.city || null, input.state || null,
-    input.zip || null, input.country || null, input.meetingUrl || null, input.meetingInstructions || null,
-    input.organizerName || null, input.organizerContact || null, input.website || null, input.dressCode || null,
-    input.instructions || null, deadline, isCustom ? 1 : 0, "draft",
-    input.visibility || "invite_only", input.groupRsvpMode || "primary_contact", input.defaultPlusOnePolicy || "none"
+    ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+    [
+      id, ownerId, input.name, slug, input.description || null, input.date, input.time, input.endTime || null,
+      input.locationType, input.venueName || null, input.address || null, input.city || null, input.state || null,
+      input.zip || null, input.country || null, input.meetingUrl || null, input.meetingInstructions || null,
+      input.organizerName || null, input.organizerContact || null, input.website || null, input.dressCode || null,
+      input.instructions || null, deadline, isCustom ? 1 : 0, "draft",
+      input.visibility || "invite_only", input.groupRsvpMode || "primary_contact", input.defaultPlusOnePolicy || "none",
+    ]
   );
 
-  db.prepare(
-    `INSERT INTO event_members (id, event_id, user_id, invited_email, role, status) VALUES (?,?,?,?,?,?)`
-  ).run(newId("mem"), id, ownerId, "", "owner", "active");
+  await exec(
+    `INSERT INTO event_members (id, event_id, user_id, invited_email, role, status) VALUES (?,?,?,?,?,?)`,
+    [newId("mem"), id, ownerId, "", "owner", "active"]
+  );
 
-  return getEventById(id)!;
+  return (await getEventById(id))!;
 }
 
-function uniqueSlugSync(name: string, excludeId?: string): string {
-  const db = getDb();
+async function uniqueSlugFor(name: string, excludeId?: string): Promise<string> {
   const base = name
     .toLowerCase()
     .trim()
@@ -119,29 +119,26 @@ function uniqueSlugSync(name: string, excludeId?: string): string {
     .slice(0, 50) || "event";
   let slug = base;
   let n = 1;
-  const exists = (s: string) => {
-    const row = db.prepare("SELECT id FROM events WHERE slug = ? AND id != ?").get(s, excludeId || "") as { id: string } | undefined;
+  const exists = async (s: string) => {
+    const row = await queryOne<{ id: string }>("SELECT id FROM events WHERE slug = ? AND id != ?", [s, excludeId || ""]);
     return !!row;
   };
-  while (exists(slug)) {
+  while (await exists(slug)) {
     n += 1;
     slug = `${base}-${n}`;
   }
   return slug;
 }
 
-export function getEventById(id: string): EventRow | undefined {
-  const db = getDb();
-  return db.prepare("SELECT * FROM events WHERE id = ?").get(id) as EventRow | undefined;
+export async function getEventById(id: string): Promise<EventRow | undefined> {
+  return queryOne<EventRow>("SELECT * FROM events WHERE id = ?", [id]);
 }
 
-export function getEventBySlug(slug: string): EventRow | undefined {
-  const db = getDb();
-  return db.prepare("SELECT * FROM events WHERE slug = ?").get(slug) as EventRow | undefined;
+export async function getEventBySlug(slug: string): Promise<EventRow | undefined> {
+  return queryOne<EventRow>("SELECT * FROM events WHERE slug = ?", [slug]);
 }
 
-export function updateEvent(id: string, patch: Partial<EventRow>) {
-  const db = getDb();
+export async function updateEvent(id: string, patch: Partial<EventRow>) {
   const allowed = [
     "name", "description", "event_date", "event_time", "end_time", "location_type", "venue_name",
     "address", "city", "state", "zip", "country", "meeting_url", "meeting_instructions", "image_url",
@@ -153,60 +150,54 @@ export function updateEvent(id: string, patch: Partial<EventRow>) {
   if (keys.length === 0) return;
   const setClause = keys.map((k) => `${k} = ?`).join(", ");
   const values = keys.map((k) => (patch as any)[k]);
-  db.prepare(`UPDATE events SET ${setClause}, updated_at = datetime('now') WHERE id = ?`).run(...values, id);
+  await exec(`UPDATE events SET ${setClause}, updated_at = ? WHERE id = ?`, [...values, new Date().toISOString(), id]);
 }
 
-export function deleteEvent(id: string) {
-  const db = getDb();
-  db.prepare("DELETE FROM events WHERE id = ?").run(id);
+export async function deleteEvent(id: string) {
+  await exec("DELETE FROM events WHERE id = ?", [id]);
 }
 
-export function listEventsForUser(userId: string): EventRow[] {
-  const db = getDb();
-  return db
-    .prepare(
-      `SELECT e.* FROM events e
-       JOIN event_members m ON m.event_id = e.id
-       WHERE m.user_id = ? AND m.status = 'active'
-       ORDER BY e.event_date ASC`
-    )
-    .all(userId) as EventRow[];
+export async function listEventsForUser(userId: string): Promise<EventRow[]> {
+  return query<EventRow>(
+    `SELECT e.* FROM events e
+     JOIN event_members m ON m.event_id = e.id
+     WHERE m.user_id = ? AND m.status = 'active'
+     ORDER BY e.event_date ASC`,
+    [userId]
+  );
 }
 
-export function getMembership(eventId: string, userId: string): { role: Role } | undefined {
-  const db = getDb();
-  return db
-    .prepare("SELECT role FROM event_members WHERE event_id = ? AND user_id = ? AND status = 'active'")
-    .get(eventId, userId) as { role: Role } | undefined;
+export async function getMembership(eventId: string, userId: string): Promise<{ role: Role } | undefined> {
+  return queryOne<{ role: Role }>(
+    "SELECT role FROM event_members WHERE event_id = ? AND user_id = ? AND status = 'active'",
+    [eventId, userId]
+  );
 }
 
-export function listMembers(eventId: string) {
-  const db = getDb();
-  return db
-    .prepare(
-      `SELECT em.id, em.role, em.status, em.invited_email, em.created_at,
-              u.first_name, u.last_name, u.email, u.id as user_id
-       FROM event_members em
-       LEFT JOIN users u ON u.id = em.user_id
-       WHERE em.event_id = ?
-       ORDER BY CASE em.role WHEN 'owner' THEN 0 WHEN 'admin' THEN 1 ELSE 2 END, em.created_at ASC`
-    )
-    .all(eventId);
+export async function listMembers(eventId: string) {
+  return query(
+    `SELECT em.id, em.role, em.status, em.invited_email, em.created_at,
+            u.first_name, u.last_name, u.email, u.id as user_id
+     FROM event_members em
+     LEFT JOIN users u ON u.id = em.user_id
+     WHERE em.event_id = ?
+     ORDER BY CASE em.role WHEN 'owner' THEN 0 WHEN 'admin' THEN 1 ELSE 2 END, em.created_at ASC`,
+    [eventId]
+  );
 }
 
-export function addCoPlanner(eventId: string, email: string, role: Exclude<Role, "owner">) {
-  const db = getDb();
-  const user = db.prepare("SELECT id FROM users WHERE email = ?").get(email.toLowerCase()) as { id: string } | undefined;
+export async function addCoPlanner(eventId: string, email: string, role: Exclude<Role, "owner">) {
+  const user = await queryOne<{ id: string }>("SELECT id FROM users WHERE email = ?", [email.toLowerCase()]);
   const id = newId("mem");
-  db.prepare(
-    `INSERT INTO event_members (id, event_id, user_id, invited_email, role, status) VALUES (?,?,?,?,?,?)`
-  ).run(id, eventId, user?.id || null, email.toLowerCase(), role, user ? "active" : "pending");
+  await exec(
+    `INSERT INTO event_members (id, event_id, user_id, invited_email, role, status) VALUES (?,?,?,?,?,?)`,
+    [id, eventId, user?.id || null, email.toLowerCase(), role, user ? "active" : "pending"]
+  );
   return id;
 }
 
-export function removeCoPlanner(memberId: string) {
-  const db = getDb();
-  db.prepare("DELETE FROM event_members WHERE id = ? AND role != 'owner'").run(memberId);
+export async function removeCoPlanner(memberId: string) {
+  await exec("DELETE FROM event_members WHERE id = ? AND role != 'owner'", [memberId]);
 }
 
 export interface EventStats {
@@ -219,16 +210,14 @@ export interface EventStats {
   responseRate: number;
 }
 
-export function getEventStats(eventId: string): EventStats {
-  const db = getDb();
-  const rows = db
-    .prepare(
-      `SELECT i.id as invitation_id,
-        (SELECT r.attending FROM rsvp_responses r WHERE r.invitation_id = i.id ORDER BY r.responded_at DESC LIMIT 1) as attending,
-        (SELECT r.num_attending FROM rsvp_responses r WHERE r.invitation_id = i.id ORDER BY r.responded_at DESC LIMIT 1) as num_attending
-       FROM invitations i WHERE i.event_id = ?`
-    )
-    .all(eventId) as { invitation_id: string; attending: number | null; num_attending: number | null }[];
+export async function getEventStats(eventId: string): Promise<EventStats> {
+  const rows = await query<{ invitation_id: string; attending: number | null; num_attending: number | null }>(
+    `SELECT i.id as invitation_id,
+      (SELECT r.attending FROM rsvp_responses r WHERE r.invitation_id = i.id ORDER BY r.responded_at DESC LIMIT 1) as attending,
+      (SELECT r.num_attending FROM rsvp_responses r WHERE r.invitation_id = i.id ORDER BY r.responded_at DESC LIMIT 1) as num_attending
+     FROM invitations i WHERE i.event_id = ?`,
+    [eventId]
+  );
 
   let responded = 0, attending = 0, declined = 0, totalAttendees = 0;
   for (const r of rows) {
@@ -253,16 +242,13 @@ export function getEventStats(eventId: string): EventStats {
   };
 }
 
-export function listAuditLogs(eventId: string, limit = 50) {
-  const db = getDb();
-  return db
-    .prepare("SELECT * FROM audit_logs WHERE event_id = ? ORDER BY created_at DESC LIMIT ?")
-    .all(eventId, limit);
+export async function listAuditLogs(eventId: string, limit = 50) {
+  return query("SELECT * FROM audit_logs WHERE event_id = ? ORDER BY created_at DESC LIMIT ?", [eventId, limit]);
 }
 
-export function logAudit(eventId: string | null, actor: string, action: string, details?: string) {
-  const db = getDb();
-  db.prepare(`INSERT INTO audit_logs (id, event_id, actor, action, details) VALUES (?,?,?,?,?)`).run(
-    newId("log"), eventId, actor, action, details || null
+export async function logAudit(eventId: string | null, actor: string, action: string, details?: string) {
+  await exec(
+    `INSERT INTO audit_logs (id, event_id, actor, action, details) VALUES (?,?,?,?,?)`,
+    [newId("log"), eventId, actor, action, details || null]
   );
 }

@@ -1,4 +1,4 @@
-import { getDb } from "@/lib/db";
+import { query, queryOne, exec } from "@/lib/db";
 import { newId } from "@/lib/utils";
 
 export type QuestionType =
@@ -17,26 +17,27 @@ export interface QuestionRow {
   created_at: string;
 }
 
-export function listQuestions(eventId: string): QuestionRow[] {
-  const db = getDb();
-  return db.prepare("SELECT * FROM rsvp_questions WHERE event_id = ? ORDER BY order_index ASC").all(eventId) as QuestionRow[];
+export async function listQuestions(eventId: string): Promise<QuestionRow[]> {
+  return query<QuestionRow>("SELECT * FROM rsvp_questions WHERE event_id = ? ORDER BY order_index ASC", [eventId]);
 }
 
-export function createQuestion(eventId: string, input: {
+export async function createQuestion(eventId: string, input: {
   label: string; type: QuestionType; options?: string[]; required?: boolean; showIfAttending?: "yes" | "no" | null;
-}): QuestionRow {
-  const db = getDb();
+}): Promise<QuestionRow> {
   const id = newId("q");
-  const maxOrder = db.prepare("SELECT COALESCE(MAX(order_index), -1) as m FROM rsvp_questions WHERE event_id = ?").get(eventId) as { m: number };
-  db.prepare(
+  const maxOrder = await queryOne<{ m: number }>(
+    "SELECT COALESCE(MAX(order_index), -1) as m FROM rsvp_questions WHERE event_id = ?",
+    [eventId]
+  );
+  await exec(
     `INSERT INTO rsvp_questions (id, event_id, label, type, options_json, required, order_index, show_if_attending)
-     VALUES (?,?,?,?,?,?,?,?)`
-  ).run(id, eventId, input.label, input.type, input.options ? JSON.stringify(input.options) : null, input.required ? 1 : 0, maxOrder.m + 1, input.showIfAttending || null);
-  return db.prepare("SELECT * FROM rsvp_questions WHERE id = ?").get(id) as QuestionRow;
+     VALUES (?,?,?,?,?,?,?,?)`,
+    [id, eventId, input.label, input.type, input.options ? JSON.stringify(input.options) : null, input.required ? 1 : 0, (maxOrder?.m ?? -1) + 1, input.showIfAttending || null]
+  );
+  return (await queryOne<QuestionRow>("SELECT * FROM rsvp_questions WHERE id = ?", [id]))!;
 }
 
-export function updateQuestion(id: string, patch: Partial<{ label: string; type: QuestionType; options: string[]; required: boolean; showIfAttending: "yes" | "no" | null; order_index: number }>) {
-  const db = getDb();
+export async function updateQuestion(id: string, patch: Partial<{ label: string; type: QuestionType; options: string[]; required: boolean; showIfAttending: "yes" | "no" | null; order_index: number }>) {
   const fields: string[] = [];
   const values: any[] = [];
   if (patch.label !== undefined) { fields.push("label = ?"); values.push(patch.label); }
@@ -46,22 +47,17 @@ export function updateQuestion(id: string, patch: Partial<{ label: string; type:
   if (patch.showIfAttending !== undefined) { fields.push("show_if_attending = ?"); values.push(patch.showIfAttending); }
   if (patch.order_index !== undefined) { fields.push("order_index = ?"); values.push(patch.order_index); }
   if (fields.length === 0) return;
-  db.prepare(`UPDATE rsvp_questions SET ${fields.join(", ")} WHERE id = ?`).run(...values, id);
+  await exec(`UPDATE rsvp_questions SET ${fields.join(", ")} WHERE id = ?`, [...values, id]);
 }
 
-export function deleteQuestion(id: string) {
-  const db = getDb();
-  db.prepare("DELETE FROM rsvp_questions WHERE id = ?").run(id);
+export async function deleteQuestion(id: string) {
+  await exec("DELETE FROM rsvp_questions WHERE id = ?", [id]);
 }
 
-export function reorderQuestions(eventId: string, orderedIds: string[]) {
-  const db = getDb();
-  const tx = db.transaction((ids: string[]) => {
-    ids.forEach((id, idx) => {
-      db.prepare("UPDATE rsvp_questions SET order_index = ? WHERE id = ? AND event_id = ?").run(idx, id, eventId);
-    });
-  });
-  tx(orderedIds);
+export async function reorderQuestions(eventId: string, orderedIds: string[]) {
+  for (let idx = 0; idx < orderedIds.length; idx++) {
+    await exec("UPDATE rsvp_questions SET order_index = ? WHERE id = ? AND event_id = ?", [idx, orderedIds[idx], eventId]);
+  }
 }
 
 export interface ResponseRow {
@@ -79,19 +75,18 @@ export interface ResponseRow {
   responded_at: string;
 }
 
-export function getLatestResponse(invitationId: string): ResponseRow | undefined {
-  const db = getDb();
-  return db
-    .prepare("SELECT * FROM rsvp_responses WHERE invitation_id = ? ORDER BY responded_at DESC LIMIT 1")
-    .get(invitationId) as ResponseRow | undefined;
+export async function getLatestResponse(invitationId: string): Promise<ResponseRow | undefined> {
+  return queryOne<ResponseRow>(
+    "SELECT * FROM rsvp_responses WHERE invitation_id = ? ORDER BY responded_at DESC LIMIT 1",
+    [invitationId]
+  );
 }
 
-export function getAnswersForResponse(responseId: string): { question_id: string; value: string | null }[] {
-  const db = getDb();
-  return db.prepare("SELECT question_id, value FROM rsvp_answers WHERE response_id = ?").all(responseId) as any;
+export async function getAnswersForResponse(responseId: string): Promise<{ question_id: string; value: string | null }[]> {
+  return query("SELECT question_id, value FROM rsvp_answers WHERE response_id = ?", [responseId]);
 }
 
-export function submitResponse(input: {
+export async function submitResponse(input: {
   invitationId: string;
   eventId: string;
   attending: boolean;
@@ -102,64 +97,60 @@ export function submitResponse(input: {
   responderPhone?: string;
   answers: { questionId: string; value: string }[];
   reopenedAfterDeadline?: boolean;
-}): ResponseRow {
-  const db = getDb();
-  const isModification = !!getLatestResponse(input.invitationId);
+}): Promise<ResponseRow> {
+  const isModification = !!(await getLatestResponse(input.invitationId));
   const id = newId("resp");
-  db.prepare(
+  await exec(
     `INSERT INTO rsvp_responses (
       id, invitation_id, event_id, attending, num_attending, guest_names_json,
       responder_name, responder_email, responder_phone, is_modification, reopened_after_deadline
-    ) VALUES (?,?,?,?,?,?,?,?,?,?,?)`
-  ).run(
-    id, input.invitationId, input.eventId, input.attending ? 1 : 0, input.numAttending,
-    input.guestNames ? JSON.stringify(input.guestNames) : null,
-    input.responderName || null, input.responderEmail || null, input.responderPhone || null,
-    isModification ? 1 : 0, input.reopenedAfterDeadline ? 1 : 0
+    ) VALUES (?,?,?,?,?,?,?,?,?,?,?)`,
+    [
+      id, input.invitationId, input.eventId, input.attending ? 1 : 0, input.numAttending,
+      input.guestNames ? JSON.stringify(input.guestNames) : null,
+      input.responderName || null, input.responderEmail || null, input.responderPhone || null,
+      isModification ? 1 : 0, input.reopenedAfterDeadline ? 1 : 0,
+    ]
   );
 
-  const insertAnswer = db.prepare("INSERT INTO rsvp_answers (id, response_id, question_id, value) VALUES (?,?,?,?)");
-  const tx = db.transaction((answers: typeof input.answers) => {
-    for (const a of answers) {
-      insertAnswer.run(newId("ans"), id, a.questionId, a.value);
-    }
-  });
-  tx(input.answers);
+  for (const a of input.answers) {
+    await exec(
+      "INSERT INTO rsvp_answers (id, response_id, question_id, value) VALUES (?,?,?,?)",
+      [newId("ans"), id, a.questionId, a.value]
+    );
+  }
 
-  db.prepare("UPDATE invitations SET status = ? WHERE id = ?").run(input.attending ? "attending" : "declined", input.invitationId);
+  await exec("UPDATE invitations SET status = ? WHERE id = ?", [input.attending ? "attending" : "declined", input.invitationId]);
 
-  return db.prepare("SELECT * FROM rsvp_responses WHERE id = ?").get(id) as ResponseRow;
+  return (await queryOne<ResponseRow>("SELECT * FROM rsvp_responses WHERE id = ?", [id]))!;
 }
 
-export function listResponsesForEvent(eventId: string) {
-  const db = getDb();
-  return db
-    .prepare(
-      `SELECT r.*, iv.first_name, iv.last_name, iv.email as invitee_email, i.token
-       FROM rsvp_responses r
-       JOIN invitations i ON i.id = r.invitation_id
-       LEFT JOIN invitees iv ON iv.id = i.invitee_id
-       WHERE r.event_id = ? AND r.id IN (
-         SELECT r2.id FROM rsvp_responses r2
-         WHERE r2.invitation_id = r.invitation_id
-         ORDER BY r2.responded_at DESC LIMIT 1
-       )
-       ORDER BY r.responded_at DESC`
-    )
-    .all(eventId);
+export async function listResponsesForEvent(eventId: string) {
+  return query(
+    `SELECT r.*, iv.first_name, iv.last_name, iv.email as invitee_email, i.token
+     FROM rsvp_responses r
+     JOIN invitations i ON i.id = r.invitation_id
+     LEFT JOIN invitees iv ON iv.id = i.invitee_id
+     WHERE r.event_id = ? AND r.id IN (
+       SELECT r2.id FROM rsvp_responses r2
+       WHERE r2.invitation_id = r.invitation_id
+       ORDER BY r2.responded_at DESC LIMIT 1
+     )
+     ORDER BY r.responded_at DESC`,
+    [eventId]
+  );
 }
 
-export function questionReport(eventId: string, questionId: string): { value: string; count: number }[] {
-  const db = getDb();
-  const rows = db
-    .prepare(
-      `SELECT a.value, COUNT(*) as count FROM rsvp_answers a
-       JOIN rsvp_responses r ON r.id = a.response_id
-       WHERE a.question_id = ? AND r.event_id = ? AND r.id IN (
-         SELECT r2.id FROM rsvp_responses r2 WHERE r2.invitation_id = r.invitation_id ORDER BY r2.responded_at DESC LIMIT 1
-       )
-       GROUP BY a.value ORDER BY count DESC`
-    )
-    .all(questionId, eventId) as { value: string; count: number }[];
-  return rows;
+export async function questionReport(eventId: string, questionId: string): Promise<{ value: string; count: number }[]> {
+  const rows = await query<{ value: string; count: string }>(
+    `SELECT a.value, COUNT(*) as count FROM rsvp_answers a
+     JOIN rsvp_responses r ON r.id = a.response_id
+     WHERE a.question_id = ? AND r.event_id = ? AND r.id IN (
+       SELECT r2.id FROM rsvp_responses r2 WHERE r2.invitation_id = r.invitation_id ORDER BY r2.responded_at DESC LIMIT 1
+     )
+     GROUP BY a.value ORDER BY count DESC`,
+    [questionId, eventId]
+  );
+  // Postgres returns COUNT(*) as a string (bigint) to avoid precision loss — convert to number.
+  return rows.map((r) => ({ value: r.value, count: Number(r.count) }));
 }

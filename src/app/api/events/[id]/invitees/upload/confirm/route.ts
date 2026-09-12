@@ -13,16 +13,16 @@ export async function POST(req: Request, { params }: { params: { id: string } })
   const access = await requireEventRole(params.id, "admin");
   if (!access.ok) return NextResponse.json({ error: access.message }, { status: access.status });
 
-  const event = getEventById(params.id);
+  const event = await getEventById(params.id);
   if (!event) return NextResponse.json({ error: "Event not found." }, { status: 404 });
 
   const body = await req.json();
   const rows: Row[] = body.rows || [];
   if (rows.length === 0) return NextResponse.json({ error: "Nothing to import." }, { status: 400 });
 
-  const owner = getUserById(event.owner_id)!;
+  const owner = (await getUserById(event.owner_id))!;
   const limit = PLAN_LIMITS[owner.plan].inviteesPerEvent;
-  const currentCount = countActiveInvitees(params.id);
+  const currentCount = await countActiveInvitees(params.id);
   if (currentCount + rows.length > limit) {
     return NextResponse.json(
       { error: `Importing ${rows.length} invitees would exceed your plan's limit of ${limit}. Upgrade or trim the list.` },
@@ -30,7 +30,7 @@ export async function POST(req: Request, { params }: { params: { id: string } })
     );
   }
 
-  const existingGroups = new Map(listGroups(params.id).map((g) => [g.name.toLowerCase(), g]));
+  const existingGroups = new Map((await listGroups(params.id)).map((g) => [g.name.toLowerCase(), g]));
   let created = 0;
 
   for (const row of rows) {
@@ -39,13 +39,13 @@ export async function POST(req: Request, { params }: { params: { id: string } })
       const key = row.groupName.toLowerCase();
       let group = existingGroups.get(key);
       if (!group) {
-        group = createGroup(params.id, row.groupName);
+        group = await createGroup(params.id, row.groupName);
         existingGroups.set(key, group);
       }
       groupId = group.id;
     }
 
-    const { invitee } = createInvitee(params.id, {
+    const { invitee } = await createInvitee(params.id, {
       firstName: row.firstName,
       lastName: row.lastName,
       email: row.email || undefined,
@@ -58,10 +58,10 @@ export async function POST(req: Request, { params }: { params: { id: string } })
     created += 1;
 
     if (groupId && row.groupLeader) {
-      setGroupLeader(groupId, invitee.id);
+      await setGroupLeader(groupId, invitee.id);
     }
   }
 
-  logAudit(params.id, access.user.email, "invitees.imported", `${created} invitees imported`);
+  await logAudit(params.id, access.user.email, "invitees.imported", `${created} invitees imported`);
   return NextResponse.json({ created });
 }

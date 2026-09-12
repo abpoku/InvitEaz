@@ -1,4 +1,4 @@
--- InvitEaz database schema (SQLite). Swap-compatible with Postgres — see README.
+-- InvitEaz database schema (PostgreSQL).
 
 CREATE TABLE IF NOT EXISTS users (
   id TEXT PRIMARY KEY,
@@ -11,7 +11,7 @@ CREATE TABLE IF NOT EXISTS users (
   country TEXT,
   plan TEXT NOT NULL DEFAULT 'FREE', -- FREE | PRO | BUSINESS
   email_verified INTEGER NOT NULL DEFAULT 0,
-  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+  created_at TEXT NOT NULL DEFAULT to_char(now() AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')
 );
 
 CREATE TABLE IF NOT EXISTS events (
@@ -47,8 +47,8 @@ CREATE TABLE IF NOT EXISTS events (
   default_plus_one_policy TEXT NOT NULL DEFAULT 'none', -- none | one | multiple
   cancellation_message TEXT,
   theme TEXT NOT NULL DEFAULT 'classic',
-  created_at TEXT NOT NULL DEFAULT (datetime('now')),
-  updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+  created_at TEXT NOT NULL DEFAULT to_char(now() AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'),
+  updated_at TEXT NOT NULL DEFAULT to_char(now() AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')
 );
 CREATE INDEX IF NOT EXISTS idx_events_owner ON events(owner_id);
 
@@ -59,7 +59,7 @@ CREATE TABLE IF NOT EXISTS event_members (
   invited_email TEXT NOT NULL,
   role TEXT NOT NULL DEFAULT 'viewer', -- owner | admin | viewer
   status TEXT NOT NULL DEFAULT 'active', -- pending | active
-  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+  created_at TEXT NOT NULL DEFAULT to_char(now() AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')
 );
 CREATE INDEX IF NOT EXISTS idx_members_event ON event_members(event_id);
 CREATE INDEX IF NOT EXISTS idx_members_user ON event_members(user_id);
@@ -69,7 +69,7 @@ CREATE TABLE IF NOT EXISTS groups (
   event_id TEXT NOT NULL REFERENCES events(id) ON DELETE CASCADE,
   name TEXT NOT NULL,
   leader_invitee_id TEXT,
-  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+  created_at TEXT NOT NULL DEFAULT to_char(now() AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')
 );
 CREATE INDEX IF NOT EXISTS idx_groups_event ON groups(event_id);
 
@@ -85,7 +85,7 @@ CREATE TABLE IF NOT EXISTS invitees (
   plus_one_policy TEXT,  -- overrides event default when set: none | one | multiple
   notes TEXT,
   active INTEGER NOT NULL DEFAULT 1,
-  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+  created_at TEXT NOT NULL DEFAULT to_char(now() AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')
 );
 CREATE INDEX IF NOT EXISTS idx_invitees_event ON invitees(event_id);
 CREATE INDEX IF NOT EXISTS idx_invitees_group ON invitees(group_id);
@@ -98,7 +98,7 @@ CREATE TABLE IF NOT EXISTS invitations (
   is_public_signup INTEGER NOT NULL DEFAULT 0,
   status TEXT NOT NULL DEFAULT 'invited', -- invited|delivered|opened|attending|declined|no_response|rsvp_locked
   opened_at TEXT,
-  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+  created_at TEXT NOT NULL DEFAULT to_char(now() AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')
 );
 CREATE INDEX IF NOT EXISTS idx_invitations_event ON invitations(event_id);
 CREATE UNIQUE INDEX IF NOT EXISTS idx_invitations_token ON invitations(token);
@@ -112,7 +112,7 @@ CREATE TABLE IF NOT EXISTS rsvp_questions (
   required INTEGER NOT NULL DEFAULT 0,
   order_index INTEGER NOT NULL DEFAULT 0,
   show_if_attending TEXT, -- 'yes' | 'no' | NULL (always)
-  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+  created_at TEXT NOT NULL DEFAULT to_char(now() AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')
 );
 CREATE INDEX IF NOT EXISTS idx_questions_event ON rsvp_questions(event_id);
 
@@ -128,7 +128,7 @@ CREATE TABLE IF NOT EXISTS rsvp_responses (
   responder_phone TEXT,
   is_modification INTEGER NOT NULL DEFAULT 0,
   reopened_after_deadline INTEGER NOT NULL DEFAULT 0,
-  responded_at TEXT NOT NULL DEFAULT (datetime('now'))
+  responded_at TEXT NOT NULL DEFAULT to_char(now() AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')
 );
 CREATE INDEX IF NOT EXISTS idx_responses_invitation ON rsvp_responses(invitation_id);
 CREATE INDEX IF NOT EXISTS idx_responses_event ON rsvp_responses(event_id);
@@ -151,7 +151,7 @@ CREATE TABLE IF NOT EXISTS communications (
   recipients_filter TEXT NOT NULL DEFAULT 'everyone',
   recipient_count INTEGER NOT NULL DEFAULT 0,
   sent_by TEXT,
-  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+  created_at TEXT NOT NULL DEFAULT to_char(now() AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')
 );
 CREATE INDEX IF NOT EXISTS idx_comms_event ON communications(event_id);
 
@@ -161,6 +161,6 @@ CREATE TABLE IF NOT EXISTS audit_logs (
   actor TEXT,
   action TEXT NOT NULL,
   details TEXT,
-  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+  created_at TEXT NOT NULL DEFAULT to_char(now() AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')
 );
 CREATE INDEX IF NOT EXISTS idx_audit_event ON audit_logs(event_id);

@@ -14,7 +14,7 @@ const schema = z.object({
 export async function GET(_req: Request, { params }: { params: { id: string } }) {
   const access = await requireEventRole(params.id, "viewer");
   if (!access.ok) return NextResponse.json({ error: access.message }, { status: access.status });
-  return NextResponse.json({ questions: listQuestions(params.id) });
+  return NextResponse.json({ questions: await listQuestions(params.id) });
 }
 
 export async function POST(req: Request, { params }: { params: { id: string } }) {
@@ -25,6 +25,6 @@ export async function POST(req: Request, { params }: { params: { id: string } })
   const parsed = schema.safeParse(body);
   if (!parsed.success) return NextResponse.json({ error: parsed.error.issues[0].message }, { status: 400 });
 
-  const question = createQuestion(params.id, parsed.data);
+  const question = await createQuestion(params.id, parsed.data);
   return NextResponse.json({ question });
 }

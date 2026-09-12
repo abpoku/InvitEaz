@@ -8,19 +8,19 @@ import { EnvelopeMark } from "@/components/EnvelopeMark";
 
 export default async function DashboardPage() {
   const user = await getCurrentUser();
-  const events = listEventsForUser(user!.id);
+  const events = await listEventsForUser(user!.id);
 
   const upcoming = events.filter((e) => computeEffectiveStatus(e) !== "completed" && computeEffectiveStatus(e) !== "cancelled");
   const past = events.filter((e) => computeEffectiveStatus(e) === "completed");
 
   let totalInvitees = 0, totalConfirmed = 0, awaiting = 0;
-  const rows = events.map((e) => {
-    const stats = getEventStats(e.id);
+  const rows = await Promise.all(events.map(async (e) => {
+    const stats = await getEventStats(e.id);
     totalInvitees += stats.invited;
     totalConfirmed += stats.attending;
     awaiting += stats.noResponse;
     return { event: e, stats };
-  });
+  }));
 
   const limits = PLAN_LIMITS[user!.plan];
 

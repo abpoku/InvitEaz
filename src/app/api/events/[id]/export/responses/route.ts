@@ -11,14 +11,14 @@ export async function GET(_req: Request, { params }: { params: { id: string } })
   const access = await requireEventRole(params.id, "viewer");
   if (!access.ok) return new Response(access.message, { status: access.status });
 
-  const questions = listQuestions(params.id);
-  const responses = listResponsesForEvent(params.id) as any[];
+  const questions = await listQuestions(params.id);
+  const responses = (await listResponsesForEvent(params.id)) as any[];
 
   const headers = ["First Name", "Last Name", "Attending", "Number Attending", "Guest Names", "Responded At", ...questions.map((q) => q.label)];
   const lines = [headers.join(",")];
 
   for (const r of responses) {
-    const answers = getAnswersForResponse(r.id);
+    const answers = await getAnswersForResponse(r.id);
     const answerMap = new Map(answers.map((a) => [a.question_id, a.value]));
     const guestNames = r.guest_names_json ? JSON.parse(r.guest_names_json).join("; ") : "";
     lines.push([
