@@ -18,7 +18,7 @@ export default async function EventOverviewPage({ params }: { params: { id: stri
   ];
 
   return (
-    <div className="p-8 max-w-5xl grid lg:grid-cols-[1fr_320px] gap-8">
+    <div className="p-4 sm:p-8 max-w-5xl grid lg:grid-cols-[1fr_320px] gap-6 sm:gap-8">
       <div className="space-y-6">
         {event.status === "draft" && (
           <div className="card p-6">
@@ -40,7 +40,7 @@ export default async function EventOverviewPage({ params }: { params: { id: stri
 
         <div className="card p-6">
           <p className="font-serif text-lg text-ink">Event details</p>
-          <dl className="mt-4 grid grid-cols-[120px_1fr] gap-y-3 text-sm">
+          <dl className="mt-4 grid grid-cols-[90px_1fr] sm:grid-cols-[120px_1fr] gap-y-3 gap-x-3 text-sm">
             <dt className="text-ink-faint">Date & time</dt>
             <dd className="text-ink">{formatDate(event.event_date)} at {formatTime(event.event_time)}{event.end_time ? ` – ${formatTime(event.end_time)}` : ""}</dd>
 

@@ -47,7 +47,7 @@ export default function RegisterPage() {
 
       <form onSubmit={onSubmit} className="mt-7 space-y-4">
         {error && <div className="rounded border border-clay-500/30 bg-clay-500/5 text-clay-600 text-sm px-3 py-2.5">{error}</div>}
-        <div className="grid grid-cols-2 gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <div>
             <label className="label" htmlFor="firstName">First name</label>
             <input id="firstName" required className="input" value={form.firstName} onChange={(e) => set("firstName", e.target.value)} />

@@ -274,8 +274,8 @@ function RsvpForm({ data, token, onSubmitted }: { data: Data; token: string; onS
 
         {attending !== null && (
           <>
-            <div className="grid grid-cols-2 gap-3">
-              <div className="col-span-2">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div className="sm:col-span-2">
                 <label className="label">Your name</label>
                 <input className="input" value={name} onChange={(e) => setName(e.target.value)} />
               </div>

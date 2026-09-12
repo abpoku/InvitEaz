@@ -43,7 +43,7 @@ export function PublicSignupForm({ slug }: { slug: string }) {
     <form onSubmit={submit} className="card p-6 space-y-4">
       {error && <div className="rounded border border-clay-500/30 bg-clay-500/5 text-clay-600 text-sm px-3 py-2.5">{error}</div>}
       <p className="text-sm text-ink-soft">Tell us who you are, and we'll bring up your RSVP.</p>
-      <div className="grid grid-cols-2 gap-3">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <div>
           <label className="label">First name</label>
           <input className="input" value={form.firstName} onChange={(e) => set("firstName", e.target.value)} />

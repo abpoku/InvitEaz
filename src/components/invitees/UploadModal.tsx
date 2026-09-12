@@ -106,8 +106,8 @@ export function UploadModal({ eventId, onClose, onImported }: { eventId: string;
             </div>
           )}
 
-          <div className="mt-4 max-h-64 overflow-y-auto border border-paper-line rounded">
-            <table className="w-full text-xs">
+          <div className="mt-4 max-h-64 overflow-auto border border-paper-line rounded">
+            <table className="w-full min-w-[480px] text-xs">
               <thead className="bg-paper-soft sticky top-0">
                 <tr className="text-left text-ink-faint">
                   <th className="px-3 py-2">Row</th>

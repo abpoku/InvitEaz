@@ -44,12 +44,12 @@ export function CoPlannersPanel({ eventId, members, isOwner }: { eventId: string
 
       <div className="mt-4 divide-y divide-paper-line">
         {members.map((m) => (
-          <div key={m.id} className="py-2.5 flex items-center justify-between text-sm">
-            <div>
-              <p className="text-ink">{m.first_name ? `${m.first_name} ${m.last_name}` : m.invited_email}</p>
-              <p className="text-xs text-ink-faint">{m.email || m.invited_email} · {m.status === "pending" ? "invited, awaiting sign-up" : "active"}</p>
+          <div key={m.id} className="py-2.5 flex items-center justify-between gap-3 text-sm">
+            <div className="min-w-0">
+              <p className="text-ink truncate">{m.first_name ? `${m.first_name} ${m.last_name}` : m.invited_email}</p>
+              <p className="text-xs text-ink-faint truncate">{m.email || m.invited_email} · {m.status === "pending" ? "invited, awaiting sign-up" : "active"}</p>
             </div>
-            <div className="flex items-center gap-3">
+            <div className="flex items-center gap-3 shrink-0">
               <span className="chip bg-ink/[0.06] text-ink-soft capitalize">{m.role}</span>
               {isOwner && m.role !== "owner" && (
                 <button onClick={() => remove(m.id)} className="text-ink-faint hover:text-clay-600 text-xs">Remove</button>
@@ -60,13 +60,13 @@ export function CoPlannersPanel({ eventId, members, isOwner }: { eventId: string
       </div>
 
       {isOwner && (
-        <form onSubmit={invite} className="mt-4 flex items-end gap-2">
+        <form onSubmit={invite} className="mt-4 flex flex-col sm:flex-row sm:items-end gap-2">
           {error && <p className="text-xs text-clay-600 basis-full">{error}</p>}
           <div className="flex-1">
             <label className="label">Invite by email</label>
             <input type="email" required className="input" value={email} onChange={(e) => setEmail(e.target.value)} />
           </div>
-          <select className="input w-32" value={role} onChange={(e) => setRole(e.target.value as any)}>
+          <select className="input w-full sm:w-32" value={role} onChange={(e) => setRole(e.target.value as any)}>
             <option value="viewer">Viewer</option>
             <option value="admin">Admin</option>
           </select>

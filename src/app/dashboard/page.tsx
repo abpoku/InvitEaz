@@ -25,19 +25,19 @@ export default async function DashboardPage() {
   const limits = PLAN_LIMITS[user!.plan];
 
   return (
-    <div className="p-8 max-w-6xl">
-      <div className="flex items-start justify-between">
+    <div className="p-4 sm:p-8 max-w-6xl">
+      <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
         <div>
           <h1 className="font-serif text-2xl text-ink">Good to see you, {user!.first_name}.</h1>
           <p className="mt-1 text-sm text-ink-soft">
             {events.length === 0 ? "Let's create your first event." : `You're managing ${events.length} event${events.length === 1 ? "" : "s"}.`}
           </p>
         </div>
-        <Link href="/dashboard/events/new" className="btn-primary">+ Create new event</Link>
+        <Link href="/dashboard/events/new" className="btn-primary shrink-0">+ Create new event</Link>
       </div>
 
       {/* Summary cards */}
-      <div className="mt-8 grid grid-cols-2 md:grid-cols-4 gap-4">
+      <div className="mt-8 grid grid-cols-2 md:grid-cols-4 gap-3 sm:gap-4">
         <SummaryCard label="Upcoming events" value={upcoming.length} />
         <SummaryCard label="Past events" value={past.length} />
         <SummaryCard label="Total invitees" value={totalInvitees} />
@@ -61,7 +61,7 @@ export default async function DashboardPage() {
               <Link
                 key={event.id}
                 href={`/dashboard/events/${event.id}`}
-                className="flex items-center justify-between px-5 py-4 hover:bg-paper-soft/50 transition-colors"
+                className="flex items-center justify-between gap-4 px-4 sm:px-5 py-4 hover:bg-paper-soft/50 transition-colors"
               >
                 <div className="min-w-0">
                   <div className="flex items-center gap-2.5">

@@ -58,7 +58,7 @@ export function EventSettingsForm({ event }: { event: EventRow }) {
         <label className="label">Description</label>
         <textarea className="input min-h-[80px]" value={form.description} onChange={(e) => set("description", e.target.value)} />
       </div>
-      <div className="grid grid-cols-3 gap-3">
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
         <div>
           <label className="label">Date</label>
           <input type="date" className="input" value={form.event_date} onChange={(e) => set("event_date", e.target.value)} />
@@ -76,7 +76,7 @@ export function EventSettingsForm({ event }: { event: EventRow }) {
         <div className="space-y-3">
           <input className="input" placeholder="Venue name" value={form.venue_name} onChange={(e) => set("venue_name", e.target.value)} />
           <input className="input" placeholder="Address" value={form.address} onChange={(e) => set("address", e.target.value)} />
-          <div className="grid grid-cols-3 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
             <input className="input" placeholder="City" value={form.city} onChange={(e) => set("city", e.target.value)} />
             <input className="input" placeholder="State" value={form.state} onChange={(e) => set("state", e.target.value)} />
             <input className="input" placeholder="ZIP" value={form.zip} onChange={(e) => set("zip", e.target.value)} />
@@ -86,7 +86,7 @@ export function EventSettingsForm({ event }: { event: EventRow }) {
       {event.location_type !== "physical" && (
         <input className="input" placeholder="Meeting URL" value={form.meeting_url} onChange={(e) => set("meeting_url", e.target.value)} />
       )}
-      <div className="grid grid-cols-2 gap-3">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <div>
           <label className="label">RSVP deadline</label>
           <input type="datetime-local" className="input" value={form.rsvp_deadline} onChange={(e) => set("rsvp_deadline", e.target.value)} />
@@ -100,7 +100,7 @@ export function EventSettingsForm({ event }: { event: EventRow }) {
           </select>
         </div>
       </div>
-      <div className="grid grid-cols-2 gap-3">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <input className="input" placeholder="Organizer name" value={form.organizer_name} onChange={(e) => set("organizer_name", e.target.value)} />
         <input className="input" placeholder="Organizer contact" value={form.organizer_contact} onChange={(e) => set("organizer_contact", e.target.value)} />
       </div>

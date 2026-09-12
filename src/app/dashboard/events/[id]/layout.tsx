@@ -22,12 +22,12 @@ export default async function EventLayout({ children, params }: { children: Reac
 
   return (
     <div>
-      <div className="border-b border-paper-line px-8 py-6">
+      <div className="border-b border-paper-line px-4 sm:px-8 py-5 sm:py-6">
         <Link href="/dashboard" className="text-sm text-ink-faint hover:text-ink-soft">← All events</Link>
-        <div className="mt-2 flex items-start justify-between gap-4">
-          <div>
-            <div className="flex items-center gap-2.5">
-              <h1 className="font-serif text-2xl text-ink">{event.name}</h1>
+        <div className="mt-2 flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
+          <div className="min-w-0">
+            <div className="flex items-center gap-2.5 flex-wrap">
+              <h1 className="font-serif text-2xl text-ink break-words">{event.name}</h1>
               <StatusBadge status={status} />
             </div>
             <p className="mt-1 text-sm text-ink-soft">
@@ -38,7 +38,7 @@ export default async function EventLayout({ children, params }: { children: Reac
           <EventActions event={event} status={status} role={membership.role} />
         </div>
 
-        <div className="mt-6 flex items-center gap-6 text-sm">
+        <div className="mt-6 flex flex-wrap items-center gap-x-6 gap-y-2 text-sm">
           <MiniStat label="Invited" value={stats.invited} />
           <MiniStat label="Attending" value={stats.attending} />
           <MiniStat label="Declined" value={stats.declined} />

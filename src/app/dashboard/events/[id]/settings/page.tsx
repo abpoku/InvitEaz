@@ -11,7 +11,7 @@ export default async function SettingsPage({ params }: { params: { id: string } 
   const isOwner = event.owner_id === user!.id;
 
   return (
-    <div className="p-8 max-w-3xl space-y-8">
+    <div className="p-4 sm:p-8 max-w-3xl space-y-8">
       <div>
         <h2 className="font-serif text-xl text-ink">Settings</h2>
         <p className="mt-1 text-sm text-ink-soft">Edit event details, manage co-planners, and control who can RSVP.</p>

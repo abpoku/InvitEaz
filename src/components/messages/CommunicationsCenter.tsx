@@ -76,7 +76,7 @@ export function CommunicationsCenter({ eventId, groups }: { eventId: string; gro
   }
 
   return (
-    <div className="p-8 grid lg:grid-cols-[1fr_360px] gap-8 max-w-5xl">
+    <div className="p-4 sm:p-8 grid lg:grid-cols-[1fr_360px] gap-6 sm:gap-8 max-w-5xl">
       <div>
         <h2 className="font-serif text-xl text-ink">Send a message</h2>
         <p className="mt-1 text-sm text-ink-soft">Emails go to whichever invitees have an email address on file.</p>

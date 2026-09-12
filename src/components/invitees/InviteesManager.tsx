@@ -71,9 +71,9 @@ export function InviteesManager({ eventId, groupRsvpMode }: { eventId: string; g
   }
 
   return (
-    <div className="p-8">
+    <div className="p-4 sm:p-8">
       <div className="flex items-center justify-between gap-4 flex-wrap">
-        <div className="flex items-center gap-3 flex-1 min-w-[240px]">
+        <div className="flex items-center gap-3 flex-wrap flex-1 min-w-[240px]">
           <input
             className="input max-w-xs"
             placeholder="Search name, email, or group…"
@@ -87,14 +87,14 @@ export function InviteesManager({ eventId, groupRsvpMode }: { eventId: string; g
             <option value="no_response">No response</option>
           </select>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
           <a href="/inviteaz-invitee-template.csv" download className="btn-ghost">Download template</a>
           <button onClick={() => setShowUpload(true)} className="btn-secondary">Upload spreadsheet</button>
           <button onClick={() => setShowAdd(true)} className="btn-primary">+ Add invitee</button>
         </div>
       </div>
 
-      <div className="mt-6 card overflow-hidden">
+      <div className="mt-6 card overflow-x-auto">
         {loading ? (
           <p className="p-8 text-sm text-ink-faint text-center">Loading invitees…</p>
         ) : filtered.length === 0 ? (
@@ -102,7 +102,7 @@ export function InviteesManager({ eventId, groupRsvpMode }: { eventId: string; g
             {invitees.length === 0 ? "No invitees yet. Add someone or upload a spreadsheet to get started." : "No invitees match your search."}
           </p>
         ) : (
-          <table className="w-full text-sm">
+          <table className="w-full min-w-[720px] text-sm">
             <thead>
               <tr className="border-b border-paper-line text-left text-ink-faint">
                 <th className="px-5 py-3 font-medium">Name</th>

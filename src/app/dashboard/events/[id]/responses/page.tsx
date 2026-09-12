@@ -13,20 +13,20 @@ export default async function ResponsesPage({ params }: { params: { id: string }
   );
 
   return (
-    <div className="p-8">
-      <div className="flex items-center justify-between">
+    <div className="p-4 sm:p-8">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div>
           <h2 className="font-serif text-xl text-ink">Responses</h2>
           <p className="mt-1 text-sm text-ink-soft">{responses.length} response{responses.length === 1 ? "" : "s"} received so far.</p>
         </div>
-        <a href={`/api/events/${params.id}/export/responses`} className="btn-secondary">Export CSV</a>
+        <a href={`/api/events/${params.id}/export/responses`} className="btn-secondary shrink-0">Export CSV</a>
       </div>
 
       <div className="mt-6 card overflow-x-auto">
         {responses.length === 0 ? (
           <p className="p-10 text-sm text-ink-faint text-center">No responses yet. Once invitees RSVP, they'll show up here in real time.</p>
         ) : (
-          <table className="w-full text-sm">
+          <table className="w-full min-w-[640px] text-sm">
             <thead>
               <tr className="border-b border-paper-line text-left text-ink-faint">
                 <th className="px-5 py-3 font-medium whitespace-nowrap">Name</th>

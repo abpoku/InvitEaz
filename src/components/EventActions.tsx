@@ -32,7 +32,7 @@ export function EventActions({ event, status, role }: { event: EventRow; status:
   }
 
   return (
-    <div className="flex items-center gap-2 shrink-0">
+    <div className="flex items-center gap-2 flex-wrap sm:shrink-0">
       {event.status === "published" && event.visibility !== "invite_only" && (
         <button onClick={copyLink} className="btn-secondary">{copied ? "Link copied!" : "Copy RSVP link"}</button>
       )}

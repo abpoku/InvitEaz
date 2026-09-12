@@ -62,8 +62,8 @@ export default function LandingPage() {
   return (
     <div className="min-h-screen bg-paper">
       <header className="border-b border-paper-line">
-        <div className="mx-auto max-w-6xl px-6 h-16 flex items-center justify-between">
-          <Link href="/" className="flex items-center gap-2">
+        <div className="mx-auto max-w-6xl px-4 sm:px-6 h-16 flex items-center justify-between gap-3">
+          <Link href="/" className="flex items-center gap-2 shrink-0">
             <EnvelopeMark className="w-7 h-5" />
             <span className="font-serif text-lg text-ink">InvitEaz</span>
           </Link>
@@ -72,17 +72,20 @@ export default function LandingPage() {
             <a href="#features" className="hover:text-ink">Features</a>
             <a href="#pricing" className="hover:text-ink">Pricing</a>
           </nav>
-          <div className="flex items-center gap-3">
-            <Link href="/login" className="btn-ghost">Log in</Link>
-            <Link href="/register" className="btn-primary">Create an event</Link>
+          <div className="flex items-center gap-2 sm:gap-3 shrink-0">
+            <Link href="/login" className="btn-ghost px-3 sm:px-4">Log in</Link>
+            <Link href="/register" className="btn-primary px-3 sm:px-4 whitespace-nowrap">
+              <span className="sm:hidden">Sign up</span>
+              <span className="hidden sm:inline">Create an event</span>
+            </Link>
           </div>
         </div>
       </header>
 
       {/* Hero */}
-      <section className="mx-auto max-w-6xl px-6 pt-16 pb-20 grid md:grid-cols-2 gap-12 items-center">
+      <section className="mx-auto max-w-6xl px-4 sm:px-6 pt-12 pb-16 sm:pt-16 sm:pb-20 grid md:grid-cols-2 gap-10 md:gap-12 items-center">
         <div>
-          <h1 className="font-serif text-[2.75rem] leading-[1.08] text-ink max-w-md">
+          <h1 className="font-serif text-4xl sm:text-5xl md:text-[2.75rem] leading-[1.1] md:leading-[1.08] text-ink max-w-md">
             Invite with ease. Know who&apos;s coming, always.
           </h1>
           <p className="mt-5 text-lg text-ink-soft max-w-md leading-relaxed">
@@ -90,9 +93,9 @@ export default function LandingPage() {
             place to manage your guest list, collect RSVPs, and get an accurate headcount —
             in real time.
           </p>
-          <div className="mt-8 flex items-center gap-4">
-            <Link href="/register" className="btn-primary px-6 py-3 text-base">Start planning free</Link>
-            <a href="#how-it-works" className="btn-secondary px-6 py-3 text-base">See how it works</a>
+          <div className="mt-8 flex flex-col sm:flex-row items-stretch sm:items-center gap-3 sm:gap-4">
+            <Link href="/register" className="btn-primary px-6 py-3 text-base justify-center">Start planning free</Link>
+            <a href="#how-it-works" className="btn-secondary px-6 py-3 text-base justify-center">See how it works</a>
           </div>
           <p className="mt-4 text-sm text-ink-faint">No credit card. No app for your guests to download.</p>
         </div>
@@ -101,7 +104,7 @@ export default function LandingPage() {
 
       {/* Problem */}
       <section className="border-y border-paper-line bg-paper-soft/60">
-        <div className="mx-auto max-w-6xl px-6 py-16">
+        <div className="mx-auto max-w-6xl px-4 sm:px-6 py-16">
           <h2 className="font-serif text-2xl text-ink max-w-lg">You're probably running your guest list on four different tools right now.</h2>
           <div className="mt-8 grid sm:grid-cols-2 gap-4">
             {problems.map((p) => (
@@ -118,7 +121,7 @@ export default function LandingPage() {
       </section>
 
       {/* How it works */}
-      <section id="how-it-works" className="mx-auto max-w-6xl px-6 py-20">
+      <section id="how-it-works" className="mx-auto max-w-6xl px-4 sm:px-6 py-20">
         <h2 className="font-serif text-2xl text-ink">Four steps, one afternoon.</h2>
         <div className="mt-10 grid md:grid-cols-4 gap-8">
           {steps.map((s, i) => (
@@ -135,7 +138,7 @@ export default function LandingPage() {
 
       {/* Features */}
       <section id="features" className="bg-ink text-paper">
-        <div className="mx-auto max-w-6xl px-6 py-20">
+        <div className="mx-auto max-w-6xl px-4 sm:px-6 py-20">
           <h2 className="font-serif text-2xl max-w-lg">Built around what actually makes RSVPs hard.</h2>
           <div className="mt-10 grid md:grid-cols-2 gap-x-10 gap-y-10">
             {features.map((f) => (
@@ -149,7 +152,7 @@ export default function LandingPage() {
       </section>
 
       {/* Who it's for */}
-      <section className="mx-auto max-w-6xl px-6 py-20">
+      <section className="mx-auto max-w-6xl px-4 sm:px-6 py-20">
         <h2 className="font-serif text-2xl text-ink">One platform, every kind of gathering.</h2>
         <p className="mt-3 text-ink-soft max-w-xl">
           Weddings and birthdays. Church socials and school fundraisers. Board meetings and
@@ -164,7 +167,7 @@ export default function LandingPage() {
 
       {/* Pricing */}
       <section id="pricing" className="border-t border-paper-line bg-paper-soft/60">
-        <div className="mx-auto max-w-6xl px-6 py-20">
+        <div className="mx-auto max-w-6xl px-4 sm:px-6 py-20">
           <h2 className="font-serif text-2xl text-ink">Start free. Upgrade when your guest list grows.</h2>
           <div className="mt-10 grid md:grid-cols-3 gap-6">
             {plans.map((p) => (
@@ -194,13 +197,13 @@ export default function LandingPage() {
       </section>
 
       {/* Final CTA */}
-      <section className="mx-auto max-w-6xl px-6 py-24 text-center">
+      <section className="mx-auto max-w-6xl px-4 sm:px-6 py-24 text-center">
         <h2 className="font-serif text-3xl text-ink max-w-xl mx-auto">Your next event deserves a guest list that keeps itself organized.</h2>
         <Link href="/register" className="btn-primary px-7 py-3.5 text-base mt-8 inline-flex">Create your first event</Link>
       </section>
 
       <footer className="border-t border-paper-line">
-        <div className="mx-auto max-w-6xl px-6 py-10 flex flex-col sm:flex-row items-center justify-between gap-4">
+        <div className="mx-auto max-w-6xl px-4 sm:px-6 py-10 flex flex-col sm:flex-row items-center justify-between gap-4">
           <div className="flex items-center gap-2">
             <EnvelopeMark className="w-6 h-4" />
             <span className="font-serif text-ink">InvitEaz</span>

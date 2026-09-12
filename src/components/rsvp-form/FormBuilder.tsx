@@ -59,8 +59,8 @@ export function FormBuilder({ eventId }: { eventId: string }) {
   }
 
   return (
-    <div className="p-8 max-w-3xl">
-      <div className="flex items-start justify-between">
+    <div className="p-4 sm:p-8 max-w-3xl">
+      <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
         <div>
           <h2 className="font-serif text-xl text-ink">RSVP form</h2>
           <p className="mt-1 text-sm text-ink-soft">Every attendee answers "Are you attending?" and gives their guest count automatically. Add the questions your event needs beyond that.</p>
@@ -80,21 +80,23 @@ export function FormBuilder({ eventId }: { eventId: string }) {
           <div className="card p-10 text-center text-sm text-ink-faint">No custom questions yet — meal choice, transportation, t-shirt size, anything your event needs.</div>
         ) : (
           questions.map((q, idx) => (
-            <div key={q.id} className="card p-4 flex items-center gap-4">
+            <div key={q.id} className="card p-4 flex flex-wrap items-center gap-3 sm:gap-4">
               <div className="flex flex-col gap-0.5 shrink-0">
                 <button onClick={() => move(idx, -1)} disabled={idx === 0} className="text-ink-faint hover:text-ink disabled:opacity-20 text-xs leading-none">▲</button>
                 <button onClick={() => move(idx, 1)} disabled={idx === questions.length - 1} className="text-ink-faint hover:text-ink disabled:opacity-20 text-xs leading-none">▼</button>
               </div>
-              <div className="flex-1 min-w-0">
-                <p className="text-ink">{q.label} {q.required ? <span className="text-clay-600">*</span> : null}</p>
+              <div className="flex-1 min-w-[160px]">
+                <p className="text-ink break-words">{q.label} {q.required ? <span className="text-clay-600">*</span> : null}</p>
                 <p className="text-xs text-ink-faint mt-0.5">
                   {TYPE_LABELS[q.type]}
                   {q.show_if_attending && ` · shown when attending = ${q.show_if_attending}`}
                   {q.options_json && ` · ${JSON.parse(q.options_json).length} options`}
                 </p>
               </div>
-              <button onClick={() => setEditing(q)} className="btn-ghost text-xs">Edit</button>
-              <button onClick={() => remove(q.id)} className="text-xs text-ink-faint hover:text-clay-600">Remove</button>
+              <div className="flex items-center gap-3 shrink-0 ml-auto sm:ml-0">
+                <button onClick={() => setEditing(q)} className="btn-ghost text-xs">Edit</button>
+                <button onClick={() => remove(q.id)} className="text-xs text-ink-faint hover:text-clay-600">Remove</button>
+              </div>
             </div>
           ))
         )}

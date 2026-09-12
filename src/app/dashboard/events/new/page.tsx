@@ -63,7 +63,7 @@ export default function NewEventPage() {
   }
 
   return (
-    <div className="p-8 max-w-2xl">
+    <div className="p-4 sm:p-8 max-w-2xl">
       <Link href="/dashboard" className="text-sm text-ink-faint hover:text-ink-soft">← Back to dashboard</Link>
       <h1 className="font-serif text-2xl text-ink mt-3">Create a new event</h1>
       <p className="mt-1.5 text-sm text-ink-soft">Start with the essentials — you can add invitees and RSVP questions after.</p>
@@ -77,7 +77,7 @@ export default function NewEventPage() {
             <label className="label">Event name</label>
             <input className="input" required value={form.name} onChange={(e) => set("name", e.target.value)} placeholder="Annual Community Gala" />
           </div>
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
               <label className="label">Date</label>
               <input type="date" className="input" required value={form.date} onChange={(e) => set("date", e.target.value)} />
@@ -90,7 +90,7 @@ export default function NewEventPage() {
 
           <div>
             <label className="label">Location</label>
-            <div className="flex gap-2 mb-3">
+            <div className="flex gap-2 mb-3 flex-wrap">
               {(["physical", "virtual", "hybrid"] as LocationType[]).map((lt) => (
                 <button
                   type="button"
@@ -106,7 +106,7 @@ export default function NewEventPage() {
               <div className="space-y-3">
                 <input className="input" placeholder="Venue name" value={form.venueName} onChange={(e) => set("venueName", e.target.value)} />
                 <input className="input" placeholder="Street address" value={form.address} onChange={(e) => set("address", e.target.value)} />
-                <div className="grid grid-cols-3 gap-3">
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                   <input className="input" placeholder="City" value={form.city} onChange={(e) => set("city", e.target.value)} />
                   <input className="input" placeholder="State" value={form.state} onChange={(e) => set("state", e.target.value)} />
                   <input className="input" placeholder="ZIP" value={form.zip} onChange={(e) => set("zip", e.target.value)} />
@@ -133,7 +133,7 @@ export default function NewEventPage() {
               <label className="label">Description</label>
               <textarea className="input min-h-[90px]" value={form.description} onChange={(e) => set("description", e.target.value)} />
             </div>
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div>
                 <label className="label">End time</label>
                 <input type="time" className="input" value={form.endTime} onChange={(e) => set("endTime", e.target.value)} />
@@ -144,11 +144,11 @@ export default function NewEventPage() {
                 <p className="mt-1 text-xs text-ink-faint">Defaults to 24 hours before the event.</p>
               </div>
             </div>
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <input className="input" placeholder="Organizer name" value={form.organizerName} onChange={(e) => set("organizerName", e.target.value)} />
               <input className="input" placeholder="Organizer contact" value={form.organizerContact} onChange={(e) => set("organizerContact", e.target.value)} />
             </div>
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <input className="input" placeholder="Website (optional)" value={form.website} onChange={(e) => set("website", e.target.value)} />
               <input className="input" placeholder="Dress code (optional)" value={form.dressCode} onChange={(e) => set("dressCode", e.target.value)} />
             </div>
@@ -157,7 +157,7 @@ export default function NewEventPage() {
               <textarea className="input min-h-[70px]" value={form.instructions} onChange={(e) => set("instructions", e.target.value)} />
             </div>
 
-            <div className="grid grid-cols-2 gap-3 pt-2">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2">
               <div>
                 <label className="label">Who can RSVP</label>
                 <select className="input" value={form.visibility} onChange={(e) => set("visibility", e.target.value as any)}>

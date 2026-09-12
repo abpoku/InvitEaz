@@ -17,7 +17,7 @@ export default async function ReportsPage({ params }: { params: { id: string } }
   );
 
   return (
-    <div className="p-8 max-w-4xl space-y-8">
+    <div className="p-4 sm:p-8 max-w-4xl space-y-8">
       <div>
         <h2 className="font-serif text-xl text-ink">Reports</h2>
         <p className="mt-1 text-sm text-ink-soft">A live snapshot of your headcount and RSVP answers.</p>

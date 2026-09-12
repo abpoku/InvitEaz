@@ -71,7 +71,7 @@ export function AddInviteeModal({
     <Modal title="Add invitee" onClose={onClose}>
       <form onSubmit={onSubmit} className="space-y-4">
         {error && <div className="rounded border border-clay-500/30 bg-clay-500/5 text-clay-600 text-sm px-3 py-2.5">{error}</div>}
-        <div className="grid grid-cols-2 gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <div>
             <label className="label">First name</label>
             <input className="input" required value={form.firstName} onChange={(e) => set("firstName", e.target.value)} />
@@ -95,7 +95,7 @@ export function AddInviteeModal({
             <input className="input" placeholder="e.g. Johnson Family" value={form.groupName} onChange={(e) => set("groupName", e.target.value)} />
           </div>
         )}
-        <div className="grid grid-cols-2 gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <div>
             <label className="label">Adult or child</label>
             <select className="input" value={form.isAdult ? "adult" : "child"} onChange={(e) => set("isAdult", e.target.value === "adult")}>
