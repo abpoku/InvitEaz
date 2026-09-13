@@ -123,14 +123,14 @@ export default function LandingPage() {
       {/* How it works */}
       <section id="how-it-works" className="mx-auto max-w-6xl px-4 sm:px-6 py-20">
         <h2 className="font-serif text-2xl text-ink">Four steps, one afternoon.</h2>
-        <div className="mt-10 grid md:grid-cols-4 gap-8">
+        <div className="mt-10 grid sm:grid-cols-2 md:grid-cols-4 gap-6">
           {steps.map((s, i) => (
-            <div key={s.title} className="relative">
-              <div className="w-9 h-9 rounded-full border border-wine-300 text-wine-500 flex items-center justify-center font-serif text-sm">
+            <div key={s.title} className="card p-7 flex flex-col items-start">
+              <div className="w-14 h-14 rounded-full bg-wine-50 border border-wine-300 text-wine-500 flex items-center justify-center font-serif text-2xl">
                 {i + 1}
               </div>
-              <p className="mt-4 font-medium text-ink">{s.title}</p>
-              <p className="mt-1.5 text-sm text-ink-soft leading-relaxed">{s.body}</p>
+              <p className="mt-6 font-medium text-lg text-ink">{s.title}</p>
+              <p className="mt-2 text-sm text-ink-soft leading-relaxed">{s.body}</p>
             </div>
           ))}
         </div>
@@ -158,9 +158,9 @@ export default function LandingPage() {
           Weddings and birthdays. Church socials and school fundraisers. Board meetings and
           conferences. If it needs a guest list, InvitEaz can run it.
         </p>
-        <div className="mt-8 flex flex-wrap gap-2.5">
+        <div className="mt-8 flex flex-wrap gap-3">
           {["Weddings", "Birthdays", "Corporate events", "Conferences", "Church events", "Fundraisers", "Graduation parties", "Family reunions", "Networking events", "Community events"].map((t) => (
-            <span key={t} className="chip bg-white border border-paper-line text-ink-soft">{t}</span>
+            <span key={t} className="chip bg-white border border-paper-line text-ink-soft px-4 py-2 text-sm">{t}</span>
           ))}
         </div>
       </section>

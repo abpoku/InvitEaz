@@ -25,7 +25,7 @@ export function HeroInvite() {
         </div>
       </div>
       {/* floating headcount pill */}
-      <div className="absolute -right-4 -bottom-4 rounded-lg bg-ink text-paper px-4 py-3 shadow-lifted animate-rise" style={{ animationDelay: "180ms" }}>
+      <div className="absolute z-20 -right-4 -bottom-4 rounded-lg bg-ink text-paper px-4 py-3 shadow-lifted animate-rise" style={{ animationDelay: "180ms" }}>
         <p className="text-[0.7rem] text-paper/60">Live headcount</p>
         <p className="font-serif text-2xl leading-none mt-0.5">380<span className="text-paper/50 text-base"> / 500</span></p>
       </div>
