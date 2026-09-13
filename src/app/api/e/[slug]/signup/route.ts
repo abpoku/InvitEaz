@@ -1,13 +1,18 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { getEventBySlug } from "@/lib/models/events";
-import { createInvitee } from "@/lib/models/invitees";
+import { createInvitee, createGroup, listGroups } from "@/lib/models/invitees";
 
 const schema = z.object({
   firstName: z.string().min(1),
-  lastName: z.string().min(1),
+  lastName: z.string().optional().default(""),
   email: z.string().email().optional().or(z.literal("")),
   phone: z.string().optional(),
+  group: z.string().optional(),
+  isAdult: z.boolean().optional(),
+  plusOnePolicy: z.enum(["none", "one", "multiple"]).nullable().optional(),
+  notes: z.string().optional(),
+  customFields: z.record(z.string()).optional(),
 });
 
 export async function POST(req: Request, { params }: { params: { slug: string } }) {
@@ -23,7 +28,14 @@ export async function POST(req: Request, { params }: { params: { slug: string } 
   const body = await req.json();
   const parsed = schema.safeParse(body);
   if (!parsed.success) return NextResponse.json({ error: parsed.error.issues[0].message }, { status: 400 });
+  const { group: groupName, ...rest } = parsed.data;
 
-  const { invitee, invitation } = await createInvitee(event.id, { ...parsed.data, email: parsed.data.email || undefined });
+  let groupId: string | null = null;
+  if (groupName) {
+    const existing = (await listGroups(event.id)).find((g) => g.name.toLowerCase() === groupName.toLowerCase());
+    groupId = existing ? existing.id : (await createGroup(event.id, groupName)).id;
+  }
+
+  const { invitee, invitation } = await createInvitee(event.id, { ...rest, email: rest.email || undefined, groupId });
   return NextResponse.json({ token: invitation.token, inviteeId: invitee.id });
 }

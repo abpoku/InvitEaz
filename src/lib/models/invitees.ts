@@ -13,6 +13,7 @@ export interface InviteeRow {
   is_adult: number;
   plus_one_policy: PlusOnePolicy | null;
   notes: string | null;
+  custom_fields: string | null; // JSON object of {fieldKey: value}
   active: number;
   created_at: string;
 }
@@ -61,15 +62,17 @@ export async function createInvitee(
     plusOnePolicy?: PlusOnePolicy | null;
     notes?: string;
     groupId?: string | null;
+    customFields?: Record<string, string>;
   }
 ): Promise<{ invitee: InviteeRow; invitation: InvitationRow }> {
   const id = newId("inv");
   await exec(
-    `INSERT INTO invitees (id, event_id, group_id, first_name, last_name, email, phone, is_adult, plus_one_policy, notes)
-     VALUES (?,?,?,?,?,?,?,?,?,?)`,
+    `INSERT INTO invitees (id, event_id, group_id, first_name, last_name, email, phone, is_adult, plus_one_policy, notes, custom_fields)
+     VALUES (?,?,?,?,?,?,?,?,?,?,?)`,
     [
       id, eventId, input.groupId || null, input.firstName, input.lastName, input.email || null,
       input.phone || null, input.isAdult === false ? 0 : 1, input.plusOnePolicy || null, input.notes || null,
+      input.customFields && Object.keys(input.customFields).length ? JSON.stringify(input.customFields) : null,
     ]
   );
 
@@ -109,7 +112,7 @@ export async function getInviteeById(id: string): Promise<InviteeRow | undefined
 }
 
 export async function updateInvitee(id: string, patch: Partial<InviteeRow>) {
-  const allowed = ["first_name", "last_name", "email", "phone", "is_adult", "plus_one_policy", "notes", "group_id"];
+  const allowed = ["first_name", "last_name", "email", "phone", "is_adult", "plus_one_policy", "notes", "group_id", "custom_fields"];
   const keys = Object.keys(patch).filter((k) => allowed.includes(k));
   if (keys.length === 0) return;
   const setClause = keys.map((k) => `${k} = ?`).join(", ");

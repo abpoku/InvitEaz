@@ -3,7 +3,7 @@ import { getInvitationByToken, markInvitationOpened, groupMembers } from "@/lib/
 import { getEventById, computeEffectiveStatus } from "@/lib/models/events";
 import { listQuestions, submitResponse, getLatestResponse, getAnswersForResponse } from "@/lib/models/rsvp";
 import { sendConfirmationEmail } from "@/lib/notify";
-import { isPastDeadline } from "@/lib/utils";
+import { isPastDeadline, fullName } from "@/lib/utils";
 
 export async function GET(_req: Request, { params }: { params: { token: string } }) {
   const invitation = await getInvitationByToken(params.token);
@@ -59,7 +59,7 @@ export async function POST(req: Request, { params }: { params: { token: string }
     attending,
     numAttending: attending ? numAttending : 0,
     guestNames: attending ? guestNames : [],
-    responderName: body.responderName || (invitation.invitee ? `${invitation.invitee.first_name} ${invitation.invitee.last_name}` : undefined),
+    responderName: body.responderName || (invitation.invitee ? fullName(invitation.invitee.first_name, invitation.invitee.last_name) : undefined),
     responderEmail: body.responderEmail || invitation.invitee?.email || undefined,
     responderPhone: body.responderPhone || invitation.invitee?.phone || undefined,
     answers,

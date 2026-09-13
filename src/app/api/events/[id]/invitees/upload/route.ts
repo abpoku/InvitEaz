@@ -1,10 +1,16 @@
 import { NextResponse } from "next/server";
 import { requireEventRole } from "@/lib/session";
-import { parseInviteeFile, findDuplicates } from "@/lib/csv-import";
+import { parseFileToRecords } from "@/lib/csv-import";
+import { guessColumnMap, validateRecords, findDuplicateRowNumbers } from "@/lib/invitee-field-matching";
+import { listInviteeFields } from "@/lib/models/invitee-fields";
+import { getEventById } from "@/lib/models/events";
 
 export async function POST(req: Request, { params }: { params: { id: string } }) {
   const access = await requireEventRole(params.id, "admin");
   if (!access.ok) return NextResponse.json({ error: access.message }, { status: access.status });
+
+  const event = await getEventById(params.id);
+  if (!event) return NextResponse.json({ error: "Event not found." }, { status: 404 });
 
   const formData = await req.formData();
   const file = formData.get("file") as File | null;
@@ -18,10 +24,13 @@ export async function POST(req: Request, { params }: { params: { id: string } })
   }
 
   const buffer = Buffer.from(await file.arrayBuffer());
-  const { rows, parseError } = parseInviteeFile(buffer, file.name);
+  const { headers, records, parseError } = parseFileToRecords(buffer, file.name);
   if (parseError) return NextResponse.json({ error: parseError }, { status: 400 });
 
-  const dupeRowNumbers = findDuplicates(rows);
+  const fields = await listInviteeFields(params.id);
+  const columnMap = guessColumnMap(headers, fields, event.invitee_name_format);
+  const rows = validateRecords(records, columnMap, fields, event.invitee_name_format);
+  const dupeRowNumbers = findDuplicateRowNumbers(rows);
   const withDupes = rows.map((r) => ({ ...r, isDuplicate: dupeRowNumbers.has(r.rowNumber) }));
 
   const valid = withDupes.filter((r) => r.errors.length === 0 && !r.isDuplicate);
@@ -29,6 +38,11 @@ export async function POST(req: Request, { params }: { params: { id: string } })
   const duplicates = withDupes.filter((r) => r.isDuplicate && r.errors.length === 0);
 
   return NextResponse.json({
+    headers,
+    records,
+    fields,
+    nameFormat: event.invitee_name_format,
+    columnMap,
     total: rows.length,
     validCount: valid.length,
     invalidCount: invalid.length,

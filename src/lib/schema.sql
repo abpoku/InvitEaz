@@ -84,11 +84,32 @@ CREATE TABLE IF NOT EXISTS invitees (
   is_adult INTEGER NOT NULL DEFAULT 1,
   plus_one_policy TEXT,  -- overrides event default when set: none | one | multiple
   notes TEXT,
+  custom_fields TEXT,     -- JSON object of {fieldKey: value} for planner-defined custom invitee fields
   active INTEGER NOT NULL DEFAULT 1,
   created_at TEXT NOT NULL DEFAULT to_char(now() AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')
 );
 CREATE INDEX IF NOT EXISTS idx_invitees_event ON invitees(event_id);
 CREATE INDEX IF NOT EXISTS idx_invitees_group ON invitees(group_id);
+-- Additive migrations for columns introduced after the initial CREATE TABLE (safe to re-run).
+ALTER TABLE invitees ADD COLUMN IF NOT EXISTS custom_fields TEXT;
+ALTER TABLE events ADD COLUMN IF NOT EXISTS invitee_name_format TEXT NOT NULL DEFAULT 'first_last'; -- first_last | full
+
+CREATE TABLE IF NOT EXISTS invitee_fields (
+  id TEXT PRIMARY KEY,
+  event_id TEXT NOT NULL REFERENCES events(id) ON DELETE CASCADE,
+  key TEXT NOT NULL,      -- stable identifier: 'email' | 'phone' | 'group' | 'is_adult' | 'plus_one_policy' | 'notes' | custom slug
+  label TEXT NOT NULL,
+  kind TEXT NOT NULL DEFAULT 'custom',       -- core | custom
+  field_type TEXT NOT NULL DEFAULT 'text',   -- text | email | phone | number | date | dropdown | checkbox
+  options_json TEXT,      -- JSON array of strings for dropdown fields
+  required INTEGER NOT NULL DEFAULT 0,
+  collect_at_signup INTEGER NOT NULL DEFAULT 1, -- shown on the public self-signup form
+  order_index INTEGER NOT NULL DEFAULT 0,
+  active INTEGER NOT NULL DEFAULT 1,  -- soft-disable: hidden from new forms, historical values kept
+  created_at TEXT NOT NULL DEFAULT to_char(now() AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')
+);
+CREATE INDEX IF NOT EXISTS idx_invitee_fields_event ON invitee_fields(event_id);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_invitee_fields_event_key ON invitee_fields(event_id, key);
 
 CREATE TABLE IF NOT EXISTS invitations (
   id TEXT PRIMARY KEY,

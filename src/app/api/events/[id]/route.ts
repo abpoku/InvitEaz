@@ -27,7 +27,7 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
     "name", "description", "event_date", "event_time", "end_time", "location_type", "venue_name",
     "address", "city", "state", "zip", "country", "meeting_url", "meeting_instructions",
     "organizer_name", "organizer_contact", "website", "dress_code", "instructions",
-    "rsvp_deadline", "visibility", "group_rsvp_mode", "default_plus_one_policy", "theme",
+    "rsvp_deadline", "visibility", "group_rsvp_mode", "default_plus_one_policy", "theme", "invitee_name_format",
   ]) {
     if (body[key] !== undefined) patch[key] = body[key];
   }

@@ -7,6 +7,7 @@ import { getUserById, PLAN_LIMITS } from "@/lib/models/users";
 interface Row {
   firstName: string; lastName: string; email: string; phone: string;
   groupName: string; groupLeader: boolean; isAdult: boolean; plusOneAllowed: string; notes: string;
+  customFields?: Record<string, string>;
 }
 
 export async function POST(req: Request, { params }: { params: { id: string } }) {
@@ -54,6 +55,7 @@ export async function POST(req: Request, { params }: { params: { id: string } })
       plusOnePolicy: (row.plusOneAllowed as any) || null,
       notes: row.notes || undefined,
       groupId,
+      customFields: row.customFields,
     });
     created += 1;
 

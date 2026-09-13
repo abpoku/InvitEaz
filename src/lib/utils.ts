@@ -83,3 +83,9 @@ export function formatDateTime(iso: string): string {
 export function initials(first: string, last: string): string {
   return `${(first || "?")[0] ?? ""}${(last || "")[0] ?? ""}`.toUpperCase();
 }
+
+/** Joins first/last name parts, tolerating an empty last name (events using "full name" mode
+ * store the whole name in first_name and leave last_name blank). */
+export function fullName(first: string, last: string): string {
+  return [first, last].filter(Boolean).join(" ");
+}

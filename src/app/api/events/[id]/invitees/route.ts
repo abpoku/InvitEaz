@@ -4,16 +4,18 @@ import { requireEventRole } from "@/lib/session";
 import { createInvitee, listInvitees, countActiveInvitees } from "@/lib/models/invitees";
 import { getUserById, PLAN_LIMITS } from "@/lib/models/users";
 import { getEventById, logAudit } from "@/lib/models/events";
+import { fullName } from "@/lib/utils";
 
 const schema = z.object({
   firstName: z.string().min(1),
-  lastName: z.string().min(1),
+  lastName: z.string().optional().default(""),
   email: z.string().email().optional().or(z.literal("")),
   phone: z.string().optional(),
   isAdult: z.boolean().optional(),
   plusOnePolicy: z.enum(["none", "one", "multiple"]).nullable().optional(),
   notes: z.string().optional(),
   groupId: z.string().nullable().optional(),
+  customFields: z.record(z.string()).optional(),
 });
 
 export async function GET(_req: Request, { params }: { params: { id: string } }) {
@@ -40,6 +42,6 @@ export async function POST(req: Request, { params }: { params: { id: string } })
   if (!parsed.success) return NextResponse.json({ error: parsed.error.issues[0].message }, { status: 400 });
 
   const { invitee, invitation } = await createInvitee(params.id, { ...parsed.data, email: parsed.data.email || undefined });
-  await logAudit(params.id, access.user.email, "invitee.added", `${invitee.first_name} ${invitee.last_name}`);
+  await logAudit(params.id, access.user.email, "invitee.added", fullName(invitee.first_name, invitee.last_name));
   return NextResponse.json({ invitee: { ...invitee, token: invitation.token, status: invitation.status } });
 }

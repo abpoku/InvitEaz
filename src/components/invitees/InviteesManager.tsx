@@ -1,9 +1,26 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 import { StatusBadge } from "@/components/StatusBadge";
 import { AddInviteeModal } from "@/components/invitees/AddInviteeModal";
 import { UploadModal } from "@/components/invitees/UploadModal";
+import { FieldsManagerModal } from "@/components/invitees/FieldsManagerModal";
+import { fullName } from "@/lib/utils";
+import type { InviteeFieldType } from "@/lib/models/invitee-fields";
+
+export interface InviteeField {
+  id: string;
+  key: string;
+  label: string;
+  kind: "core" | "custom";
+  field_type: InviteeFieldType;
+  options_json: string | null;
+  required: number;
+  collect_at_signup: number;
+  order_index: number;
+  active: number;
+}
 
 export interface InviteeRow {
   id: string;
@@ -16,24 +33,48 @@ export interface InviteeRow {
   is_adult: number;
   plus_one_policy: string | null;
   notes: string | null;
+  custom_fields: string | null;
   token: string;
   status: string;
 }
 
-export function InviteesManager({ eventId, groupRsvpMode }: { eventId: string; groupRsvpMode: string }) {
+function fieldValue(field: InviteeField, i: InviteeRow): string {
+  switch (field.key) {
+    case "email": return i.email || "—";
+    case "phone": return i.phone || "—";
+    case "group": return i.group_name || "—";
+    case "is_adult": return i.is_adult ? "Adult" : "Child";
+    case "plus_one_policy": return i.plus_one_policy || "—";
+    case "notes": return i.notes || "—";
+    default: {
+      const custom = i.custom_fields ? JSON.parse(i.custom_fields) : {};
+      return custom[field.key] || "—";
+    }
+  }
+}
+
+export function InviteesManager({ eventId, groupRsvpMode, nameFormat }: { eventId: string; groupRsvpMode: string; nameFormat: "first_last" | "full" }) {
+  const router = useRouter();
   const [invitees, setInvitees] = useState<InviteeRow[]>([]);
+  const [fields, setFields] = useState<InviteeField[]>([]);
   const [loading, setLoading] = useState(true);
   const [query, setQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
   const [showAdd, setShowAdd] = useState(false);
   const [showUpload, setShowUpload] = useState(false);
+  const [showFields, setShowFields] = useState(false);
   const [copiedId, setCopiedId] = useState<string | null>(null);
 
   async function load() {
     setLoading(true);
-    const res = await fetch(`/api/events/${eventId}/invitees`);
-    const data = await res.json();
-    setInvitees(data.invitees || []);
+    const [inviteesRes, fieldsRes] = await Promise.all([
+      fetch(`/api/events/${eventId}/invitees`),
+      fetch(`/api/events/${eventId}/invitee-fields`),
+    ]);
+    const inviteesData = await inviteesRes.json();
+    const fieldsData = await fieldsRes.json();
+    setInvitees(inviteesData.invitees || []);
+    setFields((fieldsData.fields || []).filter((f: InviteeField) => f.active).sort((a: InviteeField, b: InviteeField) => a.order_index - b.order_index));
     setLoading(false);
   }
 
@@ -50,7 +91,7 @@ export function InviteesManager({ eventId, groupRsvpMode }: { eventId: string; g
       if (!query) return true;
       const q = query.toLowerCase();
       return (
-        `${i.first_name} ${i.last_name}`.toLowerCase().includes(q) ||
+        fullName(i.first_name, i.last_name).toLowerCase().includes(q) ||
         (i.email || "").toLowerCase().includes(q) ||
         (i.group_name || "").toLowerCase().includes(q)
       );
@@ -88,7 +129,8 @@ export function InviteesManager({ eventId, groupRsvpMode }: { eventId: string; g
           </select>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
-          <a href="/inviteaz-invitee-template.csv" download className="btn-ghost">Download template</a>
+          <button onClick={() => setShowFields(true)} className="btn-ghost">Manage fields</button>
+          <a href={`/api/events/${eventId}/invitees/template`} download className="btn-ghost">Download template</a>
           <button onClick={() => setShowUpload(true)} className="btn-secondary">Upload spreadsheet</button>
           <button onClick={() => setShowAdd(true)} className="btn-primary">+ Add invitee</button>
         </div>
@@ -106,8 +148,9 @@ export function InviteesManager({ eventId, groupRsvpMode }: { eventId: string; g
             <thead>
               <tr className="border-b border-paper-line text-left text-ink-faint">
                 <th className="px-5 py-3 font-medium">Name</th>
-                <th className="px-5 py-3 font-medium">Contact</th>
-                <th className="px-5 py-3 font-medium">Group</th>
+                {fields.map((f) => (
+                  <th key={f.id} className="px-5 py-3 font-medium whitespace-nowrap">{f.label}</th>
+                ))}
                 <th className="px-5 py-3 font-medium">Status</th>
                 <th className="px-5 py-3 font-medium">RSVP link</th>
                 <th className="px-5 py-3"></th>
@@ -117,11 +160,11 @@ export function InviteesManager({ eventId, groupRsvpMode }: { eventId: string; g
               {filtered.map((i) => (
                 <tr key={i.id} className="border-b border-paper-line last:border-0 hover:bg-paper-soft/40">
                   <td className="px-5 py-3">
-                    <p className="text-ink">{i.first_name} {i.last_name}</p>
-                    {!i.is_adult && <span className="text-xs text-ink-faint">Child</span>}
+                    <p className="text-ink">{fullName(i.first_name, i.last_name)}</p>
                   </td>
-                  <td className="px-5 py-3 text-ink-soft">{i.email || i.phone || "—"}</td>
-                  <td className="px-5 py-3 text-ink-soft">{i.group_name || "—"}</td>
+                  {fields.map((f) => (
+                    <td key={f.id} className="px-5 py-3 text-ink-soft whitespace-nowrap">{fieldValue(f, i)}</td>
+                  ))}
                   <td className="px-5 py-3"><StatusBadge status={i.status} /></td>
                   <td className="px-5 py-3">
                     <button onClick={() => copyLink(i)} className="text-wine-500 hover:underline text-xs font-medium">
@@ -146,6 +189,8 @@ export function InviteesManager({ eventId, groupRsvpMode }: { eventId: string; g
         <AddInviteeModal
           eventId={eventId}
           groupRsvpMode={groupRsvpMode}
+          nameFormat={nameFormat}
+          fields={fields}
           onClose={() => setShowAdd(false)}
           onAdded={() => {
             setShowAdd(false);
@@ -161,6 +206,14 @@ export function InviteesManager({ eventId, groupRsvpMode }: { eventId: string; g
             setShowUpload(false);
             load();
           }}
+        />
+      )}
+      {showFields && (
+        <FieldsManagerModal
+          eventId={eventId}
+          nameFormat={nameFormat}
+          onClose={() => { setShowFields(false); load(); router.refresh(); }}
+          onChanged={() => { load(); router.refresh(); }}
         />
       )}
     </div>

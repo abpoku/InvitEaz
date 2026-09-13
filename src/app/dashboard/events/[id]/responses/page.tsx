@@ -1,6 +1,6 @@
 import { listResponsesForEvent, listQuestions, getAnswersForResponse } from "@/lib/models/rsvp";
 import { StatusBadge } from "@/components/StatusBadge";
-import { formatDateTime } from "@/lib/utils";
+import { formatDateTime, fullName } from "@/lib/utils";
 
 export default async function ResponsesPage({ params }: { params: { id: string } }) {
   const questions = await listQuestions(params.id);
@@ -42,7 +42,7 @@ export default async function ResponsesPage({ params }: { params: { id: string }
               {responsesWithAnswers.map(({ response: r, answers }) => {
                 return (
                   <tr key={r.id} className="border-b border-paper-line last:border-0 hover:bg-paper-soft/40">
-                    <td className="px-5 py-3 text-ink whitespace-nowrap">{r.first_name} {r.last_name}</td>
+                    <td className="px-5 py-3 text-ink whitespace-nowrap">{fullName(r.first_name, r.last_name)}</td>
                     <td className="px-5 py-3"><StatusBadge status={r.attending ? "attending" : "declined"} /></td>
                     <td className="px-5 py-3 text-ink-soft">{r.attending ? r.num_attending : "—"}</td>
                     {questions.map((q) => (

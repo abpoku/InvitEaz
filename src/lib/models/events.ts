@@ -7,6 +7,7 @@ export type Visibility = "invite_only" | "public" | "hybrid";
 export type GroupRsvpMode = "group" | "individual" | "primary_contact";
 export type PlusOnePolicy = "none" | "one" | "multiple";
 export type Role = "owner" | "admin" | "viewer";
+export type InviteeNameFormat = "first_last" | "full";
 
 export interface EventRow {
   id: string;
@@ -41,6 +42,7 @@ export interface EventRow {
   default_plus_one_policy: PlusOnePolicy;
   cancellation_message: string | null;
   theme: string;
+  invitee_name_format: InviteeNameFormat;
   created_at: string;
   updated_at: string;
 }
@@ -144,7 +146,7 @@ export async function updateEvent(id: string, patch: Partial<EventRow>) {
     "address", "city", "state", "zip", "country", "meeting_url", "meeting_instructions", "image_url",
     "organizer_name", "organizer_contact", "website", "dress_code", "instructions", "rsvp_deadline",
     "rsvp_deadline_is_custom", "status", "visibility", "group_rsvp_mode", "default_plus_one_policy",
-    "cancellation_message", "theme", "rsvp_reopened",
+    "cancellation_message", "theme", "rsvp_reopened", "invitee_name_format",
   ];
   const keys = Object.keys(patch).filter((k) => allowed.includes(k));
   if (keys.length === 0) return;
