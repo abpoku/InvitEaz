@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 
-interface Member { id: string; role: string; status: string; invited_email: string; first_name: string | null; last_name: string | null; email: string | null; }
+interface Member { id: string; role: string; status: string; invited_email: string; first_name: string | null; last_name: string | null; email: string | null; assembly_name: string | null; }
 
 export function CoPlannersPanel({ eventId, members, isOwner }: { eventId: string; members: Member[]; isOwner: boolean }) {
   const router = useRouter();
@@ -40,7 +40,7 @@ export function CoPlannersPanel({ eventId, members, isOwner }: { eventId: string
   return (
     <div className="card p-6">
       <p className="font-serif text-lg text-ink">Co-planners</p>
-      <p className="mt-1 text-sm text-ink-soft">Admins can edit everything except billing and deletion. Viewers can see responses and reports only.</p>
+      <p className="mt-1 text-sm text-ink-soft">Admins can edit everything except billing and deletion. Viewers can see responses and reports only. Lead planners are scoped to one assembly — assign them from the Assemblies tab.</p>
 
       <div className="mt-4 divide-y divide-paper-line">
         {members.map((m) => (
@@ -50,7 +50,9 @@ export function CoPlannersPanel({ eventId, members, isOwner }: { eventId: string
               <p className="text-xs text-ink-faint truncate">{m.email || m.invited_email} · {m.status === "pending" ? "invited, awaiting sign-up" : "active"}</p>
             </div>
             <div className="flex items-center gap-3 shrink-0">
-              <span className="chip bg-ink/[0.06] text-ink-soft capitalize">{m.role}</span>
+              <span className="chip bg-ink/[0.06] text-ink-soft capitalize">
+                {m.role === "lead_planner" ? `Lead planner${m.assembly_name ? ` · ${m.assembly_name}` : ""}` : m.role}
+              </span>
               {isOwner && m.role !== "owner" && (
                 <button onClick={() => remove(m.id)} className="text-ink-faint hover:text-clay-600 text-xs">Remove</button>
               )}

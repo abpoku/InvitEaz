@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
-import { requireEventRole } from "@/lib/session";
+import { requireAssemblyScope } from "@/lib/session";
 import { getEventById, logAudit } from "@/lib/models/events";
 import { createGroup, createInvitee, countActiveInvitees, setGroupLeader, listGroups } from "@/lib/models/invitees";
+import { getAssembly } from "@/lib/models/assemblies";
 import { getUserById, PLAN_LIMITS } from "@/lib/models/users";
 
 interface Row {
@@ -11,8 +12,9 @@ interface Row {
 }
 
 export async function POST(req: Request, { params }: { params: { id: string } }) {
-  const access = await requireEventRole(params.id, "admin");
+  const access = await requireAssemblyScope(params.id);
   if (!access.ok) return NextResponse.json({ error: access.message }, { status: access.status });
+  if (access.role === "viewer") return NextResponse.json({ error: "You don't have permission to do this." }, { status: 403 });
 
   const event = await getEventById(params.id);
   if (!event) return NextResponse.json({ error: "Event not found." }, { status: 404 });
@@ -20,6 +22,13 @@ export async function POST(req: Request, { params }: { params: { id: string } })
   const body = await req.json();
   const rows: Row[] = body.rows || [];
   if (rows.length === 0) return NextResponse.json({ error: "Nothing to import." }, { status: 400 });
+
+  let assemblyId: string | null = access.assemblyId;
+  if (!assemblyId && body.assemblyId) {
+    const assembly = await getAssembly(body.assemblyId);
+    if (!assembly || assembly.event_id !== params.id) return NextResponse.json({ error: "Assembly not found." }, { status: 404 });
+    assemblyId = assembly.id;
+  }
 
   const owner = (await getUserById(event.owner_id))!;
   const limit = PLAN_LIMITS[owner.plan].inviteesPerEvent;
@@ -31,7 +40,14 @@ export async function POST(req: Request, { params }: { params: { id: string } })
     );
   }
 
-  const existingGroups = new Map((await listGroups(params.id)).map((g) => [g.name.toLowerCase(), g]));
+  // listGroups(id, null) means "no filter" (used elsewhere for a full-scope planner's view), but
+  // here a null assemblyId specifically means "importing as unassigned" — so match only groups
+  // that are themselves unassigned, not every group across every assembly.
+  const existingGroups = new Map(
+    (await listGroups(params.id))
+      .filter((g) => g.assembly_id === assemblyId)
+      .map((g) => [g.name.toLowerCase(), g])
+  );
   let created = 0;
 
   for (const row of rows) {
@@ -40,7 +56,7 @@ export async function POST(req: Request, { params }: { params: { id: string } })
       const key = row.groupName.toLowerCase();
       let group = existingGroups.get(key);
       if (!group) {
-        group = await createGroup(params.id, row.groupName);
+        group = await createGroup(params.id, row.groupName, assemblyId);
         existingGroups.set(key, group);
       }
       groupId = group.id;
@@ -55,6 +71,7 @@ export async function POST(req: Request, { params }: { params: { id: string } })
       plusOnePolicy: (row.plusOneAllowed as any) || null,
       notes: row.notes || undefined,
       groupId,
+      assemblyId,
       customFields: row.customFields,
     });
     created += 1;

@@ -22,6 +22,8 @@ export interface InviteeField {
   active: number;
 }
 
+export interface Assembly { id: string; name: string; }
+
 export interface InviteeRow {
   id: string;
   first_name: string;
@@ -30,6 +32,8 @@ export interface InviteeRow {
   phone: string | null;
   group_name: string | null;
   group_id: string | null;
+  assembly_id: string | null;
+  assembly_name: string | null;
   is_adult: number;
   plus_one_policy: string | null;
   notes: string | null;
@@ -57,9 +61,11 @@ export function InviteesManager({ eventId, groupRsvpMode, nameFormat }: { eventI
   const router = useRouter();
   const [invitees, setInvitees] = useState<InviteeRow[]>([]);
   const [fields, setFields] = useState<InviteeField[]>([]);
+  const [assemblies, setAssemblies] = useState<Assembly[]>([]);
   const [loading, setLoading] = useState(true);
   const [query, setQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
+  const [assemblyFilter, setAssemblyFilter] = useState("all");
   const [showAdd, setShowAdd] = useState(false);
   const [showUpload, setShowUpload] = useState(false);
   const [showFields, setShowFields] = useState(false);
@@ -67,14 +73,17 @@ export function InviteesManager({ eventId, groupRsvpMode, nameFormat }: { eventI
 
   async function load() {
     setLoading(true);
-    const [inviteesRes, fieldsRes] = await Promise.all([
+    const [inviteesRes, fieldsRes, assembliesRes] = await Promise.all([
       fetch(`/api/events/${eventId}/invitees`),
       fetch(`/api/events/${eventId}/invitee-fields`),
+      fetch(`/api/events/${eventId}/assemblies`),
     ]);
     const inviteesData = await inviteesRes.json();
     const fieldsData = await fieldsRes.json();
     setInvitees(inviteesData.invitees || []);
     setFields((fieldsData.fields || []).filter((f: InviteeField) => f.active).sort((a: InviteeField, b: InviteeField) => a.order_index - b.order_index));
+    // 403 for a lead planner (or a network hiccup) just means no assembly filter/picker — not fatal.
+    setAssemblies(assembliesRes.ok ? (await assembliesRes.json()).assemblies || [] : []);
     setLoading(false);
   }
 
@@ -88,6 +97,8 @@ export function InviteesManager({ eventId, groupRsvpMode, nameFormat }: { eventI
         if (statusFilter === "no_response" && ["attending", "declined"].includes(i.status)) return false;
         if (statusFilter !== "no_response" && i.status !== statusFilter) return false;
       }
+      if (assemblyFilter === "unassigned" && i.assembly_id) return false;
+      if (assemblyFilter !== "all" && assemblyFilter !== "unassigned" && i.assembly_id !== assemblyFilter) return false;
       if (!query) return true;
       const q = query.toLowerCase();
       return (
@@ -96,7 +107,7 @@ export function InviteesManager({ eventId, groupRsvpMode, nameFormat }: { eventI
         (i.group_name || "").toLowerCase().includes(q)
       );
     });
-  }, [invitees, query, statusFilter]);
+  }, [invitees, query, statusFilter, assemblyFilter]);
 
   async function removeInvitee(id: string) {
     if (!confirm("Remove this invitee? Their RSVP history will be preserved for your records.")) return;
@@ -127,6 +138,13 @@ export function InviteesManager({ eventId, groupRsvpMode, nameFormat }: { eventI
             <option value="declined">Declined</option>
             <option value="no_response">No response</option>
           </select>
+          {assemblies.length > 0 && (
+            <select className="input max-w-[200px]" value={assemblyFilter} onChange={(e) => setAssemblyFilter(e.target.value)}>
+              <option value="all">All assemblies</option>
+              <option value="unassigned">Unassigned</option>
+              {assemblies.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
+            </select>
+          )}
         </div>
         <div className="flex items-center gap-2 flex-wrap">
           <button onClick={() => setShowFields(true)} className="btn-ghost">Manage fields</button>
@@ -148,6 +166,7 @@ export function InviteesManager({ eventId, groupRsvpMode, nameFormat }: { eventI
             <thead>
               <tr className="border-b border-paper-line text-left text-ink-faint">
                 <th className="px-5 py-3 font-medium">Name</th>
+                {assemblies.length > 0 && <th className="px-5 py-3 font-medium whitespace-nowrap">Assembly</th>}
                 {fields.map((f) => (
                   <th key={f.id} className="px-5 py-3 font-medium whitespace-nowrap">{f.label}</th>
                 ))}
@@ -162,6 +181,9 @@ export function InviteesManager({ eventId, groupRsvpMode, nameFormat }: { eventI
                   <td className="px-5 py-3">
                     <p className="text-ink">{fullName(i.first_name, i.last_name)}</p>
                   </td>
+                  {assemblies.length > 0 && (
+                    <td className="px-5 py-3 text-ink-soft whitespace-nowrap">{i.assembly_name || "—"}</td>
+                  )}
                   {fields.map((f) => (
                     <td key={f.id} className="px-5 py-3 text-ink-soft whitespace-nowrap">{fieldValue(f, i)}</td>
                   ))}
@@ -191,6 +213,7 @@ export function InviteesManager({ eventId, groupRsvpMode, nameFormat }: { eventI
           groupRsvpMode={groupRsvpMode}
           nameFormat={nameFormat}
           fields={fields}
+          assemblies={assemblies}
           onClose={() => setShowAdd(false)}
           onAdded={() => {
             setShowAdd(false);

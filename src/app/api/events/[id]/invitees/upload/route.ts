@@ -1,13 +1,15 @@
 import { NextResponse } from "next/server";
-import { requireEventRole } from "@/lib/session";
+import { requireAssemblyScope } from "@/lib/session";
 import { parseFileToRecords } from "@/lib/csv-import";
 import { guessColumnMap, validateRecords, findDuplicateRowNumbers } from "@/lib/invitee-field-matching";
 import { listInviteeFields } from "@/lib/models/invitee-fields";
 import { getEventById } from "@/lib/models/events";
+import { listAssemblies } from "@/lib/models/assemblies";
 
 export async function POST(req: Request, { params }: { params: { id: string } }) {
-  const access = await requireEventRole(params.id, "admin");
+  const access = await requireAssemblyScope(params.id);
   if (!access.ok) return NextResponse.json({ error: access.message }, { status: access.status });
+  if (access.role === "viewer") return NextResponse.json({ error: "You don't have permission to do this." }, { status: 403 });
 
   const event = await getEventById(params.id);
   if (!event) return NextResponse.json({ error: "Event not found." }, { status: 404 });
@@ -37,12 +39,17 @@ export async function POST(req: Request, { params }: { params: { id: string } })
   const invalid = withDupes.filter((r) => r.errors.length > 0);
   const duplicates = withDupes.filter((r) => r.isDuplicate && r.errors.length === 0);
 
+  // A full-scope planner can choose which assembly to import into; a lead planner's imports
+  // always land in their own assembly, so they aren't offered a choice.
+  const assemblies = access.assemblyId ? [] : await listAssemblies(params.id);
+
   return NextResponse.json({
     headers,
     records,
     fields,
     nameFormat: event.invitee_name_format,
     columnMap,
+    assemblies,
     total: rows.length,
     validCount: valid.length,
     invalidCount: invalid.length,

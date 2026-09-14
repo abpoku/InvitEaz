@@ -1,4 +1,4 @@
-import { requireEventRole } from "@/lib/session";
+import { requireAssemblyScope } from "@/lib/session";
 import { listInvitees } from "@/lib/models/invitees";
 import { listInviteeFields } from "@/lib/models/invitee-fields";
 import { getEventById } from "@/lib/models/events";
@@ -11,13 +11,13 @@ function csvEscape(v: any): string {
 }
 
 export async function GET(_req: Request, { params }: { params: { id: string } }) {
-  const access = await requireEventRole(params.id, "viewer");
+  const access = await requireAssemblyScope(params.id);
   if (!access.ok) return new Response(access.message, { status: access.status });
 
   const event = await getEventById(params.id);
   if (!event) return new Response("Event not found.", { status: 404 });
 
-  const invitees = await listInvitees(params.id);
+  const invitees = await listInvitees(params.id, access.assemblyId);
   const fields = (await listInviteeFields(params.id)).filter((f) => f.active);
 
   const nameHeaders = event.invitee_name_format === "full" ? ["Name"] : ["First Name", "Last Name"];

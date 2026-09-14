@@ -1,4 +1,4 @@
-import { requireEventRole } from "@/lib/session";
+import { requireAssemblyScope } from "@/lib/session";
 import { listResponsesForEvent, listQuestions, getAnswersForResponse } from "@/lib/models/rsvp";
 
 function csvEscape(v: any): string {
@@ -8,11 +8,11 @@ function csvEscape(v: any): string {
 }
 
 export async function GET(_req: Request, { params }: { params: { id: string } }) {
-  const access = await requireEventRole(params.id, "viewer");
+  const access = await requireAssemblyScope(params.id);
   if (!access.ok) return new Response(access.message, { status: access.status });
 
   const questions = await listQuestions(params.id);
-  const responses = (await listResponsesForEvent(params.id)) as any[];
+  const responses = (await listResponsesForEvent(params.id, access.assemblyId)) as any[];
 
   const headers = ["First Name", "Last Name", "Attending", "Number Attending", "Guest Names", "Responded At", ...questions.map((q) => q.label)];
   const lines = [headers.join(",")];

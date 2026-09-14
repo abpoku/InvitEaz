@@ -2,16 +2,17 @@
 
 import { useState } from "react";
 import { Modal } from "@/components/Modal";
-import type { InviteeField } from "@/components/invitees/InviteesManager";
+import type { InviteeField, Assembly } from "@/components/invitees/InviteesManager";
 
 export function AddInviteeModal({
-  eventId, groupRsvpMode, nameFormat, fields, onClose, onAdded,
+  eventId, groupRsvpMode, nameFormat, fields, assemblies, onClose, onAdded,
 }: {
-  eventId: string; groupRsvpMode: string; nameFormat: "first_last" | "full"; fields: InviteeField[];
+  eventId: string; groupRsvpMode: string; nameFormat: "first_last" | "full"; fields: InviteeField[]; assemblies: Assembly[];
   onClose: () => void; onAdded: () => void;
 }) {
   const [firstName, setFirstName] = useState("");
   const [lastName, setLastName] = useState("");
+  const [assemblyId, setAssemblyId] = useState("");
   const [core, setCore] = useState<Record<string, string>>({});
   const [customFields, setCustomFields] = useState<Record<string, string>>({});
   const [error, setError] = useState<string | null>(null);
@@ -51,7 +52,7 @@ export function AddInviteeModal({
       const gRes = await fetch(`/api/events/${eventId}/groups`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: core.group }),
+        body: JSON.stringify({ name: core.group, assemblyId: assemblyId || undefined }),
       });
       if (gRes.ok) {
         const gData = await gRes.json();
@@ -71,6 +72,7 @@ export function AddInviteeModal({
         plusOnePolicy: (core.plus_one_policy as any) || null,
         notes: core.notes || undefined,
         groupId,
+        assemblyId: assemblyId || null,
         customFields: Object.keys(customFields).length ? customFields : undefined,
       }),
     });
@@ -103,6 +105,16 @@ export function AddInviteeModal({
               <label className="label">Last name</label>
               <input className="input" required value={lastName} onChange={(e) => setLastName(e.target.value)} />
             </div>
+          </div>
+        )}
+
+        {assemblies.length > 0 && (
+          <div>
+            <label className="label">Assembly <span className="text-ink-faint font-normal">(optional)</span></label>
+            <select className="input" value={assemblyId} onChange={(e) => setAssemblyId(e.target.value)}>
+              <option value="">Unassigned</option>
+              {assemblies.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
+            </select>
           </div>
         )}
 

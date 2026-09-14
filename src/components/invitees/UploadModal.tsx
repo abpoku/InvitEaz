@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { Modal } from "@/components/Modal";
 import { validateRecords, findDuplicateRowNumbers, type MappedInviteeRow } from "@/lib/invitee-field-matching";
-import type { InviteeField } from "@/components/invitees/InviteesManager";
+import type { InviteeField, Assembly } from "@/components/invitees/InviteesManager";
 
 interface PreviewResult {
   total: number; validCount: number; invalidCount: number; duplicateCount: number;
@@ -26,6 +26,8 @@ export function UploadModal({ eventId, onClose, onImported }: { eventId: string;
   const [fields, setFields] = useState<InviteeField[]>([]);
   const [nameFormat, setNameFormat] = useState<"first_last" | "full">("first_last");
   const [columnMap, setColumnMap] = useState<Record<string, string>>({});
+  const [assemblies, setAssemblies] = useState<Assembly[]>([]);
+  const [assemblyId, setAssemblyId] = useState("");
   const [preview, setPreview] = useState<PreviewResult | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -59,6 +61,7 @@ export function UploadModal({ eventId, onClose, onImported }: { eventId: string;
     setFields(data.fields);
     setNameFormat(data.nameFormat);
     setColumnMap(data.columnMap);
+    setAssemblies(data.assemblies || []);
 
     const everyHeaderMatched = data.headers.every((h: string) => data.columnMap[h]);
     if (everyHeaderMatched && data.invalidCount === 0) {
@@ -82,7 +85,7 @@ export function UploadModal({ eventId, onClose, onImported }: { eventId: string;
     const res = await fetch(`/api/events/${eventId}/invitees/upload/confirm`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ rows: preview.valid }),
+      body: JSON.stringify({ rows: preview.valid, assemblyId: assemblyId || undefined }),
     });
     const data = await res.json();
     setBusy(false);
@@ -178,6 +181,16 @@ export function UploadModal({ eventId, onClose, onImported }: { eventId: string;
             <span className="text-clay-600">{preview.invalidCount} with errors</span>,{" "}
             <span className="text-brass-600">{preview.duplicateCount} duplicates</span>.
           </p>
+
+          {assemblies.length > 0 && (
+            <div className="mt-3">
+              <label className="label">Import into assembly <span className="text-ink-faint font-normal">(optional)</span></label>
+              <select className="input max-w-xs" value={assemblyId} onChange={(e) => setAssemblyId(e.target.value)}>
+                <option value="">Unassigned</option>
+                {assemblies.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
+              </select>
+            </div>
+          )}
 
           {preview.invalidCount + preview.duplicateCount > 0 && (
             <div className="mt-3 flex flex-wrap items-center justify-between gap-2 rounded border border-brass-200 bg-brass-50 px-4 py-2.5">

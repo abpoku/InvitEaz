@@ -125,7 +125,7 @@ export async function submitResponse(input: {
   return (await queryOne<ResponseRow>("SELECT * FROM rsvp_responses WHERE id = ?", [id]))!;
 }
 
-export async function listResponsesForEvent(eventId: string) {
+export async function listResponsesForEvent(eventId: string, assemblyId?: string | null) {
   return query(
     `SELECT r.*, iv.first_name, iv.last_name, iv.email as invitee_email, i.token
      FROM rsvp_responses r
@@ -136,20 +136,24 @@ export async function listResponsesForEvent(eventId: string) {
        WHERE r2.invitation_id = r.invitation_id
        ORDER BY r2.responded_at DESC LIMIT 1
      )
+     ${assemblyId ? "AND iv.assembly_id = ?" : ""}
      ORDER BY r.responded_at DESC`,
-    [eventId]
+    assemblyId ? [eventId, assemblyId] : [eventId]
   );
 }
 
-export async function questionReport(eventId: string, questionId: string): Promise<{ value: string; count: number }[]> {
+export async function questionReport(eventId: string, questionId: string, assemblyId?: string | null): Promise<{ value: string; count: number }[]> {
   const rows = await query<{ value: string; count: string }>(
     `SELECT a.value, COUNT(*) as count FROM rsvp_answers a
      JOIN rsvp_responses r ON r.id = a.response_id
+     JOIN invitations i ON i.id = r.invitation_id
+     LEFT JOIN invitees iv ON iv.id = i.invitee_id
      WHERE a.question_id = ? AND r.event_id = ? AND r.id IN (
        SELECT r2.id FROM rsvp_responses r2 WHERE r2.invitation_id = r.invitation_id ORDER BY r2.responded_at DESC LIMIT 1
      )
+     ${assemblyId ? "AND iv.assembly_id = ?" : ""}
      GROUP BY a.value ORDER BY count DESC`,
-    [questionId, eventId]
+    assemblyId ? [questionId, eventId, assemblyId] : [questionId, eventId]
   );
   // Postgres returns COUNT(*) as a string (bigint) to avoid precision loss — convert to number.
   return rows.map((r) => ({ value: r.value, count: Number(r.count) }));

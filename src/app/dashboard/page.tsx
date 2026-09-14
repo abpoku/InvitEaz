@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { getCurrentUser } from "@/lib/session";
 import { listEventsForUser, getEventStats, computeEffectiveStatus } from "@/lib/models/events";
+import { getAssemblyStats, getAssembly } from "@/lib/models/assemblies";
 import { formatDateShort } from "@/lib/utils";
 import { StatusBadge } from "@/components/StatusBadge";
 import { PLAN_LIMITS } from "@/lib/models/users";
@@ -15,11 +16,13 @@ export default async function DashboardPage() {
 
   let totalInvitees = 0, totalConfirmed = 0, awaiting = 0;
   const rows = await Promise.all(events.map(async (e) => {
-    const stats = await getEventStats(e.id);
+    const isLeadPlanner = e.member_role === "lead_planner";
+    const stats = isLeadPlanner ? await getAssemblyStats(e.id, e.member_assembly_id) : await getEventStats(e.id);
+    const assembly = isLeadPlanner && e.member_assembly_id ? await getAssembly(e.member_assembly_id) : null;
     totalInvitees += stats.invited;
     totalConfirmed += stats.attending;
     awaiting += stats.noResponse;
-    return { event: e, stats };
+    return { event: e, stats, assemblyName: assembly?.name };
   }));
 
   const limits = PLAN_LIMITS[user!.plan];
@@ -57,16 +60,17 @@ export default async function DashboardPage() {
           <EmptyState />
         ) : (
           <div className="card divide-y divide-paper-line">
-            {rows.map(({ event, stats }) => (
+            {rows.map(({ event, stats, assemblyName }) => (
               <Link
                 key={event.id}
                 href={`/dashboard/events/${event.id}`}
                 className="flex items-center justify-between gap-4 px-4 sm:px-5 py-4 hover:bg-paper-soft/50 transition-colors"
               >
                 <div className="min-w-0">
-                  <div className="flex items-center gap-2.5">
+                  <div className="flex items-center gap-2.5 flex-wrap">
                     <p className="font-medium text-ink truncate">{event.name}</p>
                     <StatusBadge status={computeEffectiveStatus(event)} />
+                    {assemblyName && <span className="chip bg-wine-500/10 text-wine-600">{assemblyName}</span>}
                   </div>
                   <p className="mt-1 text-sm text-ink-faint">
                     {formatDateShort(event.event_date)} · {event.city || (event.location_type === "virtual" ? "Virtual" : "Location TBD")}

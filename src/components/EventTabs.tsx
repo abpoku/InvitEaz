@@ -3,24 +3,29 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
+import type { Role } from "@/lib/models/events";
 
 const TABS = [
-  { href: "", label: "Overview" },
-  { href: "/invitees", label: "Invitees" },
-  { href: "/rsvp-form", label: "RSVP form" },
-  { href: "/responses", label: "Responses" },
-  { href: "/messages", label: "Messages" },
-  { href: "/reports", label: "Reports" },
-  { href: "/settings", label: "Settings" },
+  { href: "", label: "Overview", masterOnly: false },
+  { href: "/invitees", label: "Invitees", masterOnly: false },
+  { href: "/assemblies", label: "Assemblies", masterOnly: true },
+  { href: "/rsvp-form", label: "RSVP form", masterOnly: true },
+  { href: "/responses", label: "Responses", masterOnly: false },
+  { href: "/messages", label: "Messages", masterOnly: false },
+  { href: "/reports", label: "Reports", masterOnly: false },
+  { href: "/settings", label: "Settings", masterOnly: true },
 ];
 
-export function EventTabs({ eventId }: { eventId: string }) {
+export function EventTabs({ eventId, role }: { eventId: string; role: Role }) {
   const pathname = usePathname();
   const base = `/dashboard/events/${eventId}`;
+  // Only the new lead_planner role loses these tabs — existing owner/admin/viewer behavior is unchanged.
+  const isLeadPlanner = role === "lead_planner";
+  const tabs = TABS.filter((t) => !t.masterOnly || !isLeadPlanner);
 
   return (
     <div className="flex items-center gap-1 overflow-x-auto">
-      {TABS.map((t) => {
+      {tabs.map((t) => {
         const href = `${base}${t.href}`;
         const active = pathname === href;
         return (

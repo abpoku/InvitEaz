@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { requireEventRole } from "@/lib/session";
 import { addCoPlanner, listMembers, getEventById, logAudit } from "@/lib/models/events";
+import { getAssembly } from "@/lib/models/assemblies";
 import { getUserById, PLAN_LIMITS } from "@/lib/models/users";
 
 export async function GET(_req: Request, { params }: { params: { id: string } }) {
@@ -22,10 +23,15 @@ export async function POST(req: Request, { params }: { params: { id: string } })
   }
 
   const body = await req.json();
-  if (!body.email || !body.role || !["admin", "viewer"].includes(body.role)) {
-    return NextResponse.json({ error: "Provide an email and a role of admin or viewer." }, { status: 400 });
+  if (!body.email || !body.role || !["admin", "viewer", "lead_planner"].includes(body.role)) {
+    return NextResponse.json({ error: "Provide an email and a role of admin, viewer, or lead planner." }, { status: 400 });
   }
-  await addCoPlanner(params.id, body.email, body.role);
+  if (body.role === "lead_planner") {
+    if (!body.assemblyId) return NextResponse.json({ error: "Choose an assembly for this lead planner." }, { status: 400 });
+    const assembly = await getAssembly(body.assemblyId);
+    if (!assembly || assembly.event_id !== params.id) return NextResponse.json({ error: "Assembly not found." }, { status: 404 });
+  }
+  await addCoPlanner(params.id, body.email, body.role, body.assemblyId);
   await logAudit(params.id, access.user.email, "planner.added", `${body.email} (${body.role})`);
   return NextResponse.json({ ok: true });
 }

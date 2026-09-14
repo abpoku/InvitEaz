@@ -1,10 +1,16 @@
 import { listResponsesForEvent, listQuestions, getAnswersForResponse } from "@/lib/models/rsvp";
+import { getMembership } from "@/lib/models/events";
+import { getCurrentUser } from "@/lib/session";
 import { StatusBadge } from "@/components/StatusBadge";
 import { formatDateTime, fullName } from "@/lib/utils";
 
 export default async function ResponsesPage({ params }: { params: { id: string } }) {
+  const user = await getCurrentUser();
+  const membership = await getMembership(params.id, user!.id);
+  const assemblyId = membership?.role === "lead_planner" ? membership.assembly_id : null;
+
   const questions = await listQuestions(params.id);
-  const responses = (await listResponsesForEvent(params.id)) as any[];
+  const responses = (await listResponsesForEvent(params.id, assemblyId)) as any[];
   const responsesWithAnswers = await Promise.all(
     responses.map(async (r) => ({
       response: r,

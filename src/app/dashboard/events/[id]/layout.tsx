@@ -2,6 +2,7 @@ import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { getCurrentUser } from "@/lib/session";
 import { getEventById, getMembership, computeEffectiveStatus, getEventStats } from "@/lib/models/events";
+import { getAssembly, getAssemblyStats } from "@/lib/models/assemblies";
 import { StatusBadge } from "@/components/StatusBadge";
 import { formatDateShort, formatTime } from "@/lib/utils";
 import { EventActions } from "@/components/EventActions";
@@ -17,7 +18,11 @@ export default async function EventLayout({ children, params }: { children: Reac
   const membership = await getMembership(params.id, user.id);
   if (!membership) notFound();
 
-  const stats = await getEventStats(params.id);
+  const isLeadPlanner = membership.role === "lead_planner";
+  const assembly = isLeadPlanner && membership.assembly_id ? await getAssembly(membership.assembly_id) : null;
+  const stats = isLeadPlanner
+    ? await getAssemblyStats(params.id, membership.assembly_id)
+    : await getEventStats(params.id);
   const status = computeEffectiveStatus(event);
 
   return (
@@ -29,6 +34,7 @@ export default async function EventLayout({ children, params }: { children: Reac
             <div className="flex items-center gap-2.5 flex-wrap">
               <h1 className="font-serif text-2xl text-ink break-words">{event.name}</h1>
               <StatusBadge status={status} />
+              {assembly && <span className="chip bg-wine-500/10 text-wine-600">{assembly.name}</span>}
             </div>
             <p className="mt-1 text-sm text-ink-soft">
               {formatDateShort(event.event_date)} at {formatTime(event.event_time)}
@@ -47,7 +53,7 @@ export default async function EventLayout({ children, params }: { children: Reac
         </div>
 
         <nav className="mt-6 -mb-6">
-          <EventTabs eventId={params.id} />
+          <EventTabs eventId={params.id} role={membership.role} />
         </nav>
       </div>
       <div>{children}</div>

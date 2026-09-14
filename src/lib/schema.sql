@@ -52,31 +52,46 @@ CREATE TABLE IF NOT EXISTS events (
 );
 CREATE INDEX IF NOT EXISTS idx_events_owner ON events(owner_id);
 
+-- Assemblies partition a single event's guest list into distinct groups (e.g. multiple
+-- congregations/branches attending one event), each with its own scoped "lead planner".
+CREATE TABLE IF NOT EXISTS assemblies (
+  id TEXT PRIMARY KEY,
+  event_id TEXT NOT NULL REFERENCES events(id) ON DELETE CASCADE,
+  name TEXT NOT NULL,
+  created_at TEXT NOT NULL DEFAULT to_char(now() AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')
+);
+CREATE INDEX IF NOT EXISTS idx_assemblies_event ON assemblies(event_id);
+
 CREATE TABLE IF NOT EXISTS event_members (
   id TEXT PRIMARY KEY,
   event_id TEXT NOT NULL REFERENCES events(id) ON DELETE CASCADE,
   user_id TEXT REFERENCES users(id) ON DELETE CASCADE,
   invited_email TEXT NOT NULL,
-  role TEXT NOT NULL DEFAULT 'viewer', -- owner | admin | viewer
+  role TEXT NOT NULL DEFAULT 'viewer', -- owner | admin | viewer | lead_planner
+  assembly_id TEXT REFERENCES assemblies(id) ON DELETE CASCADE, -- set only for lead_planner: scopes their access to one assembly
   status TEXT NOT NULL DEFAULT 'active', -- pending | active
   created_at TEXT NOT NULL DEFAULT to_char(now() AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')
 );
 CREATE INDEX IF NOT EXISTS idx_members_event ON event_members(event_id);
 CREATE INDEX IF NOT EXISTS idx_members_user ON event_members(user_id);
+ALTER TABLE event_members ADD COLUMN IF NOT EXISTS assembly_id TEXT REFERENCES assemblies(id) ON DELETE CASCADE;
 
 CREATE TABLE IF NOT EXISTS groups (
   id TEXT PRIMARY KEY,
   event_id TEXT NOT NULL REFERENCES events(id) ON DELETE CASCADE,
   name TEXT NOT NULL,
   leader_invitee_id TEXT,
+  assembly_id TEXT REFERENCES assemblies(id) ON DELETE SET NULL,
   created_at TEXT NOT NULL DEFAULT to_char(now() AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')
 );
 CREATE INDEX IF NOT EXISTS idx_groups_event ON groups(event_id);
+ALTER TABLE groups ADD COLUMN IF NOT EXISTS assembly_id TEXT REFERENCES assemblies(id) ON DELETE SET NULL;
 
 CREATE TABLE IF NOT EXISTS invitees (
   id TEXT PRIMARY KEY,
   event_id TEXT NOT NULL REFERENCES events(id) ON DELETE CASCADE,
   group_id TEXT REFERENCES groups(id) ON DELETE SET NULL,
+  assembly_id TEXT REFERENCES assemblies(id) ON DELETE SET NULL,
   first_name TEXT NOT NULL,
   last_name TEXT NOT NULL,
   email TEXT,
@@ -90,8 +105,10 @@ CREATE TABLE IF NOT EXISTS invitees (
 );
 CREATE INDEX IF NOT EXISTS idx_invitees_event ON invitees(event_id);
 CREATE INDEX IF NOT EXISTS idx_invitees_group ON invitees(group_id);
+CREATE INDEX IF NOT EXISTS idx_invitees_assembly ON invitees(assembly_id);
 -- Additive migrations for columns introduced after the initial CREATE TABLE (safe to re-run).
 ALTER TABLE invitees ADD COLUMN IF NOT EXISTS custom_fields TEXT;
+ALTER TABLE invitees ADD COLUMN IF NOT EXISTS assembly_id TEXT REFERENCES assemblies(id) ON DELETE SET NULL;
 ALTER TABLE events ADD COLUMN IF NOT EXISTS invitee_name_format TEXT NOT NULL DEFAULT 'first_last'; -- first_last | full
 
 CREATE TABLE IF NOT EXISTS invitee_fields (
@@ -166,6 +183,7 @@ CREATE INDEX IF NOT EXISTS idx_answers_question ON rsvp_answers(question_id);
 CREATE TABLE IF NOT EXISTS communications (
   id TEXT PRIMARY KEY,
   event_id TEXT NOT NULL REFERENCES events(id) ON DELETE CASCADE,
+  assembly_id TEXT REFERENCES assemblies(id) ON DELETE SET NULL, -- set when sent by/scoped to one assembly
   type TEXT NOT NULL, -- invitation|reminder|event_update|confirmation|final_reminder|cancellation|custom
   subject TEXT NOT NULL,
   body TEXT NOT NULL,
@@ -175,6 +193,7 @@ CREATE TABLE IF NOT EXISTS communications (
   created_at TEXT NOT NULL DEFAULT to_char(now() AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')
 );
 CREATE INDEX IF NOT EXISTS idx_comms_event ON communications(event_id);
+ALTER TABLE communications ADD COLUMN IF NOT EXISTS assembly_id TEXT REFERENCES assemblies(id) ON DELETE SET NULL;
 
 CREATE TABLE IF NOT EXISTS audit_logs (
   id TEXT PRIMARY KEY,

@@ -1,18 +1,24 @@
-import { getEventStats } from "@/lib/models/events";
+import { getEventStats, getMembership } from "@/lib/models/events";
+import { getAssemblyStats } from "@/lib/models/assemblies";
 import { listQuestions, questionReport } from "@/lib/models/rsvp";
 import { listInvitees } from "@/lib/models/invitees";
+import { getCurrentUser } from "@/lib/session";
 
 export default async function ReportsPage({ params }: { params: { id: string } }) {
-  const stats = await getEventStats(params.id);
+  const user = await getCurrentUser();
+  const membership = await getMembership(params.id, user!.id);
+  const assemblyId = membership?.role === "lead_planner" ? membership.assembly_id : null;
+
+  const stats = membership?.role === "lead_planner" ? await getAssemblyStats(params.id, assemblyId) : await getEventStats(params.id);
   const questions = await listQuestions(params.id);
-  const invitees = await listInvitees(params.id);
+  const invitees = await listInvitees(params.id, assemblyId);
   const adults = invitees.filter((i) => i.is_adult && i.status === "attending").length;
   const children = invitees.filter((i) => !i.is_adult && i.status === "attending").length;
 
   const questionReports = await Promise.all(
     questions.map(async (q) => ({
       question: q,
-      rows: (await questionReport(params.id, q.id)).filter((r) => r.value),
+      rows: (await questionReport(params.id, q.id, assemblyId)).filter((r) => r.value),
     }))
   );
 

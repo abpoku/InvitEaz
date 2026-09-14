@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 
 interface Group { id: string; name: string; }
+interface Assembly { id: string; name: string; }
 interface Comm { id: string; type: string; subject: string; recipients_filter: string; recipient_count: number; created_at: string; }
 
 const TYPES = [
@@ -22,13 +23,14 @@ const AUDIENCES = [
   { value: "children", label: "Children" },
 ];
 
-export function CommunicationsCenter({ eventId, groups }: { eventId: string; groups: Group[] }) {
+export function CommunicationsCenter({ eventId, groups, assemblies }: { eventId: string; groups: Group[]; assemblies: Assembly[] }) {
   const [history, setHistory] = useState<Comm[]>([]);
   const [type, setType] = useState("reminder");
   const [subject, setSubject] = useState(TYPES[1].subject);
   const [message, setMessage] = useState(TYPES[1].body);
   const [audience, setAudience] = useState("no_response");
   const [groupId, setGroupId] = useState("");
+  const [assemblyId, setAssemblyId] = useState("");
   const [sending, setSending] = useState(false);
   const [result, setResult] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -63,7 +65,11 @@ export function CommunicationsCenter({ eventId, groups }: { eventId: string; gro
     const res = await fetch(`/api/events/${eventId}/communications`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ type, subject, message, audience: audience === "group" ? "group" : audience, groupId: audience === "group" ? groupId : undefined }),
+      body: JSON.stringify({
+        type, subject, message, audience,
+        groupId: audience === "group" ? groupId : undefined,
+        assemblyId: audience === "assembly" ? assemblyId : undefined,
+      }),
     });
     const data = await res.json();
     setSending(false);
@@ -113,11 +119,26 @@ export function CommunicationsCenter({ eventId, groups }: { eventId: string; gro
                   Specific group
                 </button>
               )}
+              {assemblies.length > 0 && (
+                <button
+                  type="button"
+                  onClick={() => setAudience("assembly")}
+                  className={`chip border ${audience === "assembly" ? "bg-wine-500 text-paper border-wine-500" : "border-paper-line text-ink-soft"}`}
+                >
+                  Specific assembly
+                </button>
+              )}
             </div>
             {audience === "group" && (
               <select className="input mt-2" value={groupId} onChange={(e) => setGroupId(e.target.value)}>
                 <option value="">Choose a group…</option>
                 {groups.map((g) => <option key={g.id} value={g.id}>{g.name}</option>)}
+              </select>
+            )}
+            {audience === "assembly" && (
+              <select className="input mt-2" value={assemblyId} onChange={(e) => setAssemblyId(e.target.value)}>
+                <option value="">Choose an assembly…</option>
+                {assemblies.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
               </select>
             )}
           </div>

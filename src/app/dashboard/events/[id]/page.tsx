@@ -1,13 +1,19 @@
 import Link from "next/link";
-import { getEventById } from "@/lib/models/events";
+import { getEventById, getMembership } from "@/lib/models/events";
 import { listInvitees } from "@/lib/models/invitees";
 import { listQuestions } from "@/lib/models/rsvp";
+import { getCurrentUser } from "@/lib/session";
 import { formatDate, formatTime } from "@/lib/utils";
 import { ShareCard } from "@/components/ShareCard";
 
 export default async function EventOverviewPage({ params }: { params: { id: string } }) {
+  const user = await getCurrentUser();
+  const membership = await getMembership(params.id, user!.id);
+  const isLeadPlanner = membership?.role === "lead_planner";
+  const assemblyId = isLeadPlanner ? membership!.assembly_id : null;
+
   const event = (await getEventById(params.id))!;
-  const invitees = await listInvitees(params.id);
+  const invitees = await listInvitees(params.id, assemblyId);
   const questions = await listQuestions(params.id);
 
   const steps = [
@@ -20,7 +26,8 @@ export default async function EventOverviewPage({ params }: { params: { id: stri
   return (
     <div className="p-4 sm:p-8 max-w-5xl grid lg:grid-cols-[1fr_320px] gap-6 sm:gap-8">
       <div className="space-y-6">
-        {event.status === "draft" && (
+        {/* Publishing is a master-planner concern — a lead planner has nothing to do with any of these steps. */}
+        {event.status === "draft" && !isLeadPlanner && (
           <div className="card p-6">
             <p className="font-serif text-lg text-ink">Get ready to publish</p>
             <ul className="mt-4 space-y-2.5">

@@ -18,10 +18,10 @@ export interface User {
   created_at: string;
 }
 
-export const PLAN_LIMITS: Record<Plan, { activeEvents: number; inviteesPerEvent: number; coPlanners: number; label: string }> = {
-  FREE: { activeEvents: 2, inviteesPerEvent: 40, coPlanners: 0, label: "Free" },
-  PRO: { activeEvents: 15, inviteesPerEvent: 750, coPlanners: 5, label: "Pro" },
-  BUSINESS: { activeEvents: Infinity, inviteesPerEvent: Infinity, coPlanners: Infinity, label: "Business" },
+export const PLAN_LIMITS: Record<Plan, { activeEvents: number; inviteesPerEvent: number; coPlanners: number; assembliesPerEvent: number; label: string }> = {
+  FREE: { activeEvents: 2, inviteesPerEvent: 40, coPlanners: 0, assembliesPerEvent: 1, label: "Free" },
+  PRO: { activeEvents: 15, inviteesPerEvent: 750, coPlanners: 5, assembliesPerEvent: 5, label: "Pro" },
+  BUSINESS: { activeEvents: Infinity, inviteesPerEvent: Infinity, coPlanners: Infinity, assembliesPerEvent: Infinity, label: "Business" },
 };
 
 export async function createUser(input: {

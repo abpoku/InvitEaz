@@ -6,7 +6,7 @@ export type LocationType = "physical" | "virtual" | "hybrid";
 export type Visibility = "invite_only" | "public" | "hybrid";
 export type GroupRsvpMode = "group" | "individual" | "primary_contact";
 export type PlusOnePolicy = "none" | "one" | "multiple";
-export type Role = "owner" | "admin" | "viewer";
+export type Role = "owner" | "admin" | "viewer" | "lead_planner";
 export type InviteeNameFormat = "first_last" | "full";
 
 export interface EventRow {
@@ -159,9 +159,9 @@ export async function deleteEvent(id: string) {
   await exec("DELETE FROM events WHERE id = ?", [id]);
 }
 
-export async function listEventsForUser(userId: string): Promise<EventRow[]> {
-  return query<EventRow>(
-    `SELECT e.* FROM events e
+export async function listEventsForUser(userId: string): Promise<(EventRow & { member_role: Role; member_assembly_id: string | null })[]> {
+  return query(
+    `SELECT e.*, m.role as member_role, m.assembly_id as member_assembly_id FROM events e
      JOIN event_members m ON m.event_id = e.id
      WHERE m.user_id = ? AND m.status = 'active'
      ORDER BY e.event_date ASC`,
@@ -169,31 +169,33 @@ export async function listEventsForUser(userId: string): Promise<EventRow[]> {
   );
 }
 
-export async function getMembership(eventId: string, userId: string): Promise<{ role: Role } | undefined> {
-  return queryOne<{ role: Role }>(
-    "SELECT role FROM event_members WHERE event_id = ? AND user_id = ? AND status = 'active'",
+export async function getMembership(eventId: string, userId: string): Promise<{ role: Role; assembly_id: string | null } | undefined> {
+  return queryOne<{ role: Role; assembly_id: string | null }>(
+    "SELECT role, assembly_id FROM event_members WHERE event_id = ? AND user_id = ? AND status = 'active'",
     [eventId, userId]
   );
 }
 
 export async function listMembers(eventId: string) {
   return query(
-    `SELECT em.id, em.role, em.status, em.invited_email, em.created_at,
+    `SELECT em.id, em.role, em.status, em.invited_email, em.created_at, em.assembly_id,
+            a.name as assembly_name,
             u.first_name, u.last_name, u.email, u.id as user_id
      FROM event_members em
      LEFT JOIN users u ON u.id = em.user_id
+     LEFT JOIN assemblies a ON a.id = em.assembly_id
      WHERE em.event_id = ?
-     ORDER BY CASE em.role WHEN 'owner' THEN 0 WHEN 'admin' THEN 1 ELSE 2 END, em.created_at ASC`,
+     ORDER BY CASE em.role WHEN 'owner' THEN 0 WHEN 'admin' THEN 1 WHEN 'lead_planner' THEN 2 ELSE 3 END, em.created_at ASC`,
     [eventId]
   );
 }
 
-export async function addCoPlanner(eventId: string, email: string, role: Exclude<Role, "owner">) {
+export async function addCoPlanner(eventId: string, email: string, role: Exclude<Role, "owner">, assemblyId?: string | null) {
   const user = await queryOne<{ id: string }>("SELECT id FROM users WHERE email = ?", [email.toLowerCase()]);
   const id = newId("mem");
   await exec(
-    `INSERT INTO event_members (id, event_id, user_id, invited_email, role, status) VALUES (?,?,?,?,?,?)`,
-    [id, eventId, user?.id || null, email.toLowerCase(), role, user ? "active" : "pending"]
+    `INSERT INTO event_members (id, event_id, user_id, invited_email, role, assembly_id, status) VALUES (?,?,?,?,?,?,?)`,
+    [id, eventId, user?.id || null, email.toLowerCase(), role, role === "lead_planner" ? assemblyId || null : null, user ? "active" : "pending"]
   );
   return id;
 }

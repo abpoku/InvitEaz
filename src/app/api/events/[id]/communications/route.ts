@@ -1,19 +1,21 @@
 import { NextResponse } from "next/server";
-import { requireEventRole } from "@/lib/session";
+import { requireAssemblyScope } from "@/lib/session";
 import { listCommunications, logCommunication } from "@/lib/models/comms";
 import { listInvitees } from "@/lib/models/invitees";
 import { getEventById } from "@/lib/models/events";
+import { getAssembly } from "@/lib/models/assemblies";
 import { sendInvitationEmail, sendReminderEmail, sendCustomEmail } from "@/lib/notify";
 
 export async function GET(_req: Request, { params }: { params: { id: string } }) {
-  const access = await requireEventRole(params.id, "viewer");
+  const access = await requireAssemblyScope(params.id);
   if (!access.ok) return NextResponse.json({ error: access.message }, { status: access.status });
-  return NextResponse.json({ communications: await listCommunications(params.id) });
+  return NextResponse.json({ communications: await listCommunications(params.id, access.assemblyId) });
 }
 
 export async function POST(req: Request, { params }: { params: { id: string } }) {
-  const access = await requireEventRole(params.id, "admin");
+  const access = await requireAssemblyScope(params.id);
   if (!access.ok) return NextResponse.json({ error: access.message }, { status: access.status });
+  if (access.role === "viewer") return NextResponse.json({ error: "You don't have permission to do this." }, { status: 403 });
 
   const event = await getEventById(params.id);
   if (!event) return NextResponse.json({ error: "Event not found." }, { status: 404 });
@@ -22,7 +24,16 @@ export async function POST(req: Request, { params }: { params: { id: string } })
   const { type, subject, message, audience, groupId, inviteeIds } = body;
   if (!subject || !message) return NextResponse.json({ error: "Subject and message are required." }, { status: 400 });
 
-  let invitees = (await listInvitees(params.id)).filter((i) => i.email);
+  // A lead planner's messages are always confined to their own assembly. A full-scope planner
+  // may optionally target one specific assembly via the "assembly" audience option.
+  let targetAssemblyId: string | null = access.assemblyId;
+  if (!targetAssemblyId && audience === "assembly") {
+    if (!body.assemblyId) return NextResponse.json({ error: "Choose an assembly to message." }, { status: 400 });
+    const assembly = await getAssembly(body.assemblyId);
+    if (!assembly || assembly.event_id !== params.id) return NextResponse.json({ error: "Assembly not found." }, { status: 404 });
+    targetAssemblyId = assembly.id;
+  }
+  let invitees = (await listInvitees(params.id, targetAssemblyId)).filter((i) => i.email);
 
   if (audience === "attending") invitees = invitees.filter((i) => i.status === "attending");
   else if (audience === "declined") invitees = invitees.filter((i) => i.status === "declined");
@@ -50,6 +61,7 @@ export async function POST(req: Request, { params }: { params: { id: string } })
 
   await logCommunication({
     eventId: params.id,
+    assemblyId: targetAssemblyId || null,
     type: type || "custom",
     subject,
     body: message,

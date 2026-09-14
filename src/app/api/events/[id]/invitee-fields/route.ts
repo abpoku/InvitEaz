@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { requireEventRole } from "@/lib/session";
+import { requireEventRole, requireAssemblyScope } from "@/lib/session";
 import { createInviteeField, listInviteeFields } from "@/lib/models/invitee-fields";
 
 const schema = z.object({
@@ -12,7 +12,7 @@ const schema = z.object({
 });
 
 export async function GET(_req: Request, { params }: { params: { id: string } }) {
-  const access = await requireEventRole(params.id, "viewer");
+  const access = await requireAssemblyScope(params.id);
   if (!access.ok) return NextResponse.json({ error: access.message }, { status: access.status });
   return NextResponse.json({ fields: await listInviteeFields(params.id) });
 }

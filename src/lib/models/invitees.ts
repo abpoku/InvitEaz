@@ -6,6 +6,7 @@ export interface InviteeRow {
   id: string;
   event_id: string;
   group_id: string | null;
+  assembly_id: string | null;
   first_name: string;
   last_name: string;
   email: string | null;
@@ -23,6 +24,7 @@ export interface GroupRow {
   event_id: string;
   name: string;
   leader_invitee_id: string | null;
+  assembly_id: string | null;
   created_at: string;
 }
 
@@ -37,13 +39,14 @@ export interface InvitationRow {
   created_at: string;
 }
 
-export async function createGroup(eventId: string, name: string): Promise<GroupRow> {
+export async function createGroup(eventId: string, name: string, assemblyId?: string | null): Promise<GroupRow> {
   const id = newId("grp");
-  await exec("INSERT INTO groups (id, event_id, name) VALUES (?,?,?)", [id, eventId, name]);
+  await exec("INSERT INTO groups (id, event_id, name, assembly_id) VALUES (?,?,?,?)", [id, eventId, name, assemblyId || null]);
   return (await queryOne<GroupRow>("SELECT * FROM groups WHERE id = ?", [id]))!;
 }
 
-export async function listGroups(eventId: string): Promise<GroupRow[]> {
+export async function listGroups(eventId: string, assemblyId?: string | null): Promise<GroupRow[]> {
+  if (assemblyId) return query<GroupRow>("SELECT * FROM groups WHERE event_id = ? AND assembly_id = ? ORDER BY name ASC", [eventId, assemblyId]);
   return query<GroupRow>("SELECT * FROM groups WHERE event_id = ? ORDER BY name ASC", [eventId]);
 }
 
@@ -62,15 +65,16 @@ export async function createInvitee(
     plusOnePolicy?: PlusOnePolicy | null;
     notes?: string;
     groupId?: string | null;
+    assemblyId?: string | null;
     customFields?: Record<string, string>;
   }
 ): Promise<{ invitee: InviteeRow; invitation: InvitationRow }> {
   const id = newId("inv");
   await exec(
-    `INSERT INTO invitees (id, event_id, group_id, first_name, last_name, email, phone, is_adult, plus_one_policy, notes, custom_fields)
-     VALUES (?,?,?,?,?,?,?,?,?,?,?)`,
+    `INSERT INTO invitees (id, event_id, group_id, assembly_id, first_name, last_name, email, phone, is_adult, plus_one_policy, notes, custom_fields)
+     VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`,
     [
-      id, eventId, input.groupId || null, input.firstName, input.lastName, input.email || null,
+      id, eventId, input.groupId || null, input.assemblyId || null, input.firstName, input.lastName, input.email || null,
       input.phone || null, input.isAdult === false ? 0 : 1, input.plusOnePolicy || null, input.notes || null,
       input.customFields && Object.keys(input.customFields).length ? JSON.stringify(input.customFields) : null,
     ]
@@ -95,15 +99,17 @@ export async function createInvitationFor(eventId: string, inviteeId: string): P
   return (await queryOne<InvitationRow>("SELECT * FROM invitations WHERE id = ?", [id]))!;
 }
 
-export async function listInvitees(eventId: string): Promise<(InviteeRow & { token: string; status: string; group_name: string | null })[]> {
+export async function listInvitees(eventId: string, assemblyId?: string | null): Promise<(InviteeRow & { token: string; status: string; group_name: string | null; assembly_name: string | null })[]> {
   return query(
-    `SELECT iv.*, g.name as group_name, i.token, i.status
+    `SELECT iv.*, g.name as group_name, a.name as assembly_name, i.token, i.status
      FROM invitees iv
      LEFT JOIN groups g ON g.id = iv.group_id
+     LEFT JOIN assemblies a ON a.id = iv.assembly_id
      LEFT JOIN invitations i ON i.invitee_id = iv.id
      WHERE iv.event_id = ? AND iv.active = 1
+     ${assemblyId ? "AND iv.assembly_id = ?" : ""}
      ORDER BY iv.created_at ASC`,
-    [eventId]
+    assemblyId ? [eventId, assemblyId] : [eventId]
   );
 }
 
@@ -112,7 +118,7 @@ export async function getInviteeById(id: string): Promise<InviteeRow | undefined
 }
 
 export async function updateInvitee(id: string, patch: Partial<InviteeRow>) {
-  const allowed = ["first_name", "last_name", "email", "phone", "is_adult", "plus_one_policy", "notes", "group_id", "custom_fields"];
+  const allowed = ["first_name", "last_name", "email", "phone", "is_adult", "plus_one_policy", "notes", "group_id", "assembly_id", "custom_fields"];
   const keys = Object.keys(patch).filter((k) => allowed.includes(k));
   if (keys.length === 0) return;
   const setClause = keys.map((k) => `${k} = ?`).join(", ");
