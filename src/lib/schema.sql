@@ -105,11 +105,13 @@ CREATE TABLE IF NOT EXISTS invitees (
 );
 CREATE INDEX IF NOT EXISTS idx_invitees_event ON invitees(event_id);
 CREATE INDEX IF NOT EXISTS idx_invitees_group ON invitees(group_id);
-CREATE INDEX IF NOT EXISTS idx_invitees_assembly ON invitees(assembly_id);
 -- Additive migrations for columns introduced after the initial CREATE TABLE (safe to re-run).
+-- These must run BEFORE anything below that indexes/references the new columns, since on an
+-- already-existing table the CREATE TABLE above is a no-op and never adds them.
 ALTER TABLE invitees ADD COLUMN IF NOT EXISTS custom_fields TEXT;
 ALTER TABLE invitees ADD COLUMN IF NOT EXISTS assembly_id TEXT REFERENCES assemblies(id) ON DELETE SET NULL;
 ALTER TABLE events ADD COLUMN IF NOT EXISTS invitee_name_format TEXT NOT NULL DEFAULT 'first_last'; -- first_last | full
+CREATE INDEX IF NOT EXISTS idx_invitees_assembly ON invitees(assembly_id);
 
 CREATE TABLE IF NOT EXISTS invitee_fields (
   id TEXT PRIMARY KEY,
