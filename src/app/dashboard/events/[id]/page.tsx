@@ -1,10 +1,13 @@
 import Link from "next/link";
-import { getEventById, getMembership } from "@/lib/models/events";
+import { getEventById, getMembership, listMembers } from "@/lib/models/events";
 import { listInvitees } from "@/lib/models/invitees";
 import { listQuestions } from "@/lib/models/rsvp";
+import { listAssemblies } from "@/lib/models/assemblies";
 import { getCurrentUser } from "@/lib/session";
 import { formatDate, formatTime } from "@/lib/utils";
 import { ShareCard } from "@/components/ShareCard";
+import { AssembliesManager } from "@/components/assemblies/AssembliesManager";
+import { FormBuilder } from "@/components/rsvp-form/FormBuilder";
 
 export default async function EventOverviewPage({ params }: { params: { id: string } }) {
   const user = await getCurrentUser();
@@ -13,12 +16,14 @@ export default async function EventOverviewPage({ params }: { params: { id: stri
   const assemblyId = isLeadPlanner ? membership!.assembly_id : null;
 
   const event = (await getEventById(params.id))!;
+  const isOwner = event.owner_id === user!.id;
   const invitees = await listInvitees(params.id, assemblyId);
   const questions = await listQuestions(params.id);
+  const [assemblies, members] = isLeadPlanner ? [[], []] : await Promise.all([listAssemblies(params.id), listMembers(params.id)]);
 
   const steps = [
     { done: !!event.name && !!event.event_date, label: "Event details added", href: `/dashboard/events/${params.id}/settings` },
-    { done: questions.length > 0, label: "RSVP form built", href: `/dashboard/events/${params.id}/rsvp-form` },
+    { done: questions.length > 0, label: "RSVP form built", href: `#rsvp-form-section` },
     { done: invitees.length > 0, label: "Invitees added", href: `/dashboard/events/${params.id}/invitees` },
     { done: event.status !== "draft", label: "Event published", href: "" },
   ];
@@ -82,6 +87,22 @@ export default async function EventOverviewPage({ params }: { params: { id: stri
             )}
           </dl>
         </div>
+
+        {!isLeadPlanner && (
+          <div id="rsvp-form-section">
+            <FormBuilder eventId={params.id} />
+          </div>
+        )}
+
+        {!isLeadPlanner && (
+          <AssembliesManager
+            eventId={params.id}
+            canManage={membership?.role === "owner" || membership?.role === "admin"}
+            isOwner={isOwner}
+            initialAssemblies={assemblies as any}
+            initialMembers={members as any}
+          />
+        )}
       </div>
 
       <div className="space-y-6">

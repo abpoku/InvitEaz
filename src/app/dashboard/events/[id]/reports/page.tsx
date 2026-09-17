@@ -1,5 +1,5 @@
 import { getEventStats, getMembership } from "@/lib/models/events";
-import { getAssemblyStats } from "@/lib/models/assemblies";
+import { getAssemblyStats, listAssemblies } from "@/lib/models/assemblies";
 import { listQuestions, questionReport } from "@/lib/models/rsvp";
 import { listInvitees } from "@/lib/models/invitees";
 import { getCurrentUser } from "@/lib/session";
@@ -7,9 +7,10 @@ import { getCurrentUser } from "@/lib/session";
 export default async function ReportsPage({ params }: { params: { id: string } }) {
   const user = await getCurrentUser();
   const membership = await getMembership(params.id, user!.id);
-  const assemblyId = membership?.role === "lead_planner" ? membership.assembly_id : null;
+  const isLeadPlanner = membership?.role === "lead_planner";
+  const assemblyId = isLeadPlanner ? membership.assembly_id : null;
 
-  const stats = membership?.role === "lead_planner" ? await getAssemblyStats(params.id, assemblyId) : await getEventStats(params.id);
+  const stats = isLeadPlanner ? await getAssemblyStats(params.id, assemblyId) : await getEventStats(params.id);
   const questions = await listQuestions(params.id);
   const invitees = await listInvitees(params.id, assemblyId);
   const adults = invitees.filter((i) => i.is_adult && i.status === "attending").length;
@@ -21,6 +22,9 @@ export default async function ReportsPage({ params }: { params: { id: string } }
       rows: (await questionReport(params.id, q.id, assemblyId)).filter((r) => r.value),
     }))
   );
+
+  const clones = isLeadPlanner ? [] : await listAssemblies(params.id);
+  const cloneStats = clones.length > 0 ? await Promise.all(clones.map((c) => getAssemblyStats(params.id, c.id))) : [];
 
   return (
     <div className="p-4 sm:p-8 max-w-4xl space-y-8">
@@ -83,6 +87,27 @@ export default async function ReportsPage({ params }: { params: { id: string } }
                       ))}
                     </div>
                   )}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {clones.length > 0 && (
+        <div>
+          <h3 className="font-serif text-lg text-ink">By clone</h3>
+          <div className="mt-4 grid sm:grid-cols-2 md:grid-cols-3 gap-4">
+            {clones.map((c, idx) => {
+              const s = cloneStats[idx];
+              return (
+                <div key={c.id} className="card p-5">
+                  <p className="text-sm text-ink">{c.name}</p>
+                  <dl className="mt-3 space-y-1.5 text-sm">
+                    <Row label="Invited" value={s.invited} />
+                    <Row label="Attending" value={s.attending} />
+                    <Row label="Response rate" value={`${s.responseRate}%`} />
+                  </dl>
                 </div>
               );
             })}

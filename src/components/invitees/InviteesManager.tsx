@@ -140,7 +140,7 @@ export function InviteesManager({ eventId, groupRsvpMode, nameFormat }: { eventI
           </select>
           {assemblies.length > 0 && (
             <select className="input max-w-[200px]" value={assemblyFilter} onChange={(e) => setAssemblyFilter(e.target.value)}>
-              <option value="all">All assemblies</option>
+              <option value="all">All clones</option>
               <option value="unassigned">Unassigned</option>
               {assemblies.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
             </select>
@@ -166,7 +166,7 @@ export function InviteesManager({ eventId, groupRsvpMode, nameFormat }: { eventI
             <thead>
               <tr className="border-b border-paper-line text-left text-ink-faint">
                 <th className="px-5 py-3 font-medium">Name</th>
-                {assemblies.length > 0 && <th className="px-5 py-3 font-medium whitespace-nowrap">Assembly</th>}
+                {assemblies.length > 0 && <th className="px-5 py-3 font-medium whitespace-nowrap">Clone</th>}
                 {fields.map((f) => (
                   <th key={f.id} className="px-5 py-3 font-medium whitespace-nowrap">{f.label}</th>
                 ))}

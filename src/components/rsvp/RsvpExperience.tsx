@@ -6,6 +6,7 @@ import { formatDate, formatTime } from "@/lib/utils";
 
 interface Question {
   id: string; label: string; type: string; options_json: string | null; required: number; show_if_attending: "yes" | "no" | null;
+  kind: "core" | "custom"; key: string | null; active: number;
 }
 interface GroupMember { id: string; first_name: string; last_name: string; }
 interface Data {
@@ -157,7 +158,17 @@ function RsvpForm({ data, token, onSubmitted }: { data: Data; token: string; onS
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const visibleQuestions = questions.filter((q) => !q.show_if_attending || (attending === true && q.show_if_attending === "yes") || (attending === false && q.show_if_attending === "no"));
+  const attendingQ = questions.find((q) => q.key === "attending");
+  const emailQ = questions.find((q) => q.key === "email");
+  const phoneQ = questions.find((q) => q.key === "phone");
+  const guestCountQ = questions.find((q) => q.key === "guest_count");
+  const emailShown = !emailQ || !!emailQ.active;
+  const phoneShown = !phoneQ || !!phoneQ.active;
+  const guestCountShown = !guestCountQ || !!guestCountQ.active;
+
+  const visibleQuestions = questions
+    .filter((q) => q.kind === "custom")
+    .filter((q) => !q.show_if_attending || (attending === true && q.show_if_attending === "yes") || (attending === false && q.show_if_attending === "no"));
 
   function toggleMember(id: string) {
     setCheckedMembers((prev) => {
@@ -178,6 +189,14 @@ function RsvpForm({ data, token, onSubmitted }: { data: Data; token: string; onS
       setError("Please add your name.");
       return;
     }
+    if (emailShown && emailQ?.required && !email.trim()) {
+      setError("Please add your email.");
+      return;
+    }
+    if (phoneShown && phoneQ?.required && !phone.trim()) {
+      setError("Please add your phone number.");
+      return;
+    }
     for (const q of visibleQuestions) {
       if (q.required && !answers[q.id]) {
         setError(`Please answer: ${q.label}`);
@@ -190,6 +209,9 @@ function RsvpForm({ data, token, onSubmitted }: { data: Data; token: string; onS
     if (attending && isGroupMode) {
       finalNum = checkedMembers.size;
       finalGuestNames = groupMembers.filter((m) => checkedMembers.has(m.id)).map((m) => `${m.first_name} ${m.last_name}`);
+    } else if (attending && !guestCountShown) {
+      finalNum = 1;
+      finalGuestNames = [];
     }
 
     setSaving(true);
@@ -223,7 +245,7 @@ function RsvpForm({ data, token, onSubmitted }: { data: Data; token: string; onS
         {error && <div className="rounded border border-clay-500/30 bg-clay-500/5 text-clay-600 text-sm px-3 py-2.5">{error}</div>}
 
         <div>
-          <label className="label">Will you be attending?</label>
+          <label className="label">{attendingQ?.label || "Will you be attending?"}</label>
           <div className="grid grid-cols-2 gap-3">
             <button type="button" onClick={() => setAttending(true)} className={`btn ${attending === true ? "bg-moss-500 text-paper" : "btn-secondary"}`}>Yes, I'll be there</button>
             <button type="button" onClick={() => setAttending(false)} className={`btn ${attending === false ? "bg-clay-500 text-paper" : "btn-secondary"}`}>Can't make it</button>
@@ -244,9 +266,9 @@ function RsvpForm({ data, token, onSubmitted }: { data: Data; token: string; onS
           </div>
         )}
 
-        {attending === true && !isGroupMode && policy !== "none" && (
+        {attending === true && !isGroupMode && policy !== "none" && guestCountShown && (
           <div>
-            <label className="label">How many in your party (including you)?</label>
+            <label className="label">{guestCountQ?.label || "How many in your party (including you)?"}</label>
             <select className="input" value={numAttending} onChange={(e) => setNumAttending(Number(e.target.value))}>
               {Array.from({ length: maxGuests }, (_, i) => i + 1).map((n) => (
                 <option key={n} value={n}>{n}</option>
@@ -279,14 +301,18 @@ function RsvpForm({ data, token, onSubmitted }: { data: Data; token: string; onS
                 <label className="label">Your name</label>
                 <input className="input" value={name} onChange={(e) => setName(e.target.value)} />
               </div>
-              <div>
-                <label className="label">Email {invitee?.email ? "" : <span className="text-ink-faint font-normal">(optional)</span>}</label>
-                <input type="email" className="input" value={email} onChange={(e) => setEmail(e.target.value)} />
-              </div>
-              <div>
-                <label className="label">Phone <span className="text-ink-faint font-normal">(optional)</span></label>
-                <input className="input" value={phone} onChange={(e) => setPhone(e.target.value)} />
-              </div>
+              {emailShown && (
+                <div>
+                  <label className="label">{emailQ?.label || "Email"} {emailQ?.required || invitee?.email ? "" : <span className="text-ink-faint font-normal">(optional)</span>}</label>
+                  <input type="email" required={!!emailQ?.required} className="input" value={email} onChange={(e) => setEmail(e.target.value)} />
+                </div>
+              )}
+              {phoneShown && (
+                <div>
+                  <label className="label">{phoneQ?.label || "Phone"} {phoneQ?.required ? "" : <span className="text-ink-faint font-normal">(optional)</span>}</label>
+                  <input required={!!phoneQ?.required} className="input" value={phone} onChange={(e) => setPhone(e.target.value)} />
+                </div>
+              )}
             </div>
 
             {visibleQuestions.map((q) => (

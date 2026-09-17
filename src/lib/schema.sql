@@ -152,9 +152,19 @@ CREATE TABLE IF NOT EXISTS rsvp_questions (
   required INTEGER NOT NULL DEFAULT 0,
   order_index INTEGER NOT NULL DEFAULT 0,
   show_if_attending TEXT, -- 'yes' | 'no' | NULL (always)
+  kind TEXT NOT NULL DEFAULT 'custom', -- core | custom
+  key TEXT,      -- stable identifier for core rows: 'attending' | 'email' | 'phone' | 'guest_count'
+  active INTEGER NOT NULL DEFAULT 1,
   created_at TEXT NOT NULL DEFAULT to_char(now() AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')
 );
 CREATE INDEX IF NOT EXISTS idx_questions_event ON rsvp_questions(event_id);
+-- Additive migrations for columns introduced after the initial CREATE TABLE (safe to re-run).
+-- These must run BEFORE anything below that indexes/references the new columns, since on an
+-- already-existing table the CREATE TABLE above is a no-op and never adds them.
+ALTER TABLE rsvp_questions ADD COLUMN IF NOT EXISTS kind TEXT NOT NULL DEFAULT 'custom';
+ALTER TABLE rsvp_questions ADD COLUMN IF NOT EXISTS key TEXT;
+ALTER TABLE rsvp_questions ADD COLUMN IF NOT EXISTS active INTEGER NOT NULL DEFAULT 1;
+CREATE UNIQUE INDEX IF NOT EXISTS idx_questions_event_key ON rsvp_questions(event_id, key) WHERE key IS NOT NULL;
 
 CREATE TABLE IF NOT EXISTS rsvp_responses (
   id TEXT PRIMARY KEY,

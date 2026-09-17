@@ -62,7 +62,7 @@ export function AssembliesManager({
   }
 
   async function deleteAssembly(assembly: Assembly) {
-    if (!confirm(`Delete "${assembly.name}"? Its lead planner will lose access, and its invitees stay on the guest list but become unassigned. This can't be undone.`)) return;
+    if (!confirm(`Delete clone "${assembly.name}"? Its lead planner will lose access, and its invitees stay on the guest list but become unassigned. This can't be undone.`)) return;
     await fetch(`/api/events/${eventId}/assemblies/${assembly.id}`, { method: "DELETE" });
     load();
     router.refresh();
@@ -92,10 +92,10 @@ export function AssembliesManager({
   }
 
   return (
-    <div className="p-4 sm:p-8 max-w-3xl">
-      <h2 className="font-serif text-xl text-ink">Assemblies</h2>
+    <div className="card p-6">
+      <h2 className="font-serif text-xl text-ink">Clones</h2>
       <p className="mt-1 text-sm text-ink-soft">
-        Split this event's guest list among distinct assemblies, each with its own lead planner who
+        Split this event's guest list among distinct clones, each with its own lead planner who
         only sees and manages their own invitees, messages, and reports.
       </p>
 
@@ -103,7 +103,7 @@ export function AssembliesManager({
 
       <div className="mt-6 space-y-3">
         {assemblies.length === 0 ? (
-          <p className="text-sm text-ink-faint">No assemblies yet — everyone on the guest list is unassigned.</p>
+          <p className="text-sm text-ink-faint">No clones yet — everyone on the guest list is unassigned.</p>
         ) : (
           assemblies.map((a) => (
             <AssemblyCard
@@ -124,10 +124,10 @@ export function AssembliesManager({
       {canManage && (
         <form onSubmit={createAssembly} className="mt-6 flex items-end gap-2">
           <div className="flex-1">
-            <label className="label">New assembly name</label>
+            <label className="label">New clone name</label>
             <input className="input" placeholder="e.g. North Congregation" value={newName} onChange={(e) => setNewName(e.target.value)} />
           </div>
-          <button type="submit" disabled={creating} className="btn-primary shrink-0">{creating ? "Adding…" : "+ Add assembly"}</button>
+          <button type="submit" disabled={creating} className="btn-primary shrink-0">{creating ? "Adding…" : "+ Add clone"}</button>
         </form>
       )}
     </div>

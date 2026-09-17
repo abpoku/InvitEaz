@@ -8,8 +8,6 @@ import type { Role } from "@/lib/models/events";
 const TABS = [
   { href: "", label: "Overview", masterOnly: false },
   { href: "/invitees", label: "Invitees", masterOnly: false },
-  { href: "/assemblies", label: "Assemblies", masterOnly: true },
-  { href: "/rsvp-form", label: "RSVP form", masterOnly: true },
   { href: "/responses", label: "Responses", masterOnly: false },
   { href: "/messages", label: "Messages", masterOnly: false },
   { href: "/reports", label: "Reports", masterOnly: false },

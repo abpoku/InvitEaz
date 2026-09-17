@@ -110,7 +110,7 @@ export function AddInviteeModal({
 
         {assemblies.length > 0 && (
           <div>
-            <label className="label">Assembly <span className="text-ink-faint font-normal">(optional)</span></label>
+            <label className="label">Clone <span className="text-ink-faint font-normal">(optional)</span></label>
             <select className="input" value={assemblyId} onChange={(e) => setAssemblyId(e.target.value)}>
               <option value="">Unassigned</option>
               {assemblies.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}

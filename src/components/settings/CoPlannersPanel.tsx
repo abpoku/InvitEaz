@@ -40,7 +40,7 @@ export function CoPlannersPanel({ eventId, members, isOwner }: { eventId: string
   return (
     <div className="card p-6">
       <p className="font-serif text-lg text-ink">Co-planners</p>
-      <p className="mt-1 text-sm text-ink-soft">Admins can edit everything except billing and deletion. Viewers can see responses and reports only. Lead planners are scoped to one assembly — assign them from the Assemblies tab.</p>
+      <p className="mt-1 text-sm text-ink-soft">Admins can edit everything except billing and deletion. Viewers can see responses and reports only. Lead planners are scoped to one clone — assign them from the Clones section on Overview.</p>
 
       <div className="mt-4 divide-y divide-paper-line">
         {members.map((m) => (

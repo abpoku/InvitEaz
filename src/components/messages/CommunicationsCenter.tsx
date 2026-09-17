@@ -125,7 +125,7 @@ export function CommunicationsCenter({ eventId, groups, assemblies }: { eventId:
                   onClick={() => setAudience("assembly")}
                   className={`chip border ${audience === "assembly" ? "bg-wine-500 text-paper border-wine-500" : "border-paper-line text-ink-soft"}`}
                 >
-                  Specific assembly
+                  Specific clone
                 </button>
               )}
             </div>
@@ -137,7 +137,7 @@ export function CommunicationsCenter({ eventId, groups, assemblies }: { eventId:
             )}
             {audience === "assembly" && (
               <select className="input mt-2" value={assemblyId} onChange={(e) => setAssemblyId(e.target.value)}>
-                <option value="">Choose an assembly…</option>
+                <option value="">Choose a clone…</option>
                 {assemblies.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
               </select>
             )}

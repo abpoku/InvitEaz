@@ -184,7 +184,7 @@ export function UploadModal({ eventId, onClose, onImported }: { eventId: string;
 
           {assemblies.length > 0 && (
             <div className="mt-3">
-              <label className="label">Import into assembly <span className="text-ink-faint font-normal">(optional)</span></label>
+              <label className="label">Import into clone <span className="text-ink-faint font-normal">(optional)</span></label>
               <select className="input max-w-xs" value={assemblyId} onChange={(e) => setAssemblyId(e.target.value)}>
                 <option value="">Unassigned</option>
                 {assemblies.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
