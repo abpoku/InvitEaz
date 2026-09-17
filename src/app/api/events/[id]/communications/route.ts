@@ -28,9 +28,9 @@ export async function POST(req: Request, { params }: { params: { id: string } })
   // may optionally target one specific assembly via the "assembly" audience option.
   let targetAssemblyId: string | null = access.assemblyId;
   if (!targetAssemblyId && audience === "assembly") {
-    if (!body.assemblyId) return NextResponse.json({ error: "Choose an assembly to message." }, { status: 400 });
+    if (!body.assemblyId) return NextResponse.json({ error: "Choose a clone to message." }, { status: 400 });
     const assembly = await getAssembly(body.assemblyId);
-    if (!assembly || assembly.event_id !== params.id) return NextResponse.json({ error: "Assembly not found." }, { status: 404 });
+    if (!assembly || assembly.event_id !== params.id) return NextResponse.json({ error: "Clone not found." }, { status: 404 });
     targetAssemblyId = assembly.id;
   }
   let invitees = (await listInvitees(params.id, targetAssemblyId)).filter((i) => i.email);

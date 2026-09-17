@@ -27,9 +27,9 @@ export async function POST(req: Request, { params }: { params: { id: string } })
     return NextResponse.json({ error: "Provide an email and a role of admin, viewer, or lead planner." }, { status: 400 });
   }
   if (body.role === "lead_planner") {
-    if (!body.assemblyId) return NextResponse.json({ error: "Choose an assembly for this lead planner." }, { status: 400 });
+    if (!body.assemblyId) return NextResponse.json({ error: "Choose a clone for this lead planner." }, { status: 400 });
     const assembly = await getAssembly(body.assemblyId);
-    if (!assembly || assembly.event_id !== params.id) return NextResponse.json({ error: "Assembly not found." }, { status: 404 });
+    if (!assembly || assembly.event_id !== params.id) return NextResponse.json({ error: "Clone not found." }, { status: 404 });
   }
   await addCoPlanner(params.id, body.email, body.role, body.assemblyId);
   await logAudit(params.id, access.user.email, "planner.added", `${body.email} (${body.role})`);

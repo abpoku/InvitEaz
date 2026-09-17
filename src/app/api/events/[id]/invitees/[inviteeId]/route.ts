@@ -36,7 +36,7 @@ export async function PATCH(req: Request, { params }: { params: { id: string; in
   if (body.assemblyId !== undefined && !access.assemblyId) {
     if (body.assemblyId) {
       const assembly = await getAssembly(body.assemblyId);
-      if (!assembly || assembly.event_id !== params.id) return NextResponse.json({ error: "Assembly not found." }, { status: 404 });
+      if (!assembly || assembly.event_id !== params.id) return NextResponse.json({ error: "Clone not found." }, { status: 404 });
       patch.assembly_id = assembly.id;
     } else {
       patch.assembly_id = null;

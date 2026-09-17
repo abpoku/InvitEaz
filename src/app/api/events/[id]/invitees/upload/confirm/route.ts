@@ -26,7 +26,7 @@ export async function POST(req: Request, { params }: { params: { id: string } })
   let assemblyId: string | null = access.assemblyId;
   if (!assemblyId && body.assemblyId) {
     const assembly = await getAssembly(body.assemblyId);
-    if (!assembly || assembly.event_id !== params.id) return NextResponse.json({ error: "Assembly not found." }, { status: 404 });
+    if (!assembly || assembly.event_id !== params.id) return NextResponse.json({ error: "Clone not found." }, { status: 404 });
     assemblyId = assembly.id;
   }
 

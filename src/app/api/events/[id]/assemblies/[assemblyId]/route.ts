@@ -7,7 +7,7 @@ export async function PATCH(req: Request, { params }: { params: { id: string; as
   const access = await requireEventRole(params.id, "admin");
   if (!access.ok) return NextResponse.json({ error: access.message }, { status: access.status });
   const body = await req.json();
-  if (!body.name || typeof body.name !== "string") return NextResponse.json({ error: "Give this assembly a name." }, { status: 400 });
+  if (!body.name || typeof body.name !== "string") return NextResponse.json({ error: "Give this clone a name." }, { status: 400 });
   await renameAssembly(params.assemblyId, body.name);
   return NextResponse.json({ ok: true });
 }

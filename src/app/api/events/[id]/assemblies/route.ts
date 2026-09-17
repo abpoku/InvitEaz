@@ -33,7 +33,7 @@ export async function POST(req: Request, { params }: { params: { id: string } })
   const owner = (await getUserById(event.owner_id))!;
   const limit = PLAN_LIMITS[owner.plan].assembliesPerEvent;
   if ((await countAssemblies(params.id)) >= limit) {
-    return NextResponse.json({ error: `Your plan allows up to ${limit} assembl${limit === 1 ? "y" : "ies"} per event. Upgrade to add more.` }, { status: 402 });
+    return NextResponse.json({ error: `Your plan allows up to ${limit} clone${limit === 1 ? "" : "s"} per event. Upgrade to add more.` }, { status: 402 });
   }
 
   const body = await req.json();
