@@ -197,7 +197,7 @@ export async function addCoPlanner(eventId: string, email: string, role: Exclude
     `INSERT INTO event_members (id, event_id, user_id, invited_email, role, assembly_id, status) VALUES (?,?,?,?,?,?,?)`,
     [id, eventId, user?.id || null, email.toLowerCase(), role, role === "lead_planner" ? assemblyId || null : null, user ? "active" : "pending"]
   );
-  return id;
+  return { id, isNewUser: !user };
 }
 
 export async function removeCoPlanner(memberId: string) {

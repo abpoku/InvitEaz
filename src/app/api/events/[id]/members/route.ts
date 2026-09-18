@@ -3,6 +3,7 @@ import { requireEventRole } from "@/lib/session";
 import { addCoPlanner, listMembers, getEventById, logAudit } from "@/lib/models/events";
 import { getAssembly } from "@/lib/models/assemblies";
 import { getUserById, PLAN_LIMITS } from "@/lib/models/users";
+import { sendCoPlannerInviteEmail } from "@/lib/notify";
 
 export async function GET(_req: Request, { params }: { params: { id: string } }) {
   const access = await requireEventRole(params.id, "viewer");
@@ -31,7 +32,9 @@ export async function POST(req: Request, { params }: { params: { id: string } })
     const assembly = await getAssembly(body.assemblyId);
     if (!assembly || assembly.event_id !== params.id) return NextResponse.json({ error: "Clone not found." }, { status: 404 });
   }
-  await addCoPlanner(params.id, body.email, body.role, body.assemblyId);
+  const { isNewUser } = await addCoPlanner(params.id, body.email, body.role, body.assemblyId);
   await logAudit(params.id, access.user.email, "planner.added", `${body.email} (${body.role})`);
+  const assembly = body.role === "lead_planner" && body.assemblyId ? await getAssembly(body.assemblyId) : null;
+  await sendCoPlannerInviteEmail(event, body.email, body.role, isNewUser, assembly?.name).catch(() => {});
   return NextResponse.json({ ok: true });
 }

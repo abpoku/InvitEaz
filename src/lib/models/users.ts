@@ -52,6 +52,11 @@ export async function createUser(input: {
       input.country || null,
     ]
   );
+  // Activate any co-planner/lead-planner invites sent to this email before they had an account.
+  await exec(
+    `UPDATE event_members SET user_id = ?, status = 'active' WHERE invited_email = ? AND user_id IS NULL`,
+    [id, input.email.toLowerCase()]
+  );
   return (await getUserById(id))!;
 }
 

@@ -86,3 +86,18 @@ export async function sendCustomEmail(event: EventRow, to: string, name: string,
   const html = wrap(event, subject, `<p>${body.replace(/\n/g, "<br/>")}</p>`, "View your RSVP", url);
   return sendEmail({ to, subject, html });
 }
+
+export async function sendCoPlannerInviteEmail(
+  event: EventRow, to: string, role: string, isNewUser: boolean, assemblyName?: string | null
+) {
+  const url = isNewUser ? appUrl("/register") : appUrl("/login");
+  const roleLabel = role === "lead_planner" ? `lead planner${assemblyName ? ` for ${assemblyName}` : ""}` : role;
+  const html = wrap(
+    event,
+    `You've been added as a ${roleLabel}`,
+    `<p>${isNewUser ? "Create your InvitEaz account to get started" : "Sign in to your existing InvitEaz account"} — you'll be able to help manage this event right away.</p>`,
+    isNewUser ? "Create your account" : "Sign in",
+    url
+  );
+  return sendEmail({ to, subject: `You've been added to plan: ${event.name}`, html });
+}
