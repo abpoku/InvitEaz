@@ -30,7 +30,12 @@ export async function PATCH(req: Request, { params }: { params: { id: string; in
   }
   if (body.isAdult !== undefined) patch.is_adult = body.isAdult ? 1 : 0;
   if (body.plusOnePolicy !== undefined) patch.plus_one_policy = body.plusOnePolicy;
-  if (body.customFields !== undefined) patch.custom_fields = Object.keys(body.customFields).length ? JSON.stringify(body.customFields) : null;
+  if (body.customFields !== undefined) {
+    // Guard against a malformed value (e.g. null) reaching Object.keys — treat anything that
+    // isn't a plain object the same as "no custom fields" rather than crashing the request.
+    const cf = body.customFields && typeof body.customFields === "object" && !Array.isArray(body.customFields) ? body.customFields : null;
+    patch.custom_fields = cf && Object.keys(cf).length ? JSON.stringify(cf) : null;
+  }
   // Only a full-scope planner can move an invitee between assemblies — a lead planner can't see
   // other assemblies to move someone into, and shouldn't be able to move someone out of theirs.
   if (body.assemblyId !== undefined && !access.assemblyId) {

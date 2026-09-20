@@ -83,8 +83,10 @@ export async function getInviteeField(id: string): Promise<InviteeFieldRow | und
   return queryOne<InviteeFieldRow>("SELECT * FROM invitee_fields WHERE id = ?", [id]);
 }
 
-/** Core fields may only have active/required/collect_at_signup/order_index changed — their
- * label/type/key stay fixed since app logic (audience filters, plus-one caps, grouping) depends on them. */
+/** Core fields may have their label reworded (planners can rename "Adult or child" to whatever
+ * fits their event) plus active/required/collect_at_signup/order_index changed — but never their
+ * type/key/options, since app logic (audience filters, plus-one caps, grouping) depends on those
+ * staying exactly as-is. This mirrors how rsvp_questions' core rows work (see src/lib/models/rsvp.ts). */
 export async function updateInviteeField(id: string, patch: Partial<{
   label: string; field_type: InviteeFieldType; options: string[]; required: boolean; collectAtSignup: boolean; order_index: number; active: boolean;
 }>) {
@@ -94,7 +96,7 @@ export async function updateInviteeField(id: string, patch: Partial<{
 
   const fields: string[] = [];
   const values: any[] = [];
-  if (!isCore && patch.label !== undefined) { fields.push("label = ?"); values.push(patch.label); }
+  if (patch.label !== undefined) { fields.push("label = ?"); values.push(patch.label); }
   if (!isCore && patch.field_type !== undefined) { fields.push("field_type = ?"); values.push(patch.field_type); }
   if (!isCore && patch.options !== undefined) { fields.push("options_json = ?"); values.push(JSON.stringify(patch.options)); }
   if (patch.required !== undefined) { fields.push("required = ?"); values.push(patch.required ? 1 : 0); }

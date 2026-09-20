@@ -5,6 +5,18 @@ import { Modal } from "@/components/Modal";
 import { fullName } from "@/lib/utils";
 import type { InviteeField, Assembly, InviteeRow } from "@/components/invitees/InviteesManager";
 
+/** Tolerates a malformed custom_fields column (e.g. the literal string "null" instead of a real
+ * SQL NULL) — never let a hydration quirk turn into a plain object other code assumes it is. */
+function parseCustomFields(raw: string | null): Record<string, string> {
+  if (!raw) return {};
+  try {
+    const parsed = JSON.parse(raw);
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
 export function AddInviteeModal({
   eventId, groupRsvpMode, nameFormat, fields, assemblies, invitee, onClose, onSaved,
 }: {
@@ -25,7 +37,7 @@ export function AddInviteeModal({
     plus_one_policy: invitee?.plus_one_policy || "",
   }));
   const [customFields, setCustomFields] = useState<Record<string, string>>(() =>
-    invitee?.custom_fields ? JSON.parse(invitee.custom_fields) : {}
+    parseCustomFields(invitee?.custom_fields ?? null)
   );
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
@@ -112,9 +124,12 @@ export function AddInviteeModal({
       { method: invitee ? "PATCH" : "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }
     );
     setSaving(false);
-    const data = await res.json();
+    // A server crash returns a non-JSON body (e.g. an empty 500) — never let that throw here and
+    // fail silently with no feedback; always surface *something* to the user.
+    let data: { error?: string } = {};
+    try { data = await res.json(); } catch {}
     if (!res.ok) {
-      setError(data.error || "Something went wrong.");
+      setError(data.error || "Something went wrong. Please try again.");
       return;
     }
     onSaved();

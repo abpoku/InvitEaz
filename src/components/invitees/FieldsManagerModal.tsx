@@ -30,6 +30,7 @@ export function FieldsManagerModal({
   const [format, setFormat] = useState(nameFormat);
   const [savingFormat, setSavingFormat] = useState(false);
   const [showAdd, setShowAdd] = useState(false);
+  const [editingField, setEditingField] = useState<Field | null>(null);
 
   async function load() {
     setLoading(true);
@@ -150,7 +151,16 @@ export function FieldsManagerModal({
                 <button onClick={() => move(idx, 1)} disabled={idx === fields.length - 1} className="text-ink-faint hover:text-ink disabled:opacity-20 text-xs leading-none">▼</button>
               </div>
               <div className="flex-1 min-w-[160px]">
-                <p className="text-ink">{f.label}</p>
+                <p className="text-ink flex items-center gap-1.5">
+                  {f.label}
+                  <button
+                    onClick={() => { setShowAdd(false); setEditingField(f); }}
+                    title={f.kind === "core" ? "Rename this field" : "Edit this field"}
+                    className="text-ink-faint hover:text-ink"
+                  >
+                    ✎
+                  </button>
+                </p>
                 <p className="text-xs text-ink-faint mt-0.5">
                   {TYPE_LABELS[f.field_type]}{f.kind === "core" ? " · built in" : " · custom"}
                   {f.options_json && ` · ${JSON.parse(f.options_json).length} options`}
@@ -176,11 +186,12 @@ export function FieldsManagerModal({
         )}
       </div>
 
-      {showAdd ? (
-        <AddFieldForm
+      {showAdd || editingField ? (
+        <FieldForm
           eventId={eventId}
-          onCancel={() => setShowAdd(false)}
-          onAdded={() => { setShowAdd(false); load(); onChanged(); }}
+          field={editingField}
+          onCancel={() => { setShowAdd(false); setEditingField(null); }}
+          onSaved={() => { setShowAdd(false); setEditingField(null); load(); onChanged(); }}
         />
       ) : (
         <button onClick={() => setShowAdd(true)} className="btn-secondary mt-4">+ Add custom field</button>
@@ -193,10 +204,14 @@ export function FieldsManagerModal({
   );
 }
 
-function AddFieldForm({ eventId, onCancel, onAdded }: { eventId: string; onCancel: () => void; onAdded: () => void }) {
-  const [label, setLabel] = useState("");
-  const [fieldType, setFieldType] = useState<InviteeFieldType>("text");
-  const [options, setOptions] = useState("");
+function FieldForm({
+  eventId, field, onCancel, onSaved,
+}: { eventId: string; field: Field | null; onCancel: () => void; onSaved: () => void }) {
+  const isEdit = !!field;
+  const isCore = field?.kind === "core";
+  const [label, setLabel] = useState(field?.label || "");
+  const [fieldType, setFieldType] = useState<InviteeFieldType>(field?.field_type || "text");
+  const [options, setOptions] = useState<string>(field?.options_json ? (JSON.parse(field.options_json) as string[]).join("\n") : "");
   const [required, setRequired] = useState(false);
   const [collectAtSignup, setCollectAtSignup] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -210,23 +225,33 @@ function AddFieldForm({ eventId, onCancel, onAdded }: { eventId: string; onCance
       return;
     }
     const optionList = options.split("\n").map((o) => o.trim()).filter(Boolean);
-    if (fieldType === "dropdown" && optionList.length < 2) {
+    if (!isCore && fieldType === "dropdown" && optionList.length < 2) {
       setError("Add at least two options, one per line.");
       return;
     }
     setSaving(true);
-    const res = await fetch(`/api/events/${eventId}/invitee-fields`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ label: label.trim(), field_type: fieldType, options: fieldType === "dropdown" ? optionList : undefined, required, collectAtSignup }),
-    });
+    const res = isEdit
+      ? await fetch(`/api/events/${eventId}/invitee-fields/${field!.id}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(
+            isCore
+              ? { label: label.trim() }
+              : { label: label.trim(), field_type: fieldType, options: fieldType === "dropdown" ? optionList : undefined }
+          ),
+        })
+      : await fetch(`/api/events/${eventId}/invitee-fields`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ label: label.trim(), field_type: fieldType, options: fieldType === "dropdown" ? optionList : undefined, required, collectAtSignup }),
+        });
     setSaving(false);
     if (!res.ok) {
       const data = await res.json().catch(() => ({}));
       setError(data.error || "Something went wrong.");
       return;
     }
-    onAdded();
+    onSaved();
   }
 
   return (
@@ -235,34 +260,41 @@ function AddFieldForm({ eventId, onCancel, onAdded }: { eventId: string; onCance
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <div>
           <label className="label">Field label</label>
-          <input className="input" value={label} onChange={(e) => setLabel(e.target.value)} placeholder="T-Shirt size" />
+          <input className="input" value={label} onChange={(e) => setLabel(e.target.value)} placeholder="T-Shirt size" autoFocus />
         </div>
-        <div>
-          <label className="label">Type</label>
-          <select className="input" value={fieldType} onChange={(e) => setFieldType(e.target.value as InviteeFieldType)}>
-            {Object.entries(TYPE_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-          </select>
-        </div>
+        {!isCore && (
+          <div>
+            <label className="label">Type</label>
+            <select className="input" value={fieldType} onChange={(e) => setFieldType(e.target.value as InviteeFieldType)}>
+              {Object.entries(TYPE_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+            </select>
+          </div>
+        )}
       </div>
-      {fieldType === "dropdown" && (
+      {!isCore && fieldType === "dropdown" && (
         <div>
           <label className="label">Options <span className="text-ink-faint font-normal">(one per line)</span></label>
           <textarea className="input min-h-[80px]" value={options} onChange={(e) => setOptions(e.target.value)} placeholder={"Small\nMedium\nLarge"} />
         </div>
       )}
-      <div className="flex flex-wrap gap-4">
-        <label className="flex items-center gap-2 text-sm text-ink-soft">
-          <input type="checkbox" checked={required} onChange={(e) => setRequired(e.target.checked)} />
-          Required
-        </label>
-        <label className="flex items-center gap-2 text-sm text-ink-soft">
-          <input type="checkbox" checked={collectAtSignup} onChange={(e) => setCollectAtSignup(e.target.checked)} />
-          Ask guests who self sign-up
-        </label>
-      </div>
+      {isCore && (
+        <p className="text-xs text-ink-faint">Only the label can be changed for a built-in field — its answer type stays the same since the rest of the app depends on it.</p>
+      )}
+      {!isEdit && (
+        <div className="flex flex-wrap gap-4">
+          <label className="flex items-center gap-2 text-sm text-ink-soft">
+            <input type="checkbox" checked={required} onChange={(e) => setRequired(e.target.checked)} />
+            Required
+          </label>
+          <label className="flex items-center gap-2 text-sm text-ink-soft">
+            <input type="checkbox" checked={collectAtSignup} onChange={(e) => setCollectAtSignup(e.target.checked)} />
+            Ask guests who self sign-up
+          </label>
+        </div>
+      )}
       <div className="flex justify-end gap-2 pt-1">
         <button type="button" onClick={onCancel} className="btn-ghost">Cancel</button>
-        <button type="submit" disabled={saving} className="btn-primary">{saving ? "Adding…" : "Add field"}</button>
+        <button type="submit" disabled={saving} className="btn-primary">{saving ? "Saving…" : isEdit ? "Save changes" : "Add field"}</button>
       </div>
     </form>
   );
