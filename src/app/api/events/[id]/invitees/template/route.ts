@@ -1,6 +1,7 @@
 import { requireAssemblyScope } from "@/lib/session";
 import { listInviteeFields } from "@/lib/models/invitee-fields";
 import { getEventById } from "@/lib/models/events";
+import { csvEscape } from "@/lib/utils";
 
 export async function GET(_req: Request, { params }: { params: { id: string } }) {
   const access = await requireAssemblyScope(params.id);
@@ -21,11 +22,14 @@ export async function GET(_req: Request, { params }: { params: { id: string } })
     else if (f.key === "group") sampleRow.push("Garcia Family");
     else if (f.key === "is_adult") sampleRow.push("Adult");
     else if (f.key === "plus_one_policy") sampleRow.push("");
-    else sampleRow.push("");
+    else if (f.field_type === "dropdown" && f.options_json) {
+      const options: string[] = JSON.parse(f.options_json);
+      sampleRow.push(options[0] || "");
+    } else sampleRow.push("");
   }
   if (hasGroup) sampleRow.push("Yes");
 
-  const csv = [headers.join(","), sampleRow.join(",")].join("\n");
+  const csv = [headers.map(csvEscape).join(","), sampleRow.map(csvEscape).join(",")].join("\n");
 
   return new Response(csv, {
     headers: {

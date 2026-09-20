@@ -67,6 +67,7 @@ export function InviteesManager({ eventId, groupRsvpMode, nameFormat }: { eventI
   const [statusFilter, setStatusFilter] = useState("all");
   const [assemblyFilter, setAssemblyFilter] = useState("all");
   const [showAdd, setShowAdd] = useState(false);
+  const [editing, setEditing] = useState<InviteeRow | null>(null);
   const [showUpload, setShowUpload] = useState(false);
   const [showFields, setShowFields] = useState(false);
   const [copiedId, setCopiedId] = useState<string | null>(null);
@@ -193,7 +194,8 @@ export function InviteesManager({ eventId, groupRsvpMode, nameFormat }: { eventI
                       {copiedId === i.id ? "Copied!" : "Copy link"}
                     </button>
                   </td>
-                  <td className="px-5 py-3 text-right">
+                  <td className="px-5 py-3 text-right whitespace-nowrap">
+                    <button onClick={() => setEditing(i)} className="text-xs text-ink-faint hover:text-ink mr-3">Edit</button>
                     <button onClick={() => removeInvitee(i.id)} className="text-xs text-ink-faint hover:text-clay-600">Remove</button>
                   </td>
                 </tr>
@@ -207,16 +209,18 @@ export function InviteesManager({ eventId, groupRsvpMode, nameFormat }: { eventI
         <p className="mt-3 text-xs text-ink-faint">{invitees.length} invitee{invitees.length === 1 ? "" : "s"} total.</p>
       )}
 
-      {showAdd && (
+      {(showAdd || editing) && (
         <AddInviteeModal
           eventId={eventId}
           groupRsvpMode={groupRsvpMode}
           nameFormat={nameFormat}
           fields={fields}
           assemblies={assemblies}
-          onClose={() => setShowAdd(false)}
-          onAdded={() => {
+          invitee={editing || undefined}
+          onClose={() => { setShowAdd(false); setEditing(null); }}
+          onSaved={() => {
             setShowAdd(false);
+            setEditing(null);
             load();
           }}
         />

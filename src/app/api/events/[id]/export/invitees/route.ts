@@ -3,12 +3,7 @@ import { listInvitees } from "@/lib/models/invitees";
 import { listInviteeFields } from "@/lib/models/invitee-fields";
 import { getEventById } from "@/lib/models/events";
 import { appUrl } from "@/lib/email";
-
-function csvEscape(v: any): string {
-  const s = String(v ?? "");
-  if (/[",\n]/.test(s)) return `"${s.replace(/"/g, '""')}"`;
-  return s;
-}
+import { csvEscape } from "@/lib/utils";
 
 export async function GET(_req: Request, { params }: { params: { id: string } }) {
   const access = await requireAssemblyScope(params.id);

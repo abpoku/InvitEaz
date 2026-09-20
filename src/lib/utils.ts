@@ -89,3 +89,10 @@ export function initials(first: string, last: string): string {
 export function fullName(first: string, last: string): string {
   return [first, last].filter(Boolean).join(" ");
 }
+
+/** Quotes a CSV field if it contains a comma, quote, or newline, doubling any internal quotes. */
+export function csvEscape(v: any): string {
+  const s = String(v ?? "");
+  if (/[",\n]/.test(s)) return `"${s.replace(/"/g, '""')}"`;
+  return s;
+}

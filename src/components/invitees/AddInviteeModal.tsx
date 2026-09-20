@@ -2,19 +2,31 @@
 
 import { useState } from "react";
 import { Modal } from "@/components/Modal";
-import type { InviteeField, Assembly } from "@/components/invitees/InviteesManager";
+import { fullName } from "@/lib/utils";
+import type { InviteeField, Assembly, InviteeRow } from "@/components/invitees/InviteesManager";
 
 export function AddInviteeModal({
-  eventId, groupRsvpMode, nameFormat, fields, assemblies, onClose, onAdded,
+  eventId, groupRsvpMode, nameFormat, fields, assemblies, invitee, onClose, onSaved,
 }: {
   eventId: string; groupRsvpMode: string; nameFormat: "first_last" | "full"; fields: InviteeField[]; assemblies: Assembly[];
-  onClose: () => void; onAdded: () => void;
+  invitee?: InviteeRow; onClose: () => void; onSaved: () => void;
 }) {
-  const [firstName, setFirstName] = useState("");
-  const [lastName, setLastName] = useState("");
-  const [assemblyId, setAssemblyId] = useState("");
-  const [core, setCore] = useState<Record<string, string>>({});
-  const [customFields, setCustomFields] = useState<Record<string, string>>({});
+  const [firstName, setFirstName] = useState(() =>
+    invitee ? (nameFormat === "full" ? fullName(invitee.first_name, invitee.last_name) : invitee.first_name) : ""
+  );
+  const [lastName, setLastName] = useState(invitee?.last_name || "");
+  const [assemblyId, setAssemblyId] = useState(invitee?.assembly_id || "");
+  const [core, setCore] = useState<Record<string, string>>(() => ({
+    email: invitee?.email || "",
+    phone: invitee?.phone || "",
+    notes: invitee?.notes || "",
+    group: invitee?.group_name || "",
+    is_adult: invitee ? (invitee.is_adult ? "adult" : "child") : "adult",
+    plus_one_policy: invitee?.plus_one_policy || "",
+  }));
+  const [customFields, setCustomFields] = useState<Record<string, string>>(() =>
+    invitee?.custom_fields ? JSON.parse(invitee.custom_fields) : {}
+  );
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
@@ -47,8 +59,12 @@ export function AddInviteeModal({
     }
     setSaving(true);
 
-    let groupId: string | null = null;
-    if (groupField && core.group) {
+    // Only mint a new group when the value actually changed — otherwise every no-op save of an
+    // already-grouped invitee would silently create a duplicate group (createGroup has no
+    // dedup-by-name check).
+    let groupId: string | null = invitee?.group_id ?? null;
+    const originalGroupName = invitee?.group_name || "";
+    if (groupField && core.group && core.group !== originalGroupName) {
       const gRes = await fetch(`/api/events/${eventId}/groups`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -58,35 +74,54 @@ export function AddInviteeModal({
         const gData = await gRes.json();
         groupId = gData.group.id;
       }
+    } else if (groupField && !core.group && originalGroupName) {
+      groupId = null;
     }
 
-    const res = await fetch(`/api/events/${eventId}/invitees`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        firstName: firstName.trim(),
-        lastName: nameFormat === "full" ? "" : lastName.trim(),
-        email: core.email || undefined,
-        phone: core.phone || undefined,
-        isAdult: core.is_adult !== "child",
-        plusOnePolicy: (core.plus_one_policy as any) || null,
-        notes: core.notes || undefined,
-        groupId,
-        assemblyId: assemblyId || null,
-        customFields: Object.keys(customFields).length ? customFields : undefined,
-      }),
-    });
+    const body = invitee
+      ? {
+          // Editing: send explicit nulls so a cleared field actually clears in the database,
+          // rather than the "|| undefined" the add flow uses below (which the PATCH endpoint
+          // treats as "leave unchanged" — fine when creating, wrong when clearing an edit).
+          firstName: firstName.trim(),
+          lastName: nameFormat === "full" ? "" : lastName.trim(),
+          email: core.email || null,
+          phone: core.phone || null,
+          isAdult: core.is_adult !== "child",
+          plusOnePolicy: (core.plus_one_policy as any) || null,
+          notes: core.notes || null,
+          groupId,
+          assemblyId: assemblyId || null,
+          customFields,
+        }
+      : {
+          firstName: firstName.trim(),
+          lastName: nameFormat === "full" ? "" : lastName.trim(),
+          email: core.email || undefined,
+          phone: core.phone || undefined,
+          isAdult: core.is_adult !== "child",
+          plusOnePolicy: (core.plus_one_policy as any) || null,
+          notes: core.notes || undefined,
+          groupId,
+          assemblyId: assemblyId || null,
+          customFields: Object.keys(customFields).length ? customFields : undefined,
+        };
+
+    const res = await fetch(
+      invitee ? `/api/events/${eventId}/invitees/${invitee.id}` : `/api/events/${eventId}/invitees`,
+      { method: invitee ? "PATCH" : "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }
+    );
     setSaving(false);
     const data = await res.json();
     if (!res.ok) {
       setError(data.error || "Something went wrong.");
       return;
     }
-    onAdded();
+    onSaved();
   }
 
   return (
-    <Modal title="Add invitee" onClose={onClose}>
+    <Modal title={invitee ? "Edit invitee" : "Add invitee"} onClose={onClose}>
       <form onSubmit={onSubmit} className="space-y-4">
         {error && <div className="rounded border border-clay-500/30 bg-clay-500/5 text-clay-600 text-sm px-3 py-2.5">{error}</div>}
 
@@ -182,7 +217,9 @@ export function AddInviteeModal({
 
         <div className="flex justify-end gap-2 pt-2">
           <button type="button" onClick={onClose} className="btn-ghost">Cancel</button>
-          <button type="submit" disabled={saving} className="btn-primary">{saving ? "Adding…" : "Add invitee"}</button>
+          <button type="submit" disabled={saving} className="btn-primary">
+            {saving ? "Saving…" : invitee ? "Save changes" : "Add invitee"}
+          </button>
         </div>
       </form>
     </Modal>
