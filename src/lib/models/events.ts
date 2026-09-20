@@ -6,8 +6,15 @@ export type LocationType = "physical" | "virtual" | "hybrid";
 export type Visibility = "invite_only" | "public" | "hybrid";
 export type GroupRsvpMode = "group" | "individual" | "primary_contact";
 export type PlusOnePolicy = "none" | "one" | "multiple";
-export type Role = "owner" | "admin" | "viewer" | "lead_planner";
+export type Role = "owner" | "admin" | "viewer" | "lead_planner" | "co_planner";
 export type InviteeNameFormat = "first_last" | "full";
+
+/** lead_planner and co_planner are both scoped to one assembly (see event_members.assembly_id) —
+ * everywhere access needs to be restricted to "this person's one clone", check this instead of
+ * the individual role literals so a co_planner always gets identical scoping to a lead_planner. */
+export function isCloneScopedRole(role: Role): boolean {
+  return role === "lead_planner" || role === "co_planner";
+}
 
 export interface EventRow {
   id: string;
@@ -195,9 +202,16 @@ export async function addCoPlanner(eventId: string, email: string, role: Exclude
   const id = newId("mem");
   await exec(
     `INSERT INTO event_members (id, event_id, user_id, invited_email, role, assembly_id, status) VALUES (?,?,?,?,?,?,?)`,
-    [id, eventId, user?.id || null, email.toLowerCase(), role, role === "lead_planner" ? assemblyId || null : null, user ? "active" : "pending"]
+    [id, eventId, user?.id || null, email.toLowerCase(), role, isCloneScopedRole(role) ? assemblyId || null : null, user ? "active" : "pending"]
   );
   return { id, isNewUser: !user };
+}
+
+export async function getMember(id: string) {
+  return queryOne<{ id: string; event_id: string; user_id: string | null; invited_email: string; role: Role; assembly_id: string | null; status: string }>(
+    "SELECT * FROM event_members WHERE id = ?",
+    [id]
+  );
 }
 
 export async function removeCoPlanner(memberId: string) {

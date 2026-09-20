@@ -91,7 +91,9 @@ export async function sendCoPlannerInviteEmail(
   event: EventRow, to: string, role: string, isNewUser: boolean, assemblyName?: string | null
 ) {
   const url = isNewUser ? appUrl("/register") : appUrl("/login");
-  const roleLabel = role === "lead_planner" ? `lead planner${assemblyName ? ` for ${assemblyName}` : ""}` : role;
+  const roleLabel = role === "lead_planner" ? `lead planner${assemblyName ? ` for ${assemblyName}` : ""}`
+    : role === "co_planner" ? `co-planner${assemblyName ? ` for ${assemblyName}` : ""}`
+    : role;
   const html = wrap(
     event,
     `You've been added as a ${roleLabel}`,

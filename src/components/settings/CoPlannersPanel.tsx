@@ -51,7 +51,9 @@ export function CoPlannersPanel({ eventId, members, isOwner }: { eventId: string
             </div>
             <div className="flex items-center gap-3 shrink-0">
               <span className="chip bg-ink/[0.06] text-ink-soft capitalize">
-                {m.role === "lead_planner" ? `Lead planner${m.assembly_name ? ` · ${m.assembly_name}` : ""}` : m.role}
+                {m.role === "lead_planner" ? `Lead planner${m.assembly_name ? ` · ${m.assembly_name}` : ""}`
+                  : m.role === "co_planner" ? `Co-planner${m.assembly_name ? ` · ${m.assembly_name}` : ""}`
+                  : m.role}
               </span>
               {isOwner && m.role !== "owner" && (
                 <button onClick={() => remove(m.id)} className="text-ink-faint hover:text-clay-600 text-xs">Remove</button>

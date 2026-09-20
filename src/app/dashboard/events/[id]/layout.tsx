@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { getCurrentUser } from "@/lib/session";
-import { getEventById, getMembership, computeEffectiveStatus, getEventStats } from "@/lib/models/events";
+import { getEventById, getMembership, computeEffectiveStatus, getEventStats, isCloneScopedRole } from "@/lib/models/events";
 import { getAssembly, getAssemblyStats } from "@/lib/models/assemblies";
 import { StatusBadge } from "@/components/StatusBadge";
 import { formatDateShort, formatTime } from "@/lib/utils";
@@ -18,9 +18,9 @@ export default async function EventLayout({ children, params }: { children: Reac
   const membership = await getMembership(params.id, user.id);
   if (!membership) notFound();
 
-  const isLeadPlanner = membership.role === "lead_planner";
-  const assembly = isLeadPlanner && membership.assembly_id ? await getAssembly(membership.assembly_id) : null;
-  const stats = isLeadPlanner
+  const isCloneScoped = isCloneScopedRole(membership.role);
+  const assembly = isCloneScoped && membership.assembly_id ? await getAssembly(membership.assembly_id) : null;
+  const stats = isCloneScoped
     ? await getAssemblyStats(params.id, membership.assembly_id)
     : await getEventStats(params.id);
   const status = computeEffectiveStatus(event);

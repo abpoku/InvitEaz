@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
+import { ClonePlanners } from "@/components/assemblies/ClonePlanners";
 
 interface AssemblyStats { invited: number; attending: number; declined: number; noResponse: number; responseRate: number; }
 interface Assembly { id: string; name: string; stats?: AssemblyStats; }
@@ -108,14 +109,17 @@ export function AssembliesManager({
           assemblies.map((a) => (
             <AssemblyCard
               key={a.id}
+              eventId={eventId}
               assembly={a}
-              leadPlanner={members.find((m) => m.assembly_id === a.id) || null}
+              leadPlanner={members.find((m) => m.assembly_id === a.id && m.role === "lead_planner") || null}
+              coPlanners={members.filter((m) => m.assembly_id === a.id && m.role === "co_planner")}
               canManage={canManage}
               canAssign={isOwner}
               onRename={(name) => renameAssembly(a.id, name)}
               onDelete={() => deleteAssembly(a)}
               onAssign={(email) => assignLeadPlanner(a.id, email)}
               onRemoveLeadPlanner={(memberId) => removeMember(memberId)}
+              onCoPlannersChange={load}
             />
           ))
         )}
@@ -135,10 +139,11 @@ export function AssembliesManager({
 }
 
 function AssemblyCard({
-  assembly, leadPlanner, canManage, canAssign, onRename, onDelete, onAssign, onRemoveLeadPlanner,
+  eventId, assembly, leadPlanner, coPlanners, canManage, canAssign, onRename, onDelete, onAssign, onRemoveLeadPlanner, onCoPlannersChange,
 }: {
-  assembly: Assembly; leadPlanner: Member | null; canManage: boolean; canAssign: boolean;
+  eventId: string; assembly: Assembly; leadPlanner: Member | null; coPlanners: Member[]; canManage: boolean; canAssign: boolean;
   onRename: (name: string) => void; onDelete: () => void; onAssign: (email: string) => void; onRemoveLeadPlanner: (memberId: string) => void;
+  onCoPlannersChange: () => void;
 }) {
   const [editing, setEditing] = useState(false);
   const [name, setName] = useState(assembly.name);
@@ -203,6 +208,10 @@ function AssemblyCard({
           <p className="text-sm text-ink-faint">No lead planner assigned yet.</p>
         )}
       </div>
+
+      {leadPlanner && canAssign && (
+        <ClonePlanners eventId={eventId} assemblyId={assembly.id} planners={coPlanners} onChange={onCoPlannersChange} />
+      )}
     </div>
   );
 }

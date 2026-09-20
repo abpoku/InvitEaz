@@ -1,4 +1,4 @@
-import { getEventStats, getMembership } from "@/lib/models/events";
+import { getEventStats, getMembership, isCloneScopedRole } from "@/lib/models/events";
 import { getAssemblyStats, listAssemblies } from "@/lib/models/assemblies";
 import { listQuestions, questionReport } from "@/lib/models/rsvp";
 import { listInvitees } from "@/lib/models/invitees";
@@ -7,10 +7,10 @@ import { getCurrentUser } from "@/lib/session";
 export default async function ReportsPage({ params }: { params: { id: string } }) {
   const user = await getCurrentUser();
   const membership = await getMembership(params.id, user!.id);
-  const isLeadPlanner = membership?.role === "lead_planner";
-  const assemblyId = isLeadPlanner ? membership.assembly_id : null;
+  const isCloneScoped = !!membership && isCloneScopedRole(membership.role);
+  const assemblyId = isCloneScoped ? membership.assembly_id : null;
 
-  const stats = isLeadPlanner ? await getAssemblyStats(params.id, assemblyId) : await getEventStats(params.id);
+  const stats = isCloneScoped ? await getAssemblyStats(params.id, assemblyId) : await getEventStats(params.id);
   const questions = await listQuestions(params.id);
   const invitees = await listInvitees(params.id, assemblyId);
   const adults = invitees.filter((i) => i.is_adult && i.status === "attending").length;
@@ -23,7 +23,7 @@ export default async function ReportsPage({ params }: { params: { id: string } }
     }))
   );
 
-  const clones = isLeadPlanner ? [] : await listAssemblies(params.id);
+  const clones = isCloneScoped ? [] : await listAssemblies(params.id);
   const cloneStats = clones.length > 0 ? await Promise.all(clones.map((c) => getAssemblyStats(params.id, c.id))) : [];
 
   return (

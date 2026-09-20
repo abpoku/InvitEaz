@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { getEventById, getMembership, listMembers } from "@/lib/models/events";
+import { getEventById, getMembership, listMembers, isCloneScopedRole } from "@/lib/models/events";
 import { listInvitees } from "@/lib/models/invitees";
 import { listQuestions } from "@/lib/models/rsvp";
 import { listAssemblies } from "@/lib/models/assemblies";
@@ -7,19 +7,21 @@ import { getCurrentUser } from "@/lib/session";
 import { formatDate, formatTime } from "@/lib/utils";
 import { ShareCard } from "@/components/ShareCard";
 import { AssembliesManager } from "@/components/assemblies/AssembliesManager";
+import { LeadPlannerCoPlanners } from "@/components/assemblies/LeadPlannerCoPlanners";
 import { FormBuilder } from "@/components/rsvp-form/FormBuilder";
 
 export default async function EventOverviewPage({ params }: { params: { id: string } }) {
   const user = await getCurrentUser();
   const membership = await getMembership(params.id, user!.id);
   const isLeadPlanner = membership?.role === "lead_planner";
-  const assemblyId = isLeadPlanner ? membership!.assembly_id : null;
+  const isCloneScoped = !!membership && isCloneScopedRole(membership.role);
+  const assemblyId = isCloneScoped ? membership!.assembly_id : null;
 
   const event = (await getEventById(params.id))!;
   const isOwner = event.owner_id === user!.id;
   const invitees = await listInvitees(params.id, assemblyId);
   const questions = await listQuestions(params.id);
-  const [assemblies, members] = isLeadPlanner ? [[], []] : await Promise.all([listAssemblies(params.id), listMembers(params.id)]);
+  const [assemblies, members] = isCloneScoped ? [[], []] : await Promise.all([listAssemblies(params.id), listMembers(params.id)]);
 
   const steps = [
     { done: !!event.name && !!event.event_date, label: "Event details added", href: `/dashboard/events/${params.id}/settings` },
@@ -31,8 +33,8 @@ export default async function EventOverviewPage({ params }: { params: { id: stri
   return (
     <div className="p-4 sm:p-8 max-w-5xl grid lg:grid-cols-[1fr_320px] gap-6 sm:gap-8">
       <div className="space-y-6">
-        {/* Publishing is a master-planner concern — a lead planner has nothing to do with any of these steps. */}
-        {event.status === "draft" && !isLeadPlanner && (
+        {/* Publishing is a master-planner concern — clone-scoped roles have nothing to do with any of these steps. */}
+        {event.status === "draft" && !isCloneScoped && (
           <div className="card p-6">
             <p className="font-serif text-lg text-ink">Get ready to publish</p>
             <ul className="mt-4 space-y-2.5">
@@ -88,13 +90,13 @@ export default async function EventOverviewPage({ params }: { params: { id: stri
           </dl>
         </div>
 
-        {!isLeadPlanner && (
+        {!isCloneScoped && (
           <div id="rsvp-form-section">
             <FormBuilder eventId={params.id} />
           </div>
         )}
 
-        {!isLeadPlanner && (
+        {!isCloneScoped && (
           <AssembliesManager
             eventId={params.id}
             canManage={membership?.role === "owner" || membership?.role === "admin"}
@@ -102,6 +104,10 @@ export default async function EventOverviewPage({ params }: { params: { id: stri
             initialAssemblies={assemblies as any}
             initialMembers={members as any}
           />
+        )}
+
+        {isLeadPlanner && membership!.assembly_id && (
+          <LeadPlannerCoPlanners eventId={params.id} assemblyId={membership!.assembly_id} />
         )}
       </div>
 

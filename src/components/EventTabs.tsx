@@ -17,9 +17,11 @@ const TABS = [
 export function EventTabs({ eventId, role }: { eventId: string; role: Role }) {
   const pathname = usePathname();
   const base = `/dashboard/events/${eventId}`;
-  // Only the new lead_planner role loses these tabs — existing owner/admin/viewer behavior is unchanged.
-  const isLeadPlanner = role === "lead_planner";
-  const tabs = TABS.filter((t) => !t.masterOnly || !isLeadPlanner);
+  // Clone-scoped roles (lead_planner, co_planner) lose these tabs — existing owner/admin/viewer behavior is unchanged.
+  // (Inlined rather than importing isCloneScopedRole from "@/lib/models/events" — that module also
+  // exports the pg-backed query helpers, which must never end up in a client bundle.)
+  const isCloneScoped = role === "lead_planner" || role === "co_planner";
+  const tabs = TABS.filter((t) => !t.masterOnly || !isCloneScoped);
 
   return (
     <div className="flex items-center gap-1 overflow-x-auto">

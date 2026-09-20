@@ -67,8 +67,8 @@ CREATE TABLE IF NOT EXISTS event_members (
   event_id TEXT NOT NULL REFERENCES events(id) ON DELETE CASCADE,
   user_id TEXT REFERENCES users(id) ON DELETE CASCADE,
   invited_email TEXT NOT NULL,
-  role TEXT NOT NULL DEFAULT 'viewer', -- owner | admin | viewer | lead_planner
-  assembly_id TEXT REFERENCES assemblies(id) ON DELETE CASCADE, -- set only for lead_planner: scopes their access to one assembly
+  role TEXT NOT NULL DEFAULT 'viewer', -- owner | admin | viewer | lead_planner | co_planner
+  assembly_id TEXT REFERENCES assemblies(id) ON DELETE CASCADE, -- set for lead_planner/co_planner: scopes their access to one assembly
   status TEXT NOT NULL DEFAULT 'active', -- pending | active
   created_at TEXT NOT NULL DEFAULT to_char(now() AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')
 );

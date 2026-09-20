@@ -1,5 +1,5 @@
 import { listResponsesForEvent, listQuestions, getAnswersForResponse } from "@/lib/models/rsvp";
-import { getMembership } from "@/lib/models/events";
+import { getMembership, isCloneScopedRole } from "@/lib/models/events";
 import { listAssemblies } from "@/lib/models/assemblies";
 import { getCurrentUser } from "@/lib/session";
 import { StatusBadge } from "@/components/StatusBadge";
@@ -9,11 +9,11 @@ import { formatDateTime, fullName } from "@/lib/utils";
 export default async function ResponsesPage({ params, searchParams }: { params: { id: string }; searchParams: { clone?: string } }) {
   const user = await getCurrentUser();
   const membership = await getMembership(params.id, user!.id);
-  const isLeadPlanner = membership?.role === "lead_planner";
+  const isCloneScoped = !!membership && isCloneScopedRole(membership.role);
 
-  const clones = isLeadPlanner ? [] : await listAssemblies(params.id);
-  const selectedClone = !isLeadPlanner && searchParams.clone && clones.some((c) => c.id === searchParams.clone) ? searchParams.clone : null;
-  const assemblyId = isLeadPlanner ? membership.assembly_id : selectedClone;
+  const clones = isCloneScoped ? [] : await listAssemblies(params.id);
+  const selectedClone = !isCloneScoped && searchParams.clone && clones.some((c) => c.id === searchParams.clone) ? searchParams.clone : null;
+  const assemblyId = isCloneScoped ? membership.assembly_id : selectedClone;
 
   const questions = await listQuestions(params.id);
   const responses = (await listResponsesForEvent(params.id, assemblyId)) as any[];

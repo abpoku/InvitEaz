@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { getCurrentUser } from "@/lib/session";
-import { listEventsForUser, getEventStats, computeEffectiveStatus } from "@/lib/models/events";
+import { listEventsForUser, getEventStats, computeEffectiveStatus, isCloneScopedRole } from "@/lib/models/events";
 import { getAssemblyStats, getAssembly } from "@/lib/models/assemblies";
 import { formatDateShort } from "@/lib/utils";
 import { StatusBadge } from "@/components/StatusBadge";
@@ -16,9 +16,9 @@ export default async function DashboardPage() {
 
   let totalInvitees = 0, totalConfirmed = 0, awaiting = 0;
   const rows = await Promise.all(events.map(async (e) => {
-    const isLeadPlanner = e.member_role === "lead_planner";
-    const stats = isLeadPlanner ? await getAssemblyStats(e.id, e.member_assembly_id) : await getEventStats(e.id);
-    const assembly = isLeadPlanner && e.member_assembly_id ? await getAssembly(e.member_assembly_id) : null;
+    const isCloneScoped = isCloneScopedRole(e.member_role);
+    const stats = isCloneScoped ? await getAssemblyStats(e.id, e.member_assembly_id) : await getEventStats(e.id);
+    const assembly = isCloneScoped && e.member_assembly_id ? await getAssembly(e.member_assembly_id) : null;
     totalInvitees += stats.invited;
     totalConfirmed += stats.attending;
     awaiting += stats.noResponse;
