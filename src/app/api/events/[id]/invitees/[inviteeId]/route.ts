@@ -23,11 +23,15 @@ export async function PATCH(req: Request, { params }: { params: { id: string; in
   const body = await req.json();
   const patch: Record<string, any> = {};
   for (const [k, dbKey] of [
-    ["firstName", "first_name"], ["lastName", "last_name"], ["email", "email"], ["phone", "phone"],
+    ["firstName", "first_name"], ["email", "email"], ["phone", "phone"],
     ["notes", "notes"], ["groupId", "group_id"],
   ] as const) {
     if (body[k] !== undefined) patch[dbKey] = body[k] || null;
   }
+  // last_name is NOT NULL — events using "single full name" mode intentionally store the whole
+  // name in first_name and leave this as "" (see createInvitee / fullName()), so an empty string
+  // here is a legitimate value, not "clear this field": never coerce it to null like the columns above.
+  if (body.lastName !== undefined) patch.last_name = body.lastName;
   if (body.isAdult !== undefined) patch.is_adult = body.isAdult ? 1 : 0;
   if (body.plusOnePolicy !== undefined) patch.plus_one_policy = body.plusOnePolicy;
   if (body.customFields !== undefined) {
