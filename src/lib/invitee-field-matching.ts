@@ -164,12 +164,11 @@ function buildRow(
   const phoneActive = activeByKey.has("phone");
   if (email && !EMAIL_RE.test(email)) issues.push({ field: "email", type: "invalid_format", message: "Invalid email address" });
   if (phone && !PHONE_RE.test(phone)) issues.push({ field: "phone", type: "invalid_format", message: "Invalid phone number" });
-  if ((emailActive || phoneActive) && !email && !phone) {
-    // Either field fixes it, so count the row under both buckets in the per-field summary.
-    issues.push({ field: "email", type: "missing", message: "Missing email address or phone number" });
-    issues.push({ field: "phone", type: "missing", message: "Missing email address or phone number" });
-  }
 
+  // Individually-required fields first, so we know below whether email/phone were already
+  // flagged missing here — otherwise a field that's both individually required AND covered by
+  // the "at least one of email/phone" check below would get counted twice for the same row.
+  let emailFlaggedMissing = false, phoneFlaggedMissing = false;
   for (const field of activeByKey.values()) {
     if (!field.required) continue;
     // is_adult/plus_one_policy always carry a sensible default ("Adult", "use event default"),
@@ -183,7 +182,19 @@ function buildRow(
       case "notes": value = notes; break;
       default: value = field.kind === "custom" ? customFields[field.key] || "" : "";
     }
-    if (!value) issues.push({ field: field.key, type: "missing", message: `Missing ${field.label}` });
+    if (!value) {
+      issues.push({ field: field.key, type: "missing", message: `Missing ${field.label}` });
+      if (field.key === "email") emailFlaggedMissing = true;
+      if (field.key === "phone") phoneFlaggedMissing = true;
+    }
+  }
+
+  if ((emailActive || phoneActive) && !email && !phone) {
+    // Either field fixes it, so count the row under both buckets in the per-field summary — but
+    // skip a field already flagged above, so a field that's both individually required and part
+    // of this pair check isn't counted twice.
+    if (!emailFlaggedMissing) issues.push({ field: "email", type: "missing", message: "Missing email address or phone number" });
+    if (!phoneFlaggedMissing) issues.push({ field: "phone", type: "missing", message: "Missing email address or phone number" });
   }
 
   let plusOneAllowed = "";
@@ -236,11 +247,8 @@ export function revalidateIssues(row: MappedInviteeRow, fields: InviteeFieldLike
   const phoneActive = activeByKey.has("phone");
   if (row.email && !EMAIL_RE.test(row.email)) issues.push({ field: "email", type: "invalid_format", message: "Invalid email address" });
   if (row.phone && !PHONE_RE.test(row.phone)) issues.push({ field: "phone", type: "invalid_format", message: "Invalid phone number" });
-  if ((emailActive || phoneActive) && !row.email && !row.phone) {
-    issues.push({ field: "email", type: "missing", message: "Missing email address or phone number" });
-    issues.push({ field: "phone", type: "missing", message: "Missing email address or phone number" });
-  }
 
+  let emailFlaggedMissing = false, phoneFlaggedMissing = false;
   for (const field of activeByKey.values()) {
     if (!field.required) continue;
     if (field.key === "is_adult" || field.key === "plus_one_policy") continue;
@@ -252,7 +260,16 @@ export function revalidateIssues(row: MappedInviteeRow, fields: InviteeFieldLike
       case "notes": value = row.notes; break;
       default: value = field.kind === "custom" ? row.customFields[field.key] || "" : "";
     }
-    if (!value) issues.push({ field: field.key, type: "missing", message: `Missing ${field.label}` });
+    if (!value) {
+      issues.push({ field: field.key, type: "missing", message: `Missing ${field.label}` });
+      if (field.key === "email") emailFlaggedMissing = true;
+      if (field.key === "phone") phoneFlaggedMissing = true;
+    }
+  }
+
+  if ((emailActive || phoneActive) && !row.email && !row.phone) {
+    if (!emailFlaggedMissing) issues.push({ field: "email", type: "missing", message: "Missing email address or phone number" });
+    if (!phoneFlaggedMissing) issues.push({ field: "phone", type: "missing", message: "Missing email address or phone number" });
   }
 
   return issues;
