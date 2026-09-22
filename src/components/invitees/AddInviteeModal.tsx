@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { Modal } from "@/components/Modal";
 import { fullName } from "@/lib/utils";
+import { InviteeFieldInput } from "@/components/invitees/InviteeFieldInput";
 import type { InviteeField, Assembly, InviteeRow } from "@/components/invitees/InviteesManager";
 
 /** Tolerates a malformed custom_fields column (e.g. the literal string "null" instead of a real
@@ -168,67 +169,15 @@ export function AddInviteeModal({
           </div>
         )}
 
-        {fields.map((f) => {
-          if (f.key === "group") {
-            if (groupRsvpMode === "individual") return null;
-            return (
-              <div key={f.id}>
-                <label className="label">{f.label} <span className="text-ink-faint font-normal">(optional)</span></label>
-                <input className="input" placeholder="e.g. Johnson Family" value={core.group || ""} onChange={(e) => setCore((c) => ({ ...c, group: e.target.value }))} />
-              </div>
-            );
-          }
-          if (f.key === "is_adult") {
-            return (
-              <div key={f.id}>
-                <label className="label">{f.label}</label>
-                <select className="input" value={core.is_adult || "adult"} onChange={(e) => setCore((c) => ({ ...c, is_adult: e.target.value }))}>
-                  <option value="adult">Adult</option>
-                  <option value="child">Child</option>
-                </select>
-              </div>
-            );
-          }
-          if (f.key === "plus_one_policy") {
-            return (
-              <div key={f.id}>
-                <label className="label">{f.label}</label>
-                <select className="input" value={core.plus_one_policy || ""} onChange={(e) => setCore((c) => ({ ...c, plus_one_policy: e.target.value }))}>
-                  <option value="">Use event default</option>
-                  <option value="none">No plus-ones</option>
-                  <option value="one">May bring one</option>
-                  <option value="multiple">May bring multiple</option>
-                </select>
-              </div>
-            );
-          }
-          const inputType = f.key === "email" ? "email" : f.key === "phone" ? "text" : f.field_type === "checkbox" ? "checkbox" : f.field_type === "number" ? "number" : f.field_type === "date" ? "date" : "text";
-          const isCoreOptional = f.key === "email" || f.key === "phone" || f.key === "notes";
-          return (
-            <div key={f.id}>
-              <label className="label">
-                {f.label} {f.required ? <span className="text-clay-600">*</span> : isCoreOptional ? <span className="text-ink-faint font-normal">(optional)</span> : null}
-              </label>
-              {f.field_type === "dropdown" ? (
-                <select
-                  className="input"
-                  value={f.kind === "core" ? core[f.key] || "" : customFields[f.key] || ""}
-                  onChange={(e) => (f.kind === "core" ? setCore((c) => ({ ...c, [f.key]: e.target.value })) : setCustomFields((c) => ({ ...c, [f.key]: e.target.value })))}
-                >
-                  <option value="">Choose…</option>
-                  {(f.options_json ? JSON.parse(f.options_json) : []).map((o: string) => <option key={o} value={o}>{o}</option>)}
-                </select>
-              ) : (
-                <input
-                  type={inputType}
-                  className="input"
-                  value={f.kind === "core" ? core[f.key] || "" : customFields[f.key] || ""}
-                  onChange={(e) => (f.kind === "core" ? setCore((c) => ({ ...c, [f.key]: e.target.value })) : setCustomFields((c) => ({ ...c, [f.key]: e.target.value })))}
-                />
-              )}
-            </div>
-          );
-        })}
+        {fields.map((f) => (
+          <InviteeFieldInput
+            key={f.id}
+            field={f}
+            groupRsvpMode={groupRsvpMode}
+            value={f.key === "group" ? core.group : f.kind === "core" ? core[f.key] : customFields[f.key]}
+            onChange={(v) => (f.kind === "core" ? setCore((c) => ({ ...c, [f.key]: v })) : setCustomFields((c) => ({ ...c, [f.key]: v })))}
+          />
+        ))}
 
         <div className="flex justify-end gap-2 pt-2">
           <button type="button" onClick={onClose} className="btn-ghost">Cancel</button>

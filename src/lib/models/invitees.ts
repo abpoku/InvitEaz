@@ -117,6 +117,33 @@ export async function getInviteeById(id: string): Promise<InviteeRow | undefined
   return queryOne<InviteeRow>("SELECT * FROM invitees WHERE id = ?", [id]);
 }
 
+export interface InviteeLite {
+  id: string;
+  first_name: string;
+  last_name: string;
+  email: string | null;
+  phone: string | null;
+}
+
+/** Whole event, unscoped by assembly — a duplicate sitting in a different assembly than the one
+ * being imported into is exactly the mistake upload duplicate-detection needs to catch. Returns
+ * only match-relevant columns, never notes/custom_fields, so a preview never leaks other
+ * assemblies' invitee detail beyond what's needed to flag a match. */
+export async function listInviteesLite(eventId: string): Promise<InviteeLite[]> {
+  return query<InviteeLite>(
+    "SELECT id, first_name, last_name, email, phone FROM invitees WHERE event_id = ? AND active = 1",
+    [eventId]
+  );
+}
+
+/** Same scope rule the single-invitee PATCH/DELETE routes enforce locally — pulled out here so
+ * the bulk-edit route and the upload-confirm merge path can both reuse it. */
+export async function canManageInvitee(inviteeId: string, eventId: string, assemblyId: string | null): Promise<boolean> {
+  if (!assemblyId) return true;
+  const invitee = await getInviteeById(inviteeId);
+  return !!invitee && invitee.event_id === eventId && invitee.assembly_id === assemblyId;
+}
+
 export async function updateInvitee(id: string, patch: Partial<InviteeRow>) {
   const allowed = ["first_name", "last_name", "email", "phone", "is_adult", "plus_one_policy", "notes", "group_id", "assembly_id", "custom_fields"];
   const keys = Object.keys(patch).filter((k) => allowed.includes(k));

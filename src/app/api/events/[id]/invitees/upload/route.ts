@@ -1,10 +1,11 @@
 import { NextResponse } from "next/server";
 import { requireAssemblyScope } from "@/lib/session";
 import { parseFileToRecords } from "@/lib/csv-import";
-import { guessColumnMap, validateRecords, findDuplicateRowNumbers } from "@/lib/invitee-field-matching";
+import { guessColumnMap, validateRecords, findDuplicates, fieldIssueSummary } from "@/lib/invitee-field-matching";
 import { listInviteeFields } from "@/lib/models/invitee-fields";
 import { getEventById } from "@/lib/models/events";
 import { listAssemblies } from "@/lib/models/assemblies";
+import { listInviteesLite } from "@/lib/models/invitees";
 
 export async function POST(req: Request, { params }: { params: { id: string } }) {
   const access = await requireAssemblyScope(params.id);
@@ -31,15 +32,21 @@ export async function POST(req: Request, { params }: { params: { id: string } })
 
   const fields = await listInviteeFields(params.id);
   const columnMap = guessColumnMap(headers, fields, event.invitee_name_format);
-  const rows = validateRecords(records, columnMap, fields, event.invitee_name_format);
-  const dupeRowNumbers = findDuplicateRowNumbers(rows);
-  const withDupes = rows.map((r) => ({ ...r, isDuplicate: dupeRowNumbers.has(r.rowNumber) }));
+  const baseRows = validateRecords(records, columnMap, fields, event.invitee_name_format);
 
-  const valid = withDupes.filter((r) => r.errors.length === 0 && !r.isDuplicate);
-  const invalid = withDupes.filter((r) => r.errors.length > 0);
-  const duplicates = withDupes.filter((r) => r.isDuplicate && r.errors.length === 0);
+  // Whole-event, deliberately ignoring access.assemblyId — a duplicate sitting in a different
+  // assembly than the one being imported into is exactly the mistake this needs to catch.
+  const existingInvitees = (await listInviteesLite(params.id)).map((e) => ({
+    id: e.id,
+    firstName: e.first_name,
+    lastName: e.last_name,
+    email: e.email,
+    phone: e.phone,
+  }));
+  const dupes = findDuplicates(baseRows, existingInvitees);
+  const rows = baseRows.map((r) => ({ ...r, duplicate: dupes.get(r.rowNumber) ?? null }));
 
-  // A full-scope planner can choose which assembly to import into; a lead planner's imports
+  // A full-scope planner can choose which assembly to import into; a lead/co-planner's imports
   // always land in their own assembly, so they aren't offered a choice.
   const assemblies = access.assemblyId ? [] : await listAssemblies(params.id);
 
@@ -50,12 +57,9 @@ export async function POST(req: Request, { params }: { params: { id: string } })
     nameFormat: event.invitee_name_format,
     columnMap,
     assemblies,
+    existingInvitees,
     total: rows.length,
-    validCount: valid.length,
-    invalidCount: invalid.length,
-    duplicateCount: duplicates.length,
-    valid,
-    invalid,
-    duplicates,
+    rows,
+    fieldIssueSummary: fieldIssueSummary(rows, fields, event.invitee_name_format),
   });
 }

@@ -6,7 +6,9 @@ import { StatusBadge } from "@/components/StatusBadge";
 import { AddInviteeModal } from "@/components/invitees/AddInviteeModal";
 import { UploadModal } from "@/components/invitees/UploadModal";
 import { FieldsManagerModal } from "@/components/invitees/FieldsManagerModal";
+import { BulkEditModal } from "@/components/invitees/BulkEditModal";
 import { fullName } from "@/lib/utils";
+import { groupCounts } from "@/lib/bulk-select";
 import type { InviteeFieldType } from "@/lib/models/invitee-fields";
 
 export interface InviteeField {
@@ -71,6 +73,8 @@ export function InviteesManager({ eventId, groupRsvpMode, nameFormat }: { eventI
   const [showUpload, setShowUpload] = useState(false);
   const [showFields, setShowFields] = useState(false);
   const [copiedId, setCopiedId] = useState<string | null>(null);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [showBulkEdit, setShowBulkEdit] = useState(false);
 
   async function load() {
     setLoading(true);
@@ -123,6 +127,43 @@ export function InviteesManager({ eventId, groupRsvpMode, nameFormat }: { eventI
     setTimeout(() => setCopiedId(null), 1600);
   }
 
+  function toggleSelected(id: string) {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
+  const allFilteredSelected = filtered.length > 0 && filtered.every((i) => selectedIds.has(i.id));
+  function toggleSelectAll() {
+    setSelectedIds((prev) => {
+      if (allFilteredSelected) {
+        const next = new Set(prev);
+        for (const i of filtered) next.delete(i.id);
+        return next;
+      }
+      return new Set([...prev, ...filtered.map((i) => i.id)]);
+    });
+  }
+
+  function selectGroup(groupName: string) {
+    setSelectedIds((prev) => new Set([...prev, ...filtered.filter((i) => i.group_name === groupName).map((i) => i.id)]));
+  }
+
+  async function applyBulkEdit(fieldKey: string, value: string) {
+    await fetch(`/api/events/${eventId}/invitees/bulk`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ids: [...selectedIds], fieldKey, value }),
+    });
+    setSelectedIds(new Set());
+    load();
+  }
+
+  const groupOptions = useMemo(() => groupCounts(filtered, (i) => i.group_name), [filtered]);
+
   return (
     <div className="p-4 sm:p-8">
       <div className="flex items-center justify-between gap-4 flex-wrap">
@@ -155,6 +196,22 @@ export function InviteesManager({ eventId, groupRsvpMode, nameFormat }: { eventI
         </div>
       </div>
 
+      {selectedIds.size > 0 && (
+        <div className="mt-4 flex flex-wrap items-center justify-between gap-2 rounded border border-wine-200 bg-wine-50 px-4 py-2.5">
+          <p className="text-sm text-wine-700">{selectedIds.size} selected</p>
+          <div className="flex items-center gap-3 flex-wrap">
+            {groupOptions.length > 0 && (
+              <select className="input py-1 text-xs max-w-[200px]" value="" onChange={(e) => e.target.value && selectGroup(e.target.value)}>
+                <option value="">Select all in group…</option>
+                {groupOptions.map((g) => <option key={g.name} value={g.name}>{g.name} ({g.count})</option>)}
+              </select>
+            )}
+            <button onClick={() => setShowBulkEdit(true)} className="text-sm font-medium text-wine-700 hover:underline">Bulk edit</button>
+            <button onClick={() => setSelectedIds(new Set())} className="text-sm font-medium text-wine-700 hover:underline">Clear selection</button>
+          </div>
+        </div>
+      )}
+
       <div className="mt-6 card overflow-x-auto">
         {loading ? (
           <p className="p-8 text-sm text-ink-faint text-center">Loading invitees…</p>
@@ -166,6 +223,9 @@ export function InviteesManager({ eventId, groupRsvpMode, nameFormat }: { eventI
           <table className="w-full min-w-[720px] text-sm">
             <thead>
               <tr className="border-b border-paper-line text-left text-ink-faint">
+                <th className="px-5 py-3 w-8">
+                  <input type="checkbox" checked={allFilteredSelected} onChange={toggleSelectAll} aria-label="Select all" />
+                </th>
                 <th className="px-5 py-3 font-medium">Name</th>
                 {assemblies.length > 0 && <th className="px-5 py-3 font-medium whitespace-nowrap">Clone</th>}
                 {fields.map((f) => (
@@ -179,6 +239,9 @@ export function InviteesManager({ eventId, groupRsvpMode, nameFormat }: { eventI
             <tbody>
               {filtered.map((i) => (
                 <tr key={i.id} className="border-b border-paper-line last:border-0 hover:bg-paper-soft/40">
+                  <td className="px-5 py-3">
+                    <input type="checkbox" checked={selectedIds.has(i.id)} onChange={() => toggleSelected(i.id)} aria-label={`Select ${fullName(i.first_name, i.last_name)}`} />
+                  </td>
                   <td className="px-5 py-3">
                     <p className="text-ink">{fullName(i.first_name, i.last_name)}</p>
                   </td>
@@ -228,6 +291,7 @@ export function InviteesManager({ eventId, groupRsvpMode, nameFormat }: { eventI
       {showUpload && (
         <UploadModal
           eventId={eventId}
+          groupRsvpMode={groupRsvpMode}
           onClose={() => setShowUpload(false)}
           onImported={() => {
             setShowUpload(false);
@@ -241,6 +305,15 @@ export function InviteesManager({ eventId, groupRsvpMode, nameFormat }: { eventI
           nameFormat={nameFormat}
           onClose={() => { setShowFields(false); load(); router.refresh(); }}
           onChanged={() => { load(); router.refresh(); }}
+        />
+      )}
+      {showBulkEdit && (
+        <BulkEditModal
+          fields={fields}
+          groupRsvpMode={groupRsvpMode}
+          count={selectedIds.size}
+          onApply={applyBulkEdit}
+          onClose={() => setShowBulkEdit(false)}
         />
       )}
     </div>

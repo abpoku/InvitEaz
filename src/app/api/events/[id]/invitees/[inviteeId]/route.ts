@@ -1,22 +1,15 @@
 import { NextResponse } from "next/server";
 import { requireAssemblyScope } from "@/lib/session";
-import { updateInvitee, deactivateInvitee, getInviteeById } from "@/lib/models/invitees";
+import { updateInvitee, deactivateInvitee, getInviteeById, canManageInvitee } from "@/lib/models/invitees";
 import { logAudit } from "@/lib/models/events";
 import { getAssembly } from "@/lib/models/assemblies";
 import { fullName } from "@/lib/utils";
-
-/** A lead planner may only touch invitees already inside their own assembly. */
-async function canManage(inviteeId: string, eventId: string, assemblyId: string | null): Promise<boolean> {
-  if (!assemblyId) return true; // full-scope planner
-  const invitee = await getInviteeById(inviteeId);
-  return !!invitee && invitee.event_id === eventId && invitee.assembly_id === assemblyId;
-}
 
 export async function PATCH(req: Request, { params }: { params: { id: string; inviteeId: string } }) {
   const access = await requireAssemblyScope(params.id);
   if (!access.ok) return NextResponse.json({ error: access.message }, { status: access.status });
   if (access.role === "viewer") return NextResponse.json({ error: "You don't have permission to do this." }, { status: 403 });
-  if (!(await canManage(params.inviteeId, params.id, access.assemblyId))) {
+  if (!(await canManageInvitee(params.inviteeId, params.id, access.assemblyId))) {
     return NextResponse.json({ error: "Invitee not found." }, { status: 404 });
   }
 
@@ -60,7 +53,7 @@ export async function DELETE(_req: Request, { params }: { params: { id: string; 
   const access = await requireAssemblyScope(params.id);
   if (!access.ok) return NextResponse.json({ error: access.message }, { status: access.status });
   if (access.role === "viewer") return NextResponse.json({ error: "You don't have permission to do this." }, { status: 403 });
-  if (!(await canManage(params.inviteeId, params.id, access.assemblyId))) {
+  if (!(await canManageInvitee(params.inviteeId, params.id, access.assemblyId))) {
     return NextResponse.json({ error: "Invitee not found." }, { status: 404 });
   }
   const invitee = await getInviteeById(params.inviteeId);
