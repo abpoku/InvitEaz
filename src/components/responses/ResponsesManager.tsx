@@ -38,6 +38,10 @@ export function ResponsesManager({
   const [bulkBusy, setBulkBusy] = useState(false);
   const [view, setView] = useState<"individual" | "group">("individual");
   const [groupBusyId, setGroupBusyId] = useState<string | null>(null);
+  const [selectedGroupIds, setSelectedGroupIds] = useState<Set<string>>(new Set());
+  const [groupBulkStatus, setGroupBulkStatus] = useState<Status>("attending");
+  const [groupBulkNumAttending, setGroupBulkNumAttending] = useState("1");
+  const [groupBulkBusy, setGroupBulkBusy] = useState(false);
 
   const selectableRows = useMemo(() => rows.filter((r) => r.invitation_id), [rows]);
   const allSelected = selectableRows.length > 0 && selectableRows.every((r) => selectedIds.has(r.invitation_id!));
@@ -125,6 +129,37 @@ export function ResponsesManager({
     router.refresh();
   }
 
+  function toggleGroupSelected(groupId: string) {
+    setSelectedGroupIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(groupId)) next.delete(groupId);
+      else next.add(groupId);
+      return next;
+    });
+  }
+
+  const allGroupsSelected = groupStatusRows.length > 0 && groupStatusRows.every((g) => selectedGroupIds.has(g.groupId));
+  function toggleSelectAllGroups() {
+    setSelectedGroupIds((prev) => (allGroupsSelected ? new Set() : new Set(groupStatusRows.map((g) => g.groupId))));
+  }
+
+  async function applyGroupBulk() {
+    const invitationIds = groupStatusRows.filter((g) => selectedGroupIds.has(g.groupId)).flatMap((g) => g.invitationIds);
+    setGroupBulkBusy(true);
+    await fetch(`/api/events/${eventId}/responses/bulk`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        invitationIds,
+        status: groupBulkStatus,
+        numAttending: groupBulkStatus === "attending" ? Number(groupBulkNumAttending) || 1 : undefined,
+      }),
+    });
+    setGroupBulkBusy(false);
+    setSelectedGroupIds(new Set());
+    router.refresh();
+  }
+
   return (
     <div>
       {(groupOptions.length > 0 || view === "group") && (
@@ -134,13 +169,41 @@ export function ResponsesManager({
       )}
 
       {view === "group" ? (
-        <div className="mt-6 card overflow-x-auto">
+        <>
+          {canMutate && selectedGroupIds.size > 0 && (
+            <div className="mt-4 flex flex-wrap items-center justify-between gap-2 rounded border border-wine-200 bg-wine-50 px-4 py-2.5">
+              <p className="text-sm text-wine-700">{selectedGroupIds.size} group{selectedGroupIds.size === 1 ? "" : "s"} selected</p>
+              <div className="flex items-center gap-3 flex-wrap">
+                <select className="input py-1 text-xs" value={groupBulkStatus} onChange={(e) => setGroupBulkStatus(e.target.value as Status)}>
+                  {STATUSES.map((s) => <option key={s} value={s}>{STATUS_LABEL[s]}</option>)}
+                </select>
+                {groupBulkStatus === "attending" && (
+                  <input
+                    type="number" min={1} className="input py-1 text-xs w-16"
+                    value={groupBulkNumAttending} onChange={(e) => setGroupBulkNumAttending(e.target.value)}
+                    aria-label="Party size"
+                  />
+                )}
+                <button onClick={applyGroupBulk} disabled={groupBulkBusy} className="text-sm font-medium text-wine-700 hover:underline">
+                  {groupBulkBusy ? "Applying…" : `Apply to ${selectedGroupIds.size} group${selectedGroupIds.size === 1 ? "" : "s"}`}
+                </button>
+                <button onClick={() => setSelectedGroupIds(new Set())} className="text-sm font-medium text-wine-700 hover:underline">Clear selection</button>
+              </div>
+            </div>
+          )}
+
+          <div className="mt-6 card overflow-x-auto">
           {groupStatusRows.length === 0 ? (
             <p className="p-10 text-sm text-ink-faint text-center">No groups yet.</p>
           ) : (
             <table className="w-full min-w-[560px] text-sm">
               <thead>
                 <tr className="border-b border-paper-line text-left text-ink-faint">
+                  {canMutate && (
+                    <th className="px-5 py-3 w-8">
+                      <input type="checkbox" checked={allGroupsSelected} onChange={toggleSelectAllGroups} aria-label="Select all groups" />
+                    </th>
+                  )}
                   <th className="px-5 py-3 font-medium whitespace-nowrap">Name</th>
                   <th className="px-5 py-3 font-medium whitespace-nowrap">RSVP breakdown</th>
                   {canMutate && <th className="px-5 py-3 font-medium whitespace-nowrap">Set status for group</th>}
@@ -149,6 +212,11 @@ export function ResponsesManager({
               <tbody>
                 {groupStatusRows.map((g) => (
                   <tr key={g.groupId} className="border-b border-paper-line last:border-0 hover:bg-paper-soft/40">
+                    {canMutate && (
+                      <td className="px-5 py-3">
+                        <input type="checkbox" checked={selectedGroupIds.has(g.groupId)} onChange={() => toggleGroupSelected(g.groupId)} aria-label={`Select ${g.name}`} />
+                      </td>
+                    )}
                     <td className="px-5 py-3 text-ink whitespace-nowrap">{g.name}</td>
                     <td className="px-5 py-3 text-ink-soft whitespace-nowrap">
                       {g.counts.attending} attending · {g.counts.maybe} maybe · {g.counts.declined} declined · {g.counts.no_response} no response
@@ -174,7 +242,8 @@ export function ResponsesManager({
               </tbody>
             </table>
           )}
-        </div>
+          </div>
+        </>
       ) : (
         <>
       {canMutate && selectedIds.size > 0 && (

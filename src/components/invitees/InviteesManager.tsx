@@ -86,6 +86,8 @@ export function InviteesManager({ eventId, groupRsvpMode, nameFormat }: { eventI
   const [renameValue, setRenameValue] = useState("");
   const [groupError, setGroupError] = useState<string | null>(null);
   const [groupBusyId, setGroupBusyId] = useState<string | null>(null);
+  const [selectedGroupIds, setSelectedGroupIds] = useState<Set<string>>(new Set());
+  const [groupBulkBusy, setGroupBulkBusy] = useState(false);
 
   async function load() {
     setLoading(true);
@@ -256,6 +258,66 @@ export function InviteesManager({ eventId, groupRsvpMode, nameFormat }: { eventI
     load();
   }
 
+  function toggleGroupSelected(id: string) {
+    setSelectedGroupIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
+  const allGroupsSelected = groupRows.length > 0 && groupRows.every((g) => selectedGroupIds.has(g.id));
+  function toggleSelectAllGroups() {
+    setSelectedGroupIds((prev) => {
+      if (allGroupsSelected) return new Set();
+      return new Set(groupRows.map((g) => g.id));
+    });
+  }
+
+  function membersOfSelectedGroups() {
+    return groupRows.filter((g) => selectedGroupIds.has(g.id)).flatMap((g) => g.members);
+  }
+
+  function bulkEditSelectedGroups() {
+    setSelectedIds(new Set(membersOfSelectedGroups().map((m) => m.id)));
+    setShowBulkEdit(true);
+  }
+
+  function removeSelectedGroups() {
+    const ids = membersOfSelectedGroups().map((m) => m.id);
+    if (ids.length === 0) return;
+    setSelectedGroupIds(new Set());
+    removeIds(ids);
+  }
+
+  async function deleteSelectedGroups() {
+    const targets = groupRows.filter((g) => selectedGroupIds.has(g.id));
+    const eligible = targets.filter((g) => g.members.length === 0);
+    const skipped = targets.length - eligible.length;
+    if (eligible.length === 0) {
+      setGroupError("None of the selected groups can be deleted — they still have members.");
+      return;
+    }
+    if (!confirm(`Delete ${eligible.length} group${eligible.length === 1 ? "" : "s"}? This can't be undone.`)) return;
+    setGroupBulkBusy(true);
+    setGroupError(null);
+    let deleted = 0;
+    let blocked = 0;
+    for (const g of eligible) {
+      const res = await fetch(`/api/events/${eventId}/groups/${g.id}`, { method: "DELETE" });
+      if (res.ok) deleted++;
+      else blocked++;
+    }
+    setGroupBulkBusy(false);
+    setSelectedGroupIds(new Set());
+    const notes: string[] = [];
+    if (skipped > 0) notes.push(`${skipped} skipped (still had members)`);
+    if (blocked > 0) notes.push(`${blocked} couldn't be deleted (likely payment history)`);
+    if (notes.length > 0) setGroupError(`Deleted ${deleted} group${deleted === 1 ? "" : "s"} — ${notes.join(", ")}.`);
+    load();
+  }
+
   return (
     <div className="p-4 sm:p-8">
       <div className="flex items-center justify-between gap-4 flex-wrap">
@@ -393,6 +455,21 @@ export function InviteesManager({ eventId, groupRsvpMode, nameFormat }: { eventI
           {groupError && (
             <div className="mt-4 rounded border border-clay-500/30 bg-clay-500/5 text-clay-600 text-sm px-4 py-2.5">{groupError}</div>
           )}
+
+          {selectedGroupIds.size > 0 && (
+            <div className="mt-4 flex flex-wrap items-center justify-between gap-2 rounded border border-wine-200 bg-wine-50 px-4 py-2.5">
+              <p className="text-sm text-wine-700">{selectedGroupIds.size} group{selectedGroupIds.size === 1 ? "" : "s"} selected</p>
+              <div className="flex items-center gap-3 flex-wrap">
+                <button onClick={bulkEditSelectedGroups} className="text-sm font-medium text-wine-700 hover:underline">Bulk edit</button>
+                <button onClick={removeSelectedGroups} className="text-sm font-medium text-clay-600 hover:underline">Remove selected</button>
+                <button onClick={deleteSelectedGroups} disabled={groupBulkBusy} className="text-sm font-medium text-clay-600 hover:underline disabled:opacity-50">
+                  {groupBulkBusy ? "Deleting…" : "Delete selected"}
+                </button>
+                <button onClick={() => setSelectedGroupIds(new Set())} className="text-sm font-medium text-wine-700 hover:underline">Clear selection</button>
+              </div>
+            </div>
+          )}
+
           <div className="mt-6 card overflow-x-auto">
             {loading ? (
               <p className="p-8 text-sm text-ink-faint text-center">Loading groups…</p>
@@ -402,6 +479,9 @@ export function InviteesManager({ eventId, groupRsvpMode, nameFormat }: { eventI
               <table className="w-full min-w-[640px] text-sm">
                 <thead>
                   <tr className="border-b border-paper-line text-left text-ink-faint">
+                    <th className="px-5 py-3 w-8">
+                      <input type="checkbox" checked={allGroupsSelected} onChange={toggleSelectAllGroups} aria-label="Select all groups" />
+                    </th>
                     <th className="px-5 py-3 font-medium">Name</th>
                     {assemblies.length > 0 && <th className="px-5 py-3 font-medium whitespace-nowrap">Clone</th>}
                     <th className="px-5 py-3 font-medium whitespace-nowrap">Members</th>
@@ -411,6 +491,9 @@ export function InviteesManager({ eventId, groupRsvpMode, nameFormat }: { eventI
                 <tbody>
                   {groupRows.map((g) => (
                     <tr key={g.id} className="border-b border-paper-line last:border-0 hover:bg-paper-soft/40">
+                      <td className="px-5 py-3">
+                        <input type="checkbox" checked={selectedGroupIds.has(g.id)} onChange={() => toggleGroupSelected(g.id)} aria-label={`Select ${g.name}`} />
+                      </td>
                       <td className="px-5 py-3 text-ink">
                         {renamingGroupId === g.id ? (
                           <input
