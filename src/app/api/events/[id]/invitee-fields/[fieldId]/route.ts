@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { requireEventRole } from "@/lib/session";
 import { getInviteeField, listInviteeFields, updateInviteeField, deleteInviteeField } from "@/lib/models/invitee-fields";
+import { getEventById } from "@/lib/models/events";
 
 /** Guests need at least one way to be reached — block deactivating both email and phone at once. */
 async function wouldRemoveAllContactMethods(eventId: string, fieldId: string, patch: any): Promise<boolean> {
@@ -36,6 +37,12 @@ export async function PATCH(req: Request, { params }: { params: { id: string; fi
 export async function DELETE(_req: Request, { params }: { params: { id: string; fieldId: string } }) {
   const access = await requireEventRole(params.id, "admin");
   if (!access.ok) return NextResponse.json({ error: access.message }, { status: access.status });
+  // Deleting a field linked to ticketing would silently null the link (ON DELETE SET NULL) and
+  // strand the Overview ticketing UI mid-configuration — make the planner unlink it explicitly first.
+  const event = await getEventById(params.id);
+  if (event?.ticket_field_id === params.fieldId) {
+    return NextResponse.json({ error: "This field is linked to ticket pricing — unlink it in Overview first." }, { status: 400 });
+  }
   await deleteInviteeField(params.fieldId);
   return NextResponse.json({ ok: true });
 }

@@ -50,6 +50,10 @@ export async function listGroups(eventId: string, assemblyId?: string | null): P
   return query<GroupRow>("SELECT * FROM groups WHERE event_id = ? ORDER BY name ASC", [eventId]);
 }
 
+export async function getGroupById(id: string): Promise<GroupRow | undefined> {
+  return queryOne<GroupRow>("SELECT * FROM groups WHERE id = ?", [id]);
+}
+
 export async function setGroupLeader(groupId: string, inviteeId: string) {
   await exec("UPDATE groups SET leader_invitee_id = ? WHERE id = ?", [inviteeId, groupId]);
 }
@@ -155,6 +159,15 @@ export async function canManageInvitation(invitationId: string, eventId: string,
   );
   if (!row) return false;
   return !assemblyId || row.assembly_id === assemblyId;
+}
+
+/** Same scope rule as canManageInvitee, for a group id — needed to gate group-targeted ticket
+ * payment routes for a lead_planner/co_planner. Groups carry their own assembly_id directly, no
+ * join needed. */
+export async function canManageGroup(groupId: string, eventId: string, assemblyId: string | null): Promise<boolean> {
+  if (!assemblyId) return true;
+  const group = await getGroupById(groupId);
+  return !!group && group.event_id === eventId && group.assembly_id === assemblyId;
 }
 
 /** Sets an invitation's lifecycle/RSVP status directly — the write path for a planner manually

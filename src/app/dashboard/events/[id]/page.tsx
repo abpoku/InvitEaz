@@ -3,12 +3,15 @@ import { getEventById, getMembership, listMembers, isCloneScopedRole } from "@/l
 import { listInvitees } from "@/lib/models/invitees";
 import { listQuestions } from "@/lib/models/rsvp";
 import { listAssemblies } from "@/lib/models/assemblies";
+import { listInviteeFields } from "@/lib/models/invitee-fields";
+import { getTicketingConfig } from "@/lib/models/ticketing";
 import { getCurrentUser } from "@/lib/session";
 import { formatDate, formatTime } from "@/lib/utils";
 import { ShareCard } from "@/components/ShareCard";
 import { AssembliesManager } from "@/components/assemblies/AssembliesManager";
 import { LeadPlannerCoPlanners } from "@/components/assemblies/LeadPlannerCoPlanners";
 import { FormBuilder } from "@/components/rsvp-form/FormBuilder";
+import { TicketingManager } from "@/components/ticketing/TicketingManager";
 
 export default async function EventOverviewPage({ params }: { params: { id: string } }) {
   const user = await getCurrentUser();
@@ -22,6 +25,8 @@ export default async function EventOverviewPage({ params }: { params: { id: stri
   const invitees = await listInvitees(params.id, assemblyId);
   const questions = await listQuestions(params.id);
   const [assemblies, members] = isCloneScoped ? [[], []] : await Promise.all([listAssemblies(params.id), listMembers(params.id)]);
+  const ticketingConfig = isCloneScoped ? null : await getTicketingConfig(params.id);
+  const dropdownFields = isCloneScoped ? [] : (await listInviteeFields(params.id)).filter((f) => f.kind === "custom" && f.field_type === "dropdown" && f.active);
 
   const steps = [
     { done: !!event.name && !!event.event_date, label: "Event details added", href: `/dashboard/events/${params.id}/settings` },
@@ -103,6 +108,15 @@ export default async function EventOverviewPage({ params }: { params: { id: stri
             isOwner={isOwner}
             initialAssemblies={assemblies as any}
             initialMembers={members as any}
+          />
+        )}
+
+        {!isCloneScoped && ticketingConfig && (
+          <TicketingManager
+            eventId={params.id}
+            canManage={membership?.role === "owner" || membership?.role === "admin"}
+            initialConfig={ticketingConfig as any}
+            dropdownFields={dropdownFields.map((f) => ({ id: f.id, label: f.label }))}
           />
         )}
 

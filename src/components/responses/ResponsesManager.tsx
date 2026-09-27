@@ -3,9 +3,20 @@
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { StatusBadge } from "@/components/StatusBadge";
-import { fullName, formatDateTime, cn } from "@/lib/utils";
+import { fullName, formatDateTime, formatCurrency, cn } from "@/lib/utils";
 import { groupCounts } from "@/lib/bulk-select";
+import { PaymentModal } from "@/components/responses/PaymentModal";
 import type { InviteeResponseRow } from "@/lib/models/rsvp";
+
+interface Ticketing {
+  fieldLabel: string | null;
+  tierByInvitee: Record<string, string>;
+  owedByInvitee: Record<string, number>;
+  paidByInvitee: Record<string, number>;
+  groupOwed: Record<string, number>;
+  paidByGroup: Record<string, number>;
+  groupNameById: Record<string, string>;
+}
 
 interface Question { id: string; label: string; }
 
@@ -19,7 +30,7 @@ const STATUS_ACTIVE_CLASSES: Record<Status, string> = {
 };
 
 export function ResponsesManager({
-  eventId, rows, answersByResponseId, questions, cloneNameById, showCloneColumn, canMutate,
+  eventId, rows, answersByResponseId, questions, cloneNameById, showCloneColumn, canMutate, ticketing,
 }: {
   eventId: string;
   rows: InviteeResponseRow[];
@@ -28,6 +39,7 @@ export function ResponsesManager({
   cloneNameById: Record<string, string>;
   showCloneColumn: boolean;
   canMutate: boolean;
+  ticketing: Ticketing | null;
 }) {
   const router = useRouter();
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
@@ -35,6 +47,7 @@ export function ResponsesManager({
   const [bulkStatus, setBulkStatus] = useState<Status>("attending");
   const [bulkNumAttending, setBulkNumAttending] = useState("1");
   const [bulkBusy, setBulkBusy] = useState(false);
+  const [paymentTarget, setPaymentTarget] = useState<{ targetType: "invitee" | "group"; targetId: string; targetLabel: string } | null>(null);
 
   const selectableRows = useMemo(() => rows.filter((r) => r.invitation_id), [rows]);
   const allSelected = selectableRows.length > 0 && selectableRows.every((r) => selectedIds.has(r.invitation_id!));
@@ -93,6 +106,23 @@ export function ResponsesManager({
 
   const groupOptions = useMemo(() => groupCounts(selectableRows, (r) => r.group_name), [selectableRows]);
 
+  // Groups with anything owed or any group-tagged payment get their own balance line — a lump
+  // group payment isn't attributed to any one member's own Paid column (see PaymentModal), so
+  // this panel is the only place a household's combined total is shown.
+  const groupBalances = useMemo(() => {
+    if (!ticketing) return [];
+    const groupIds = new Set([...Object.keys(ticketing.groupOwed), ...Object.keys(ticketing.paidByGroup)]);
+    return [...groupIds]
+      .map((groupId) => {
+        const owed = ticketing.groupOwed[groupId] || 0;
+        const membersPaid = rows.filter((r) => r.group_id === groupId).reduce((sum, r) => sum + (ticketing.paidByInvitee[r.invitee_id] || 0), 0);
+        const paid = (ticketing.paidByGroup[groupId] || 0) + membersPaid;
+        return { groupId, name: ticketing.groupNameById[groupId] || "Group", memberCount: rows.filter((r) => r.group_id === groupId).length, owed, paid };
+      })
+      .filter((g) => g.owed > 0 || g.paid > 0)
+      .sort((a, b) => a.name.localeCompare(b.name));
+  }, [ticketing, rows]);
+
   return (
     <div>
       {canMutate && selectedIds.size > 0 && (
@@ -123,6 +153,50 @@ export function ResponsesManager({
         </div>
       )}
 
+      {ticketing && !ticketing.fieldLabel && (
+        <div className="mt-4 rounded border border-brass-200 bg-brass-50 px-4 py-2.5 text-sm text-brass-600">
+          Ticketing is on, but its linked field is missing — everyone shows $0 owed until it's reconfigured on Overview.
+        </div>
+      )}
+
+      {ticketing && groupBalances.length > 0 && (
+        <div className="mt-6 card overflow-x-auto">
+          <div className="px-5 py-3 border-b border-paper-line">
+            <p className="text-sm font-medium text-ink">Group ticket balances</p>
+          </div>
+          <table className="w-full min-w-[560px] text-sm">
+            <thead>
+              <tr className="border-b border-paper-line text-left text-ink-faint">
+                <th className="px-5 py-2.5 font-medium">Group</th>
+                <th className="px-5 py-2.5 font-medium">Members</th>
+                <th className="px-5 py-2.5 font-medium">Owed</th>
+                <th className="px-5 py-2.5 font-medium">Paid</th>
+                <th className="px-5 py-2.5 font-medium">Balance</th>
+                <th className="px-5 py-2.5"></th>
+              </tr>
+            </thead>
+            <tbody>
+              {groupBalances.map((g) => (
+                <tr key={g.groupId} className="border-b border-paper-line last:border-0">
+                  <td className="px-5 py-2.5 text-ink">{g.name}</td>
+                  <td className="px-5 py-2.5 text-ink-soft">{g.memberCount}</td>
+                  <td className="px-5 py-2.5 text-ink-soft">{formatCurrency(g.owed)}</td>
+                  <td className="px-5 py-2.5 text-ink-soft">{formatCurrency(g.paid)}</td>
+                  <td className="px-5 py-2.5 text-ink-soft">{formatCurrency(g.owed - g.paid)}</td>
+                  <td className="px-5 py-2.5 text-right">
+                    {canMutate && (
+                      <button onClick={() => setPaymentTarget({ targetType: "group", targetId: g.groupId, targetLabel: g.name })} className="text-xs font-medium text-wine-500 hover:underline">
+                        Payments
+                      </button>
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
       <div className="mt-6 card overflow-x-auto">
         {rows.length === 0 ? (
           <p className="p-10 text-sm text-ink-faint text-center">No invitees yet.</p>
@@ -139,10 +213,18 @@ export function ResponsesManager({
                 {showCloneColumn && <th className="px-5 py-3 font-medium whitespace-nowrap">Clone</th>}
                 <th className="px-5 py-3 font-medium whitespace-nowrap">Status</th>
                 <th className="px-5 py-3 font-medium whitespace-nowrap"># Attending</th>
+                {ticketing && (
+                  <>
+                    <th className="px-5 py-3 font-medium whitespace-nowrap">Tier</th>
+                    <th className="px-5 py-3 font-medium whitespace-nowrap">Owed</th>
+                    <th className="px-5 py-3 font-medium whitespace-nowrap">Paid</th>
+                  </>
+                )}
                 {questions.map((q) => (
                   <th key={q.id} className="px-5 py-3 font-medium whitespace-nowrap">{q.label}</th>
                 ))}
                 <th className="px-5 py-3 font-medium whitespace-nowrap">Responded</th>
+                {ticketing && <th className="px-5 py-3"></th>}
               </tr>
             </thead>
             <tbody>
@@ -200,6 +282,16 @@ export function ResponsesManager({
                         ) : (r.num_attending ?? 1)
                       ) : "—"}
                     </td>
+                    {ticketing && (
+                      <>
+                        <td className="px-5 py-3 text-ink-soft whitespace-nowrap">
+                          {ticketing.tierByInvitee[r.invitee_id] || "—"}
+                          {r.group_id && <span className="block text-xs text-ink-faint">part of group balance ↑</span>}
+                        </td>
+                        <td className="px-5 py-3 text-ink-soft whitespace-nowrap">{formatCurrency(ticketing.owedByInvitee[r.invitee_id] ?? 0)}</td>
+                        <td className="px-5 py-3 text-ink-soft whitespace-nowrap">{formatCurrency(ticketing.paidByInvitee[r.invitee_id] ?? 0)}</td>
+                      </>
+                    )}
                     {questions.map((q) => (
                       <td key={q.id} className="px-5 py-3 text-ink-soft whitespace-nowrap">{answers.get(q.id) || "—"}</td>
                     ))}
@@ -212,6 +304,18 @@ export function ResponsesManager({
                         </>
                       ) : "—"}
                     </td>
+                    {ticketing && (
+                      <td className="px-5 py-3 text-right whitespace-nowrap">
+                        {canMutate && (
+                          <button
+                            onClick={() => setPaymentTarget({ targetType: "invitee", targetId: r.invitee_id, targetLabel: fullName(r.first_name, r.last_name) })}
+                            className="text-xs font-medium text-wine-500 hover:underline"
+                          >
+                            Payments
+                          </button>
+                        )}
+                      </td>
+                    )}
                   </tr>
                 );
               })}
@@ -219,6 +323,17 @@ export function ResponsesManager({
           </table>
         )}
       </div>
+
+      {paymentTarget && (
+        <PaymentModal
+          eventId={eventId}
+          targetType={paymentTarget.targetType}
+          targetId={paymentTarget.targetId}
+          targetLabel={paymentTarget.targetLabel}
+          onClose={() => setPaymentTarget(null)}
+          onChanged={() => router.refresh()}
+        />
+      )}
     </div>
   );
 }

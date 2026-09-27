@@ -230,7 +230,9 @@ export interface InviteeResponseRow {
   email: string | null;
   assembly_id: string | null;
   assembly_name: string | null;
+  group_id: string | null;
   group_name: string | null;
+  custom_fields: string | null;
   invitation_id: string | null;
   invitation_status: string | null;
   token: string | null;
@@ -245,11 +247,12 @@ export interface InviteeResponseRow {
 /** Powers the Responses tab: every invitee for the event (unlike listResponsesForEvent, which
  * only returns invitations that already have a response), each with their invitation and latest
  * response detail joined in, so planners can see and set a status for people who've never
- * responded at all. */
+ * responded at all. group_id/custom_fields ride along for the ticketing feature's price
+ * calculation (src/lib/models/ticketing.ts) — this query stays ticketing-agnostic otherwise. */
 export async function listInviteeResponseRows(eventId: string, assemblyId?: string | null): Promise<InviteeResponseRow[]> {
   return query<InviteeResponseRow>(
     `SELECT iv.id as invitee_id, iv.first_name, iv.last_name, iv.email, iv.assembly_id,
-       a.name as assembly_name, g.name as group_name,
+       a.name as assembly_name, iv.group_id, g.name as group_name, iv.custom_fields,
        i.id as invitation_id, i.status as invitation_status, i.token,
        r.id as response_id, r.rsvp_status, r.num_attending, r.responded_at, r.is_modification, r.recorded_by
      FROM invitees iv

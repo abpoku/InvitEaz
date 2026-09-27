@@ -130,6 +130,14 @@ CREATE TABLE IF NOT EXISTS invitee_fields (
 CREATE INDEX IF NOT EXISTS idx_invitee_fields_event ON invitee_fields(event_id);
 CREATE UNIQUE INDEX IF NOT EXISTS idx_invitee_fields_event_key ON invitee_fields(event_id, key);
 
+-- Ticketed events: a planner links ticketing to one existing custom dropdown invitee field (see
+-- ticket_tiers below, appended at the end of this file) rather than defining a separate tier
+-- list — the field itself needs no schema change to support this. Placed here, not with the
+-- other events ALTERs further down, because ticket_field_id references invitee_fields, which
+-- must already exist.
+ALTER TABLE events ADD COLUMN IF NOT EXISTS ticketing_enabled INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE events ADD COLUMN IF NOT EXISTS ticket_field_id TEXT REFERENCES invitee_fields(id) ON DELETE SET NULL;
+
 CREATE TABLE IF NOT EXISTS invitations (
   id TEXT PRIMARY KEY,
   event_id TEXT NOT NULL REFERENCES events(id) ON DELETE CASCADE,
@@ -232,3 +240,48 @@ CREATE TABLE IF NOT EXISTS audit_logs (
   created_at TEXT NOT NULL DEFAULT to_char(now() AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')
 );
 CREATE INDEX IF NOT EXISTS idx_audit_event ON audit_logs(event_id);
+
+-- One price per dropdown-option string on the field linked via events.ticket_field_id.
+-- option_value is the literal option text (must match invitees.custom_fields[field.key]
+-- verbatim) — not a foreign key into options_json, since that's a plain string array with no
+-- per-option identity of its own. Rows are never auto-deleted when the field's options change
+-- elsewhere (via the normal Fields manager) — see getTicketingConfig()'s drift computation in
+-- src/lib/models/ticketing.ts — so a stale price stays visible for the planner to reconcile
+-- deliberately rather than silently vanishing.
+CREATE TABLE IF NOT EXISTS ticket_tiers (
+  id TEXT PRIMARY KEY,
+  event_id TEXT NOT NULL REFERENCES events(id) ON DELETE CASCADE,
+  field_id TEXT NOT NULL REFERENCES invitee_fields(id) ON DELETE CASCADE,
+  option_value TEXT NOT NULL,
+  price_cents INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL DEFAULT to_char(now() AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'),
+  updated_at TEXT NOT NULL DEFAULT to_char(now() AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_ticket_tiers_field_option ON ticket_tiers(field_id, option_value);
+CREATE INDEX IF NOT EXISTS idx_ticket_tiers_event ON ticket_tiers(event_id);
+
+-- Payment ledger for ticketed events. Exactly one of invitee_id/group_id is set per entry (a
+-- lump group payment vs a payment tied to one person) — enforced with a CHECK since this is
+-- money and shouldn't rely on app code alone. Entries are edit-in-place + soft-voidable
+-- (voided_at/voided_by), a deliberate departure from rsvp_responses' append-only "latest wins"
+-- design: a planner fixing a fat-fingered amount is the dominant real-world need here, and an
+-- offsetting correction row is a worse UX for a non-accountant planner than a direct edit. Every
+-- create/edit/void still calls logAudit for a plain-English trail even though the row itself is
+-- mutated.
+CREATE TABLE IF NOT EXISTS ticket_payments (
+  id TEXT PRIMARY KEY,
+  event_id TEXT NOT NULL REFERENCES events(id) ON DELETE CASCADE,
+  invitee_id TEXT REFERENCES invitees(id) ON DELETE CASCADE,
+  group_id TEXT REFERENCES groups(id) ON DELETE CASCADE,
+  amount_cents INTEGER NOT NULL,
+  note TEXT,
+  recorded_by TEXT NOT NULL,
+  recorded_at TEXT NOT NULL DEFAULT to_char(now() AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'),
+  updated_at TEXT NOT NULL DEFAULT to_char(now() AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'),
+  voided_at TEXT,
+  voided_by TEXT,
+  CONSTRAINT ticket_payments_one_target CHECK (num_nonnulls(invitee_id, group_id) = 1)
+);
+CREATE INDEX IF NOT EXISTS idx_ticket_payments_event ON ticket_payments(event_id);
+CREATE INDEX IF NOT EXISTS idx_ticket_payments_invitee ON ticket_payments(invitee_id);
+CREATE INDEX IF NOT EXISTS idx_ticket_payments_group ON ticket_payments(group_id);

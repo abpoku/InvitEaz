@@ -96,3 +96,18 @@ export function csvEscape(v: any): string {
   if (/[",\n]/.test(s)) return `"${s.replace(/"/g, '""')}"`;
   return s;
 }
+
+/** Formats integer cents as this app's single fixed-currency display string, e.g. 4250 -> "$42.50".
+ * New as of the ticketing feature — every monetary value in this app is stored as integer cents
+ * (no floats, no per-event currency setting). */
+export function formatCurrency(cents: number): string {
+  const sign = cents < 0 ? "-" : "";
+  return `${sign}$${(Math.abs(cents) / 100).toFixed(2)}`;
+}
+
+/** Inverse of formatCurrency for form inputs — parses a planner-typed dollar string ("42.5",
+ * "$42.50") into integer cents, rounding to avoid float drift. Returns 0 for empty/invalid input. */
+export function dollarsToCents(input: string): number {
+  const n = parseFloat(input.replace(/[^0-9.-]/g, ""));
+  return Number.isFinite(n) ? Math.round(n * 100) : 0;
+}
