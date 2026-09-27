@@ -3,6 +3,7 @@
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { StatusBadge } from "@/components/StatusBadge";
+import { ViewToggle } from "@/components/ViewToggle";
 import { fullName, formatDateTime, cn } from "@/lib/utils";
 import { groupCounts } from "@/lib/bulk-select";
 import type { InviteeResponseRow } from "@/lib/models/rsvp";
@@ -35,6 +36,8 @@ export function ResponsesManager({
   const [bulkStatus, setBulkStatus] = useState<Status>("attending");
   const [bulkNumAttending, setBulkNumAttending] = useState("1");
   const [bulkBusy, setBulkBusy] = useState(false);
+  const [view, setView] = useState<"individual" | "group">("individual");
+  const [groupBusyId, setGroupBusyId] = useState<string | null>(null);
 
   const selectableRows = useMemo(() => rows.filter((r) => r.invitation_id), [rows]);
   const allSelected = selectableRows.length > 0 && selectableRows.every((r) => selectedIds.has(r.invitation_id!));
@@ -93,8 +96,87 @@ export function ResponsesManager({
 
   const groupOptions = useMemo(() => groupCounts(selectableRows, (r) => r.group_name), [selectableRows]);
 
+  const groupStatusRows = useMemo(() => {
+    const map = new Map<string, { groupId: string; name: string; invitationIds: string[]; counts: Record<Status | "no_response", number> }>();
+    for (const r of rows) {
+      if (!r.group_id) continue;
+      const entry = map.get(r.group_id) ?? {
+        groupId: r.group_id,
+        name: r.group_name || "Group",
+        invitationIds: [],
+        counts: { attending: 0, maybe: 0, declined: 0, no_response: 0 },
+      };
+      if (r.invitation_id) entry.invitationIds.push(r.invitation_id);
+      const status = (r.rsvp_status as Status | null) || "no_response";
+      entry.counts[status]++;
+      map.set(r.group_id, entry);
+    }
+    return [...map.values()].sort((a, b) => a.name.localeCompare(b.name));
+  }, [rows]);
+
+  async function setGroupStatus(group: { groupId: string; invitationIds: string[] }, status: Status) {
+    setGroupBusyId(group.groupId);
+    await fetch(`/api/events/${eventId}/responses/bulk`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ invitationIds: group.invitationIds, status, numAttending: status === "attending" ? 1 : undefined }),
+    });
+    setGroupBusyId(null);
+    router.refresh();
+  }
+
   return (
     <div>
+      {(groupOptions.length > 0 || view === "group") && (
+        <div className="mt-4">
+          <ViewToggle value={view} onChange={setView} />
+        </div>
+      )}
+
+      {view === "group" ? (
+        <div className="mt-6 card overflow-x-auto">
+          {groupStatusRows.length === 0 ? (
+            <p className="p-10 text-sm text-ink-faint text-center">No groups yet.</p>
+          ) : (
+            <table className="w-full min-w-[560px] text-sm">
+              <thead>
+                <tr className="border-b border-paper-line text-left text-ink-faint">
+                  <th className="px-5 py-3 font-medium whitespace-nowrap">Name</th>
+                  <th className="px-5 py-3 font-medium whitespace-nowrap">RSVP breakdown</th>
+                  {canMutate && <th className="px-5 py-3 font-medium whitespace-nowrap">Set status for group</th>}
+                </tr>
+              </thead>
+              <tbody>
+                {groupStatusRows.map((g) => (
+                  <tr key={g.groupId} className="border-b border-paper-line last:border-0 hover:bg-paper-soft/40">
+                    <td className="px-5 py-3 text-ink whitespace-nowrap">{g.name}</td>
+                    <td className="px-5 py-3 text-ink-soft whitespace-nowrap">
+                      {g.counts.attending} attending · {g.counts.maybe} maybe · {g.counts.declined} declined · {g.counts.no_response} no response
+                    </td>
+                    {canMutate && (
+                      <td className="px-5 py-3">
+                        <div className="inline-flex rounded border border-paper-line overflow-hidden text-xs">
+                          {STATUSES.map((s) => (
+                            <button
+                              key={s}
+                              disabled={groupBusyId === g.groupId}
+                              onClick={() => setGroupStatus(g, s)}
+                              className="px-2 py-1 disabled:opacity-50 text-ink-faint hover:bg-paper-soft"
+                            >
+                              {STATUS_LABEL[s]}
+                            </button>
+                          ))}
+                        </div>
+                      </td>
+                    )}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </div>
+      ) : (
+        <>
       {canMutate && selectedIds.size > 0 && (
         <div className="mt-4 flex flex-wrap items-center justify-between gap-2 rounded border border-wine-200 bg-wine-50 px-4 py-2.5">
           <p className="text-sm text-wine-700">{selectedIds.size} selected</p>
@@ -219,6 +301,8 @@ export function ResponsesManager({
           </table>
         )}
       </div>
+        </>
+      )}
     </div>
   );
 }

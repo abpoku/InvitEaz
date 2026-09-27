@@ -58,6 +58,18 @@ export async function setGroupLeader(groupId: string, inviteeId: string) {
   await exec("UPDATE groups SET leader_invitee_id = ? WHERE id = ?", [inviteeId, groupId]);
 }
 
+export async function renameGroup(groupId: string, name: string): Promise<void> {
+  await exec("UPDATE groups SET name = ? WHERE id = ?", [name, groupId]);
+}
+
+/** Callers must verify the group has zero active members and zero payment history (voided
+ * included) before calling this — see src/app/api/events/[id]/groups/[groupId]/route.ts. Any
+ * lingering invitee (even an inactive one) still pointing at this group has its group_id
+ * cleared automatically by the FK's ON DELETE SET NULL. */
+export async function deleteGroup(id: string): Promise<void> {
+  await exec("DELETE FROM groups WHERE id = ?", [id]);
+}
+
 export async function createInvitee(
   eventId: string,
   input: {

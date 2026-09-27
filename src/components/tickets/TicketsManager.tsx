@@ -2,8 +2,9 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { formatCurrency, cn } from "@/lib/utils";
+import { formatCurrency } from "@/lib/utils";
 import { PaymentModal } from "@/components/tickets/PaymentModal";
+import { ViewToggle } from "@/components/ViewToggle";
 import type { TicketingSummary } from "@/lib/models/ticketing";
 
 type View = "individual" | "group";
@@ -30,19 +31,8 @@ export function TicketsManager({
   return (
     <div>
       {summary.hasGroups && (
-        <div className="mt-4 inline-flex rounded border border-paper-line overflow-hidden text-sm">
-          {(["individual", "group"] as View[]).map((v) => (
-            <button
-              key={v}
-              onClick={() => setView(v)}
-              className={cn(
-                "px-3 py-1.5 capitalize",
-                view === v ? "bg-wine-50 text-wine-700 font-medium" : "text-ink-soft hover:bg-paper-soft"
-              )}
-            >
-              {v}
-            </button>
-          ))}
+        <div className="mt-4">
+          <ViewToggle value={view} onChange={setView} />
         </div>
       )}
 
