@@ -10,6 +10,8 @@ import type { InviteeResponseRow } from "@/lib/models/rsvp";
 
 interface Ticketing {
   fieldLabel: string | null;
+  fieldKey: string | null;
+  tierOptions: string[];
   tierByInvitee: Record<string, string>;
   owedByInvitee: Record<string, number>;
   paidByInvitee: Record<string, number>;
@@ -48,6 +50,20 @@ export function ResponsesManager({
   const [bulkNumAttending, setBulkNumAttending] = useState("1");
   const [bulkBusy, setBulkBusy] = useState(false);
   const [paymentTarget, setPaymentTarget] = useState<{ targetType: "invitee" | "group"; targetId: string; targetLabel: string } | null>(null);
+  const [tierBusyId, setTierBusyId] = useState<string | null>(null);
+
+  async function setTier(row: InviteeResponseRow, value: string) {
+    if (!ticketing?.fieldKey) return;
+    setTierBusyId(row.invitee_id);
+    const current = row.custom_fields ? JSON.parse(row.custom_fields) : {};
+    await fetch(`/api/events/${eventId}/invitees/${row.invitee_id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ customFields: { ...current, [ticketing.fieldKey]: value } }),
+    });
+    setTierBusyId(null);
+    router.refresh();
+  }
 
   const selectableRows = useMemo(() => rows.filter((r) => r.invitation_id), [rows]);
   const allSelected = selectableRows.length > 0 && selectableRows.every((r) => selectedIds.has(r.invitation_id!));
@@ -215,7 +231,7 @@ export function ResponsesManager({
                 <th className="px-5 py-3 font-medium whitespace-nowrap"># Attending</th>
                 {ticketing && (
                   <>
-                    <th className="px-5 py-3 font-medium whitespace-nowrap">Tier</th>
+                    <th className="px-5 py-3 font-medium whitespace-nowrap">{ticketing.fieldLabel || "Tier"}</th>
                     <th className="px-5 py-3 font-medium whitespace-nowrap">Owed</th>
                     <th className="px-5 py-3 font-medium whitespace-nowrap">Paid</th>
                   </>
@@ -285,7 +301,19 @@ export function ResponsesManager({
                     {ticketing && (
                       <>
                         <td className="px-5 py-3 text-ink-soft whitespace-nowrap">
-                          {ticketing.tierByInvitee[r.invitee_id] || "—"}
+                          {canMutate && ticketing.fieldKey ? (
+                            <select
+                              className="input py-1 text-xs"
+                              disabled={tierBusyId === r.invitee_id}
+                              value={ticketing.tierByInvitee[r.invitee_id] || ""}
+                              onChange={(e) => setTier(r, e.target.value)}
+                            >
+                              <option value="">—</option>
+                              {ticketing.tierOptions.map((o) => <option key={o} value={o}>{o}</option>)}
+                            </select>
+                          ) : (
+                            ticketing.tierByInvitee[r.invitee_id] || "—"
+                          )}
                           {r.group_id && <span className="block text-xs text-ink-faint">part of group balance ↑</span>}
                         </td>
                         <td className="px-5 py-3 text-ink-soft whitespace-nowrap">{formatCurrency(ticketing.owedByInvitee[r.invitee_id] ?? 0)}</td>

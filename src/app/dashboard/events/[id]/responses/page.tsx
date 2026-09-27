@@ -26,6 +26,8 @@ export default async function ResponsesPage({ params, searchParams }: { params: 
 
   let ticketing = null as null | {
     fieldLabel: string | null;
+    fieldKey: string | null;
+    tierOptions: string[];
     tierByInvitee: Record<string, string>;
     owedByInvitee: Record<string, number>;
     paidByInvitee: Record<string, number>;
@@ -55,6 +57,8 @@ export default async function ResponsesPage({ params, searchParams }: { params: 
     }
     ticketing = {
       fieldLabel: config.field?.label ?? null,
+      fieldKey: config.field?.key ?? null,
+      tierOptions: config.tiers.map((t) => t.option_value),
       tierByInvitee,
       owedByInvitee,
       paidByInvitee: await sumPaymentsByInvitee(params.id, assemblyId),

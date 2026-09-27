@@ -75,13 +75,16 @@ export function InviteesManager({ eventId, groupRsvpMode, nameFormat }: { eventI
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [showBulkEdit, setShowBulkEdit] = useState(false);
+  const [ticketFieldId, setTicketFieldId] = useState<string | null>(null);
+  const [tierBusyId, setTierBusyId] = useState<string | null>(null);
 
   async function load() {
     setLoading(true);
-    const [inviteesRes, fieldsRes, assembliesRes] = await Promise.all([
+    const [inviteesRes, fieldsRes, assembliesRes, ticketingRes] = await Promise.all([
       fetch(`/api/events/${eventId}/invitees`),
       fetch(`/api/events/${eventId}/invitee-fields`),
       fetch(`/api/events/${eventId}/assemblies`),
+      fetch(`/api/events/${eventId}/ticketing`),
     ]);
     const inviteesData = await inviteesRes.json();
     const fieldsData = await fieldsRes.json();
@@ -89,7 +92,23 @@ export function InviteesManager({ eventId, groupRsvpMode, nameFormat }: { eventI
     setFields((fieldsData.fields || []).filter((f: InviteeField) => f.active).sort((a: InviteeField, b: InviteeField) => a.order_index - b.order_index));
     // 403 for a lead planner (or a network hiccup) just means no assembly filter/picker — not fatal.
     setAssemblies(assembliesRes.ok ? (await assembliesRes.json()).assemblies || [] : []);
+    // Same tolerance for ticketing — a lead planner can't reach requireEventRole's "viewer" gate
+    // the way this route checks it in every case, and it's a non-fatal, ticketing-only detail.
+    setTicketFieldId(ticketingRes.ok ? (await ticketingRes.json()).config?.field?.id ?? null : null);
     setLoading(false);
+  }
+
+  async function setTierValue(invitee: InviteeRow, fieldKey: string, value: string) {
+    setTierBusyId(invitee.id);
+    const current = invitee.custom_fields ? JSON.parse(invitee.custom_fields) : {};
+    await fetch(`/api/events/${eventId}/invitees/${invitee.id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ customFields: { ...current, [fieldKey]: value } }),
+    });
+    setTierBusyId(null);
+    load();
+    router.refresh();
   }
 
   useEffect(() => {
@@ -263,7 +282,21 @@ export function InviteesManager({ eventId, groupRsvpMode, nameFormat }: { eventI
                     <td className="px-5 py-3 text-ink-soft whitespace-nowrap">{i.assembly_name || "—"}</td>
                   )}
                   {fields.map((f) => (
-                    <td key={f.id} className="px-5 py-3 text-ink-soft whitespace-nowrap">{fieldValue(f, i)}</td>
+                    <td key={f.id} className="px-5 py-3 text-ink-soft whitespace-nowrap">
+                      {f.id === ticketFieldId ? (
+                        <select
+                          className="input py-1 text-xs"
+                          disabled={tierBusyId === i.id}
+                          value={fieldValue(f, i) === "—" ? "" : fieldValue(f, i)}
+                          onChange={(e) => setTierValue(i, f.key, e.target.value)}
+                        >
+                          <option value="">—</option>
+                          {(f.options_json ? JSON.parse(f.options_json) : []).map((o: string) => <option key={o} value={o}>{o}</option>)}
+                        </select>
+                      ) : (
+                        fieldValue(f, i)
+                      )}
+                    </td>
                   ))}
                   <td className="px-5 py-3"><StatusBadge status={i.status} /></td>
                   <td className="px-5 py-3">
