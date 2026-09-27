@@ -162,6 +162,18 @@ export function InviteesManager({ eventId, groupRsvpMode, nameFormat }: { eventI
     load();
   }
 
+  async function removeSelected() {
+    const count = selectedIds.size;
+    if (!confirm(`Remove ${count} invitee${count === 1 ? "" : "s"}? Their RSVP history will be preserved for your records.`)) return;
+    await fetch(`/api/events/${eventId}/invitees/bulk`, {
+      method: "DELETE",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ids: [...selectedIds] }),
+    });
+    setSelectedIds(new Set());
+    load();
+  }
+
   const groupOptions = useMemo(() => groupCounts(filtered, (i) => i.group_name), [filtered]);
 
   return (
@@ -207,6 +219,7 @@ export function InviteesManager({ eventId, groupRsvpMode, nameFormat }: { eventI
               </select>
             )}
             <button onClick={() => setShowBulkEdit(true)} className="text-sm font-medium text-wine-700 hover:underline">Bulk edit</button>
+            <button onClick={removeSelected} className="text-sm font-medium text-clay-600 hover:underline">Remove selected</button>
             <button onClick={() => setSelectedIds(new Set())} className="text-sm font-medium text-wine-700 hover:underline">Clear selection</button>
           </div>
         </div>

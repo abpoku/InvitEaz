@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { requireAssemblyScope } from "@/lib/session";
-import { getInviteeById, canManageInvitee, updateInvitee } from "@/lib/models/invitees";
+import { getInviteeById, canManageInvitee, updateInvitee, deactivateInvitee } from "@/lib/models/invitees";
 import { listInviteeFields } from "@/lib/models/invitee-fields";
 import { logAudit } from "@/lib/models/events";
 
@@ -37,4 +37,25 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
 
   await logAudit(params.id, access.user.email, "invitees.bulk_updated", `${field.label} set on ${updated} invitees`);
   return NextResponse.json({ updated, skipped });
+}
+
+export async function DELETE(req: Request, { params }: { params: { id: string } }) {
+  const access = await requireAssemblyScope(params.id);
+  if (!access.ok) return NextResponse.json({ error: access.message }, { status: access.status });
+  if (access.role === "viewer") return NextResponse.json({ error: "You don't have permission to do this." }, { status: 403 });
+
+  const body = await req.json();
+  const ids: string[] = Array.isArray(body.ids) ? body.ids : [];
+  if (ids.length === 0) return NextResponse.json({ error: "Nothing selected." }, { status: 400 });
+
+  let removed = 0, skipped = 0;
+  for (const id of ids) {
+    // Same out-of-scope handling as the bulk PATCH above — drop and report, don't fail outright.
+    if (!(await canManageInvitee(id, params.id, access.assemblyId))) { skipped += 1; continue; }
+    await deactivateInvitee(id);
+    removed += 1;
+  }
+
+  await logAudit(params.id, access.user.email, "invitees.bulk_removed", `${removed} invitees removed`);
+  return NextResponse.json({ removed, skipped });
 }
