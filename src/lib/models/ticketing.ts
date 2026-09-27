@@ -1,7 +1,7 @@
 import { query, queryOne, exec } from "@/lib/db";
 import { newId } from "@/lib/utils";
-import { getEventById } from "@/lib/models/events";
-import { getInviteeField, type InviteeFieldRow } from "@/lib/models/invitee-fields";
+import { getEventById, updateEvent } from "@/lib/models/events";
+import { getInviteeField, createInviteeField, updateInviteeField, type InviteeFieldRow } from "@/lib/models/invitee-fields";
 import type { InviteeRow } from "@/lib/models/invitees";
 
 export interface TicketTierRow {
@@ -32,30 +32,23 @@ export interface TicketingConfig {
   enabled: boolean;
   field: InviteeFieldRow | null;
   tiers: TicketTierRow[];
-  currentOptions: string[];
-  missingOptions: string[];
-  orphanedTiers: TicketTierRow[];
 }
 
-/** Computes drift at read time (no triggers/webhooks anywhere in this codebase) between the
- * linked field's current dropdown options and the prices already configured for them, so the
- * Overview ticketing UI is always accurate relative to whatever the Fields manager currently has. */
+/** Tiers are authored here and pushed into the linked field's options_json (see createTier/
+ * deleteTier below) — the field's options are never edited directly once linked (blocked in
+ * src/app/api/events/[id]/invitee-fields/[fieldId]/route.ts), so there's nothing to reconcile
+ * at read time; this is just a straightforward join. */
 export async function getTicketingConfig(eventId: string): Promise<TicketingConfig> {
   const event = await getEventById(eventId);
   const enabled = !!event?.ticketing_enabled;
   const field = event?.ticket_field_id ? (await getInviteeField(event.ticket_field_id)) || null : null;
 
   if (!enabled || !field) {
-    return { enabled, field: null, tiers: [], currentOptions: [], missingOptions: [], orphanedTiers: [] };
+    return { enabled, field: null, tiers: [] };
   }
 
-  const currentOptions: string[] = field.options_json ? JSON.parse(field.options_json) : [];
   const tiers = await listTicketTiersForField(field.id);
-  const tierByOption = new Map(tiers.map((t) => [t.option_value, t]));
-  const missingOptions = currentOptions.filter((o) => !tierByOption.has(o));
-  const orphanedTiers = tiers.filter((t) => !currentOptions.includes(t.option_value));
-
-  return { enabled, field, tiers, currentOptions, missingOptions, orphanedTiers };
+  return { enabled, field, tiers };
 }
 
 export async function listTicketTiers(eventId: string): Promise<TicketTierRow[]> {
@@ -83,6 +76,82 @@ export async function upsertTicketTier(eventId: string, fieldId: string, optionV
 
 export async function deleteTicketTier(id: string): Promise<void> {
   await exec("DELETE FROM ticket_tiers WHERE id = ?", [id]);
+}
+
+/** Creates a tier and pushes its name into the linked field's dropdown options — the field is
+ * the byproduct here, not the source of truth. If no field is linked yet, creates one (a normal
+ * custom dropdown invitee field, indistinguishable from any other) and links it. Tier names are
+ * immutable after creation (only price can change) — renaming would mean reconciling every
+ * invitee already holding the old option string, the same problem field-driven drift used to
+ * cause; delete-and-recreate is the simplest, least surprising path if a name is wrong. */
+export async function createTier(eventId: string, input: {
+  fieldId?: string | null;
+  fieldLabel?: string;
+  optionValue: string;
+  priceCents: number;
+}): Promise<TicketingConfig> {
+  let fieldId = input.fieldId || null;
+
+  if (!fieldId) {
+    const field = await createInviteeField(eventId, {
+      label: input.fieldLabel || "Ticket Type",
+      field_type: "dropdown",
+      options: [input.optionValue],
+      collectAtSignup: false,
+    });
+    fieldId = field.id;
+    await updateEvent(eventId, { ticketing_enabled: 1, ticket_field_id: fieldId });
+  } else {
+    const field = await getInviteeField(fieldId);
+    const current: string[] = field?.options_json ? JSON.parse(field.options_json) : [];
+    if (!current.includes(input.optionValue)) {
+      await updateInviteeField(fieldId, { options: [...current, input.optionValue] });
+    }
+  }
+
+  await upsertTicketTier(eventId, fieldId, input.optionValue, input.priceCents);
+  return getTicketingConfig(eventId);
+}
+
+export async function updateTierPrice(tierId: string, priceCents: number): Promise<void> {
+  await exec("UPDATE ticket_tiers SET price_cents = ?, updated_at = ? WHERE id = ?", [priceCents, new Date().toISOString(), tierId]);
+}
+
+/** Removes a tier and its option from the linked field. Invitees already holding that value keep
+ * it in their custom_fields untouched (same as removing any option from any other dropdown field
+ * today) — it'll just show as unpriced wherever tier/owed amount is displayed. */
+export async function deleteTier(tierId: string): Promise<void> {
+  const tier = await queryOne<TicketTierRow>("SELECT * FROM ticket_tiers WHERE id = ?", [tierId]);
+  if (!tier) return;
+  const field = await getInviteeField(tier.field_id);
+  if (field) {
+    const current: string[] = field.options_json ? JSON.parse(field.options_json) : [];
+    await updateInviteeField(field.id, { options: current.filter((o) => o !== tier.option_value) });
+  }
+  await deleteTicketTier(tierId);
+}
+
+/** Links ticketing to an already-existing dropdown field instead of creating a dedicated one —
+ * seeds a $0 tier for each of its current options (planner fills in prices from there), then from
+ * this point on the field's options are managed exclusively via the tier list like any other
+ * ticketing-created field. */
+export async function adoptFieldAsTicketing(eventId: string, fieldId: string): Promise<TicketingConfig> {
+  const field = await getInviteeField(fieldId);
+  const options: string[] = field?.options_json ? JSON.parse(field.options_json) : [];
+  for (const option of options) {
+    const existing = await queryOne<TicketTierRow>("SELECT * FROM ticket_tiers WHERE field_id = ? AND option_value = ?", [fieldId, option]);
+    if (!existing) await upsertTicketTier(eventId, fieldId, option, 0);
+  }
+  await updateEvent(eventId, { ticket_field_id: fieldId });
+  return getTicketingConfig(eventId);
+}
+
+/** Unlinks the field without deleting existing tier rows, so re-linking the same field later
+ * restores prices as-is. The field itself becomes directly editable via Manage Fields again once
+ * unlinked (see the options-edit guard in the invitee-fields route). */
+export async function unlinkField(eventId: string): Promise<TicketingConfig> {
+  await updateEvent(eventId, { ticket_field_id: null });
+  return getTicketingConfig(eventId);
 }
 
 /** Pure — no DB call, safe to run over a whole invitee list in a loop. Looks up the invitee's

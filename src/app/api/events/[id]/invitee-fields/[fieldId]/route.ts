@@ -23,6 +23,12 @@ export async function PATCH(req: Request, { params }: { params: { id: string; fi
     return NextResponse.json({ error: "At least one of Email or Phone must stay active so guests can be reached." }, { status: 400 });
   }
   if (body.options !== undefined) {
+    // Once a field is linked to ticketing, its options are authored from the tier list on
+    // Overview (add/remove tier), not edited here directly — otherwise the two could drift.
+    const event = await getEventById(params.id);
+    if (event?.ticket_field_id === params.fieldId) {
+      return NextResponse.json({ error: "This field's options are managed from the Ticketing section on Overview." }, { status: 400 });
+    }
     const field = await getInviteeField(params.fieldId);
     const effectiveType = body.field_type ?? field?.field_type;
     if (effectiveType === "dropdown" && body.options.length < 2) {

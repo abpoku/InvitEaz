@@ -26,7 +26,9 @@ export default async function EventOverviewPage({ params }: { params: { id: stri
   const questions = await listQuestions(params.id);
   const [assemblies, members] = isCloneScoped ? [[], []] : await Promise.all([listAssemblies(params.id), listMembers(params.id)]);
   const ticketingConfig = isCloneScoped ? null : await getTicketingConfig(params.id);
-  const dropdownFields = isCloneScoped ? [] : (await listInviteeFields(params.id)).filter((f) => f.kind === "custom" && f.field_type === "dropdown" && f.active);
+  const dropdownFields = isCloneScoped
+    ? []
+    : (await listInviteeFields(params.id)).filter((f) => f.kind === "custom" && f.field_type === "dropdown" && f.active && f.id !== ticketingConfig?.field?.id);
 
   const steps = [
     { done: !!event.name && !!event.event_date, label: "Event details added", href: `/dashboard/events/${params.id}/settings` },
@@ -101,6 +103,15 @@ export default async function EventOverviewPage({ params }: { params: { id: stri
           </div>
         )}
 
+        {!isCloneScoped && ticketingConfig && (
+          <TicketingManager
+            eventId={params.id}
+            canManage={membership?.role === "owner" || membership?.role === "admin"}
+            initialConfig={ticketingConfig as any}
+            dropdownFields={dropdownFields.map((f) => ({ id: f.id, label: f.label }))}
+          />
+        )}
+
         {!isCloneScoped && (
           <AssembliesManager
             eventId={params.id}
@@ -108,15 +119,6 @@ export default async function EventOverviewPage({ params }: { params: { id: stri
             isOwner={isOwner}
             initialAssemblies={assemblies as any}
             initialMembers={members as any}
-          />
-        )}
-
-        {!isCloneScoped && ticketingConfig && (
-          <TicketingManager
-            eventId={params.id}
-            canManage={membership?.role === "owner" || membership?.role === "admin"}
-            initialConfig={ticketingConfig as any}
-            dropdownFields={dropdownFields.map((f) => ({ id: f.id, label: f.label }))}
           />
         )}
 

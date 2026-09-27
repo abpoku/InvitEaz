@@ -5,14 +5,11 @@ import { useRouter } from "next/navigation";
 import { formatCurrency, dollarsToCents } from "@/lib/utils";
 
 interface TicketTier { id: string; option_value: string; price_cents: number; }
-interface TicketingField { id: string; label: string; options_json: string | null; }
+interface TicketingField { id: string; label: string; }
 interface TicketingConfig {
   enabled: boolean;
   field: TicketingField | null;
   tiers: TicketTier[];
-  currentOptions: string[];
-  missingOptions: string[];
-  orphanedTiers: TicketTier[];
 }
 interface DropdownField { id: string; label: string; }
 
@@ -23,9 +20,11 @@ export function TicketingManager({
   const [config, setConfig] = useState<TicketingConfig>(initialConfig);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [pickingField, setPickingField] = useState(false);
-  const [selectedFieldId, setSelectedFieldId] = useState("");
-  const [prices, setPrices] = useState<Record<string, string>>({});
+  const [newFieldLabel, setNewFieldLabel] = useState("Ticket Type");
+  const [newTierName, setNewTierName] = useState("");
+  const [newTierPrice, setNewTierPrice] = useState("");
+  const [showLinkExisting, setShowLinkExisting] = useState(false);
+  const [existingFieldId, setExistingFieldId] = useState("");
 
   async function load() {
     const res = await fetch(`/api/events/${eventId}/ticketing`);
@@ -36,15 +35,6 @@ export function TicketingManager({
     load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [eventId]);
-
-  useEffect(() => {
-    const next: Record<string, string> = {};
-    for (const option of config.currentOptions) {
-      const tier = config.tiers.find((t) => t.option_value === option);
-      next[option] = tier ? (tier.price_cents / 100).toFixed(2) : "";
-    }
-    setPrices(next);
-  }, [config.currentOptions, config.tiers]);
 
   async function toggleEnabled() {
     setBusy(true);
@@ -60,40 +50,77 @@ export function TicketingManager({
     router.refresh();
   }
 
-  async function linkField(fieldId: string) {
+  async function addTier(e: React.FormEvent) {
+    e.preventDefault();
+    setError(null);
+    if (!newTierName.trim()) { setError("Give this tier a name."); return; }
+    setBusy(true);
+    const res = await fetch(`/api/events/${eventId}/ticketing/tiers`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        fieldId: config.field?.id,
+        fieldLabel: config.field ? undefined : (newFieldLabel.trim() || "Ticket Type"),
+        optionValue: newTierName.trim(),
+        priceCents: dollarsToCents(newTierPrice || "0"),
+      }),
+    });
+    setBusy(false);
+    if (!res.ok) { setError((await res.json().catch(() => ({}))).error || "Something went wrong."); return; }
+    setNewTierName("");
+    setNewTierPrice("");
+    await load();
+    router.refresh();
+  }
+
+  async function saveTierPrice(tierId: string, priceStr: string) {
+    setBusy(true);
+    setError(null);
+    const res = await fetch(`/api/events/${eventId}/ticketing/tiers/${tierId}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ priceCents: dollarsToCents(priceStr || "0") }),
+    });
+    setBusy(false);
+    if (!res.ok) { setError((await res.json().catch(() => ({}))).error || "Something went wrong."); return; }
+    await load();
+    router.refresh();
+  }
+
+  async function removeTier(tier: TicketTier) {
+    if (!confirm(`Remove the "${tier.option_value}" tier? Invitees already assigned to it will keep that value, but it'll show as unpriced.`)) return;
+    setBusy(true);
+    await fetch(`/api/events/${eventId}/ticketing/tiers/${tier.id}`, { method: "DELETE" });
+    setBusy(false);
+    await load();
+    router.refresh();
+  }
+
+  async function linkExisting() {
+    if (!existingFieldId) return;
     setBusy(true);
     setError(null);
     const res = await fetch(`/api/events/${eventId}/ticketing`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ fieldId }),
+      body: JSON.stringify({ fieldId: existingFieldId }),
     });
     setBusy(false);
     if (!res.ok) { setError((await res.json().catch(() => ({}))).error || "Something went wrong."); return; }
-    setPickingField(false);
-    setSelectedFieldId("");
+    setShowLinkExisting(false);
+    setExistingFieldId("");
     await load();
     router.refresh();
   }
 
-  async function savePrices() {
+  async function unlink() {
+    if (!confirm("Unlink this field from ticketing? Its tier prices are kept, and the field becomes directly editable again.")) return;
     setBusy(true);
-    setError(null);
-    const tiers = config.currentOptions.map((option) => ({ optionValue: option, priceCents: dollarsToCents(prices[option] || "0") }));
-    const res = await fetch(`/api/events/${eventId}/ticketing/tiers`, {
-      method: "PUT",
+    await fetch(`/api/events/${eventId}/ticketing`, {
+      method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ tiers }),
+      body: JSON.stringify({ fieldId: null }),
     });
-    setBusy(false);
-    if (!res.ok) { setError((await res.json().catch(() => ({}))).error || "Something went wrong."); return; }
-    await load();
-    router.refresh();
-  }
-
-  async function removeOrphanedTier(tierId: string) {
-    setBusy(true);
-    await fetch(`/api/events/${eventId}/ticketing/tiers/${tierId}`, { method: "DELETE" });
     setBusy(false);
     await load();
     router.refresh();
@@ -120,82 +147,94 @@ export function TicketingManager({
 
       {config.enabled && (
         <div className="mt-5 pt-5 border-t border-paper-line space-y-4">
-          {!config.field && (
-            <div className="rounded border border-brass-200 bg-brass-50 px-4 py-2.5 text-sm text-brass-600">
-              {dropdownFields.length === 0
-                ? "Ticketing needs a dropdown field to assign tiers from (e.g. \"Ticket Type\"). Create one under Manage fields on the Invitees page first."
-                : "Choose a field to link ticket pricing to."}
-            </div>
-          )}
-
-          {config.field && !pickingField && (
+          {config.field && (
             <p className="text-sm text-ink-soft">
               Linked to <span className="text-ink font-medium">{config.field.label}</span>.{" "}
-              {canManage && (
-                <button onClick={() => { setPickingField(true); setSelectedFieldId(config.field!.id); }} className="text-wine-500 hover:underline">
-                  Change linked field
-                </button>
-              )}
+              {canManage && <button onClick={unlink} className="text-wine-500 hover:underline">Unlink</button>}
             </p>
           )}
 
-          {canManage && (!config.field || pickingField) && dropdownFields.length > 0 && (
-            <div className="flex items-end gap-2">
-              <div className="flex-1 max-w-xs">
-                <label className="label">Ticket tier field</label>
-                <select className="input" value={selectedFieldId} onChange={(e) => setSelectedFieldId(e.target.value)}>
-                  <option value="">Choose a field…</option>
-                  {dropdownFields.map((f) => <option key={f.id} value={f.id}>{f.label}</option>)}
-                </select>
-              </div>
-              <button disabled={!selectedFieldId || busy} onClick={() => linkField(selectedFieldId)} className="btn-primary shrink-0">Link field</button>
-              {config.field && <button onClick={() => setPickingField(false)} className="btn-ghost shrink-0">Cancel</button>}
+          {config.tiers.length > 0 && (
+            <div className="space-y-2 max-w-sm">
+              {config.tiers.map((t) => (
+                <TierRow key={t.id} tier={t} canManage={canManage} busy={busy} onSave={(price) => saveTierPrice(t.id, price)} onRemove={() => removeTier(t)} />
+              ))}
             </div>
           )}
 
-          {config.field && config.currentOptions.length > 0 && (
-            <div>
-              <p className="text-sm text-ink-soft mb-2">Set a price for each {config.field.label} option:</p>
-              <div className="space-y-2 max-w-sm">
-                {config.currentOptions.map((option) => {
-                  const isMissing = config.missingOptions.includes(option);
-                  return (
-                    <div key={option} className="flex items-center gap-3">
-                      <label className={`flex-1 text-sm ${isMissing ? "text-brass-600" : "text-ink"}`}>
-                        {option}{isMissing && " — needs a price"}
-                      </label>
-                      <div className="flex items-center gap-1">
-                        <span className="text-ink-faint text-sm">$</span>
-                        <input
-                          type="number" min="0" step="0.01" className="input w-24 py-1 text-sm"
-                          value={prices[option] ?? ""}
-                          onChange={(e) => setPrices((p) => ({ ...p, [option]: e.target.value }))}
-                        />
-                      </div>
-                    </div>
-                  );
-                })}
+          {canManage && (
+            <form onSubmit={addTier} className="space-y-2 max-w-sm">
+              {!config.field && (
+                <div>
+                  <label className="label">Tier field name</label>
+                  <input className="input" value={newFieldLabel} onChange={(e) => setNewFieldLabel(e.target.value)} placeholder="Ticket Type" />
+                </div>
+              )}
+              <div className="flex items-end gap-2">
+                <div className="flex-1">
+                  <label className="label">{config.field ? "Add another tier" : "First tier"}</label>
+                  <input className="input" value={newTierName} onChange={(e) => setNewTierName(e.target.value)} placeholder="e.g. Adult" />
+                </div>
+                <div className="w-24">
+                  <div className="flex items-center gap-1">
+                    <span className="text-ink-faint text-sm">$</span>
+                    <input type="number" min="0" step="0.01" className="input py-1 text-sm" value={newTierPrice} onChange={(e) => setNewTierPrice(e.target.value)} />
+                  </div>
+                </div>
+                <button type="submit" disabled={busy} className="btn-primary shrink-0">Add tier</button>
               </div>
-              {canManage && (
-                <button onClick={savePrices} disabled={busy} className="btn-primary mt-3">{busy ? "Saving…" : "Save prices"}</button>
+            </form>
+          )}
+
+          {canManage && !config.field && dropdownFields.length > 0 && (
+            <div>
+              {!showLinkExisting ? (
+                <button onClick={() => setShowLinkExisting(true)} className="text-sm text-wine-500 hover:underline">
+                  or link an existing dropdown field
+                </button>
+              ) : (
+                <div className="flex items-end gap-2 max-w-sm">
+                  <div className="flex-1">
+                    <label className="label">Existing field</label>
+                    <select className="input" value={existingFieldId} onChange={(e) => setExistingFieldId(e.target.value)}>
+                      <option value="">Choose a field…</option>
+                      {dropdownFields.map((f) => <option key={f.id} value={f.id}>{f.label}</option>)}
+                    </select>
+                  </div>
+                  <button disabled={!existingFieldId || busy} onClick={linkExisting} className="btn-secondary shrink-0">Link</button>
+                  <button onClick={() => setShowLinkExisting(false)} className="btn-ghost shrink-0">Cancel</button>
+                </div>
               )}
             </div>
           )}
-
-          {config.orphanedTiers.length > 0 && (
-            <div className="rounded border border-brass-200 bg-brass-50 px-4 py-2.5">
-              <p className="text-sm text-brass-600 mb-2">These priced tiers no longer exist as options on the linked field:</p>
-              <ul className="space-y-1.5">
-                {config.orphanedTiers.map((t) => (
-                  <li key={t.id} className="flex items-center justify-between gap-3 text-sm">
-                    <span className="text-brass-600">{t.option_value} — {formatCurrency(t.price_cents)}</span>
-                    {canManage && <button onClick={() => removeOrphanedTier(t.id)} className="text-xs text-brass-600 hover:underline shrink-0">Remove this price</button>}
-                  </li>
-                ))}
-              </ul>
-            </div>
-          )}
         </div>
+      )}
+    </div>
+  );
+}
+
+function TierRow({
+  tier, canManage, busy, onSave, onRemove,
+}: { tier: TicketTier; canManage: boolean; busy: boolean; onSave: (price: string) => void; onRemove: () => void }) {
+  const [price, setPrice] = useState((tier.price_cents / 100).toFixed(2));
+
+  return (
+    <div className="flex items-center gap-3">
+      <label className="flex-1 text-sm text-ink">{tier.option_value}</label>
+      {canManage ? (
+        <>
+          <div className="flex items-center gap-1">
+            <span className="text-ink-faint text-sm">$</span>
+            <input
+              type="number" min="0" step="0.01" className="input w-24 py-1 text-sm"
+              value={price} onChange={(e) => setPrice(e.target.value)}
+              onBlur={() => onSave(price)}
+            />
+          </div>
+          <button onClick={onRemove} disabled={busy} className="text-xs text-ink-faint hover:text-clay-600 shrink-0">Remove</button>
+        </>
+      ) : (
+        <span className="text-sm text-ink-soft">{formatCurrency(tier.price_cents)}</span>
       )}
     </div>
   );
