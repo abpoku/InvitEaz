@@ -9,6 +9,7 @@ const TABS = [
   { href: "", label: "Overview", masterOnly: false },
   { href: "/invitees", label: "Invitees", masterOnly: false },
   { href: "/responses", label: "Responses", masterOnly: false },
+  { href: "/tickets", label: "Tickets", masterOnly: false },
   { href: "/messages", label: "Messages", masterOnly: false },
   { href: "/reports", label: "Reports", masterOnly: false },
   { href: "/settings", label: "Settings", masterOnly: true },

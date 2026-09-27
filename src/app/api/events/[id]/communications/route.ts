@@ -4,7 +4,7 @@ import { listCommunications, logCommunication } from "@/lib/models/comms";
 import { listInvitees } from "@/lib/models/invitees";
 import { getEventById } from "@/lib/models/events";
 import { getAssembly } from "@/lib/models/assemblies";
-import { sendInvitationEmail, sendReminderEmail, sendCustomEmail } from "@/lib/notify";
+import { sendInvitationEmail, sendReminderEmail, sendCustomEmail, sendInvitationSms, sendReminderSms, sendCustomSms } from "@/lib/notify";
 
 export async function GET(_req: Request, { params }: { params: { id: string } }) {
   const access = await requireAssemblyScope(params.id);
@@ -22,7 +22,10 @@ export async function POST(req: Request, { params }: { params: { id: string } })
 
   const body = await req.json();
   const { type, subject, message, audience, groupId, inviteeIds } = body;
-  if (!subject || !message) return NextResponse.json({ error: "Subject and message are required." }, { status: 400 });
+  const channel: "email" | "sms" = body.channel === "sms" ? "sms" : "email";
+  if (!message || (channel === "email" && !subject)) {
+    return NextResponse.json({ error: channel === "email" ? "Subject and message are required." : "Message is required." }, { status: 400 });
+  }
 
   // A lead planner's messages are always confined to their own assembly. A full-scope planner
   // may optionally target one specific assembly via the "assembly" audience option.
@@ -33,7 +36,7 @@ export async function POST(req: Request, { params }: { params: { id: string } })
     if (!assembly || assembly.event_id !== params.id) return NextResponse.json({ error: "Clone not found." }, { status: 404 });
     targetAssemblyId = assembly.id;
   }
-  let invitees = (await listInvitees(params.id, targetAssemblyId)).filter((i) => i.email);
+  let invitees = (await listInvitees(params.id, targetAssemblyId)).filter((i) => (channel === "sms" ? i.phone : i.email));
 
   if (audience === "attending") invitees = invitees.filter((i) => i.status === "attending");
   else if (audience === "declined") invitees = invitees.filter((i) => i.status === "declined");
@@ -45,16 +48,30 @@ export async function POST(req: Request, { params }: { params: { id: string } })
 
   let sent = 0;
   for (const inv of invitees) {
-    const fn =
-      type === "invitation" ? sendInvitationEmail
-      : type === "reminder" ? (e: any, to: string, name: string, tok: string) => sendReminderEmail(e, to, name, tok, false)
-      : type === "final_reminder" ? (e: any, to: string, name: string, tok: string) => sendReminderEmail(e, to, name, tok, true)
-      : null;
+    if (channel === "sms") {
+      const fn =
+        type === "invitation" ? sendInvitationSms
+        : type === "reminder" ? (e: any, to: string, name: string, tok: string) => sendReminderSms(e, to, name, tok, false)
+        : type === "final_reminder" ? (e: any, to: string, name: string, tok: string) => sendReminderSms(e, to, name, tok, true)
+        : null;
 
-    if (fn) {
-      await fn(event, inv.email!, inv.first_name, inv.token).catch(() => {});
+      if (fn) {
+        await fn(event, inv.phone!, inv.first_name, inv.token).catch(() => {});
+      } else {
+        await sendCustomSms(event, inv.phone!, inv.first_name, inv.token, subject || "Text message", message).catch(() => {});
+      }
     } else {
-      await sendCustomEmail(event, inv.email!, inv.first_name, inv.token, subject, message).catch(() => {});
+      const fn =
+        type === "invitation" ? sendInvitationEmail
+        : type === "reminder" ? (e: any, to: string, name: string, tok: string) => sendReminderEmail(e, to, name, tok, false)
+        : type === "final_reminder" ? (e: any, to: string, name: string, tok: string) => sendReminderEmail(e, to, name, tok, true)
+        : null;
+
+      if (fn) {
+        await fn(event, inv.email!, inv.first_name, inv.token).catch(() => {});
+      } else {
+        await sendCustomEmail(event, inv.email!, inv.first_name, inv.token, subject, message).catch(() => {});
+      }
     }
     sent += 1;
   }
@@ -63,7 +80,8 @@ export async function POST(req: Request, { params }: { params: { id: string } })
     eventId: params.id,
     assemblyId: targetAssemblyId || null,
     type: type || "custom",
-    subject,
+    channel,
+    subject: subject || (channel === "sms" ? "Text message" : ""),
     body: message,
     recipientsFilter: audience || "everyone",
     recipientCount: sent,

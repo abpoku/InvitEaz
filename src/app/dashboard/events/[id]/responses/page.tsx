@@ -1,7 +1,6 @@
 import { listInviteeResponseRows, listQuestions, getAnswersForResponse } from "@/lib/models/rsvp";
-import { getEventById, getMembership, isCloneScopedRole } from "@/lib/models/events";
+import { getMembership, isCloneScopedRole } from "@/lib/models/events";
 import { listAssemblies } from "@/lib/models/assemblies";
-import { getTicketingConfig, priceForInvitee, sumPaymentsByInvitee, sumPaymentsByGroup } from "@/lib/models/ticketing";
 import { getCurrentUser } from "@/lib/session";
 import { CloneFilter } from "@/components/responses/CloneFilter";
 import { ResponsesManager } from "@/components/responses/ResponsesManager";
@@ -15,7 +14,6 @@ export default async function ResponsesPage({ params, searchParams }: { params: 
   const selectedClone = !isCloneScoped && searchParams.clone && clones.some((c) => c.id === searchParams.clone) ? searchParams.clone : null;
   const assemblyId = isCloneScoped ? membership!.assembly_id : selectedClone;
 
-  const event = (await getEventById(params.id))!;
   const questions = await listQuestions(params.id);
   const rows = await listInviteeResponseRows(params.id, assemblyId);
   const answersByResponseId: Record<string, { question_id: string; value: string | null }[]> = {};
@@ -23,50 +21,6 @@ export default async function ResponsesPage({ params, searchParams }: { params: 
     if (row.response_id) answersByResponseId[row.response_id] = await getAnswersForResponse(row.response_id);
   }
   const cloneNameById = new Map(clones.map((c) => [c.id, c.name]));
-
-  let ticketing = null as null | {
-    fieldLabel: string | null;
-    fieldKey: string | null;
-    tierOptions: string[];
-    tierByInvitee: Record<string, string>;
-    owedByInvitee: Record<string, number>;
-    paidByInvitee: Record<string, number>;
-    groupOwed: Record<string, number>;
-    paidByGroup: Record<string, number>;
-    groupNameById: Record<string, string>;
-  };
-
-  if (event.ticketing_enabled) {
-    const config = await getTicketingConfig(params.id);
-    const tierByInvitee: Record<string, string> = {};
-    const owedByInvitee: Record<string, number> = {};
-    const groupOwed: Record<string, number> = {};
-    const groupNameById: Record<string, string> = {};
-    for (const row of rows) {
-      let tierValue = "";
-      if (config.field && row.custom_fields) {
-        try { tierValue = JSON.parse(row.custom_fields)?.[config.field.key] || ""; } catch { tierValue = ""; }
-      }
-      if (tierValue) tierByInvitee[row.invitee_id] = tierValue;
-      const owed = config.field ? priceForInvitee(row.custom_fields, config.field.key, config.tiers) : 0;
-      owedByInvitee[row.invitee_id] = owed;
-      if (row.group_id) {
-        groupOwed[row.group_id] = (groupOwed[row.group_id] || 0) + owed;
-        if (row.group_name) groupNameById[row.group_id] = row.group_name;
-      }
-    }
-    ticketing = {
-      fieldLabel: config.field?.label ?? null,
-      fieldKey: config.field?.key ?? null,
-      tierOptions: config.tiers.map((t) => t.option_value),
-      tierByInvitee,
-      owedByInvitee,
-      paidByInvitee: await sumPaymentsByInvitee(params.id, assemblyId),
-      groupOwed,
-      paidByGroup: await sumPaymentsByGroup(params.id, assemblyId),
-      groupNameById,
-    };
-  }
 
   return (
     <div className="p-4 sm:p-8">
@@ -89,7 +43,6 @@ export default async function ResponsesPage({ params, searchParams }: { params: 
         cloneNameById={Object.fromEntries(cloneNameById)}
         showCloneColumn={clones.length > 0}
         canMutate={!membership || membership.role !== "viewer"}
-        ticketing={ticketing}
       />
     </div>
   );

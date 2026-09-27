@@ -1,8 +1,10 @@
 import { query, queryOne, exec } from "@/lib/db";
-import { newId } from "@/lib/utils";
+import { newId, fullName } from "@/lib/utils";
 import { getEventById, updateEvent } from "@/lib/models/events";
 import { getInviteeField, createInviteeField, updateInviteeField, type InviteeFieldRow } from "@/lib/models/invitee-fields";
+import { listGroups } from "@/lib/models/invitees";
 import type { InviteeRow } from "@/lib/models/invitees";
+import { listInviteeResponseRows } from "@/lib/models/rsvp";
 
 export interface TicketTierRow {
   id: string;
@@ -250,4 +252,123 @@ export async function sumPaymentsByGroup(eventId: string, assemblyId?: string | 
     assemblyId ? [eventId, assemblyId] : [eventId]
   );
   return Object.fromEntries(rows.map((r) => [r.group_id, Number(r.total)]));
+}
+
+export interface TicketingSummaryInvitee {
+  inviteeId: string;
+  name: string;
+  groupId: string | null;
+  groupName: string | null;
+  tier: string;
+  owedCents: number;
+  paidCents: number;
+  groupShareCents: number;
+  balanceCents: number;
+}
+
+export interface TicketingSummaryGroup {
+  groupId: string;
+  name: string;
+  memberCount: number;
+  tierBreakdown: { tier: string; count: number }[];
+  owedCents: number;
+  paidCents: number;
+  balanceCents: number;
+}
+
+export interface TicketingSummary {
+  enabled: boolean;
+  fieldLabel: string | null;
+  fieldKey: string | null;
+  invitees: TicketingSummaryInvitee[];
+  groups: TicketingSummaryGroup[];
+  hasGroups: boolean;
+}
+
+function tierValueFromCustomFields(customFieldsJson: string | null, fieldKey: string): string {
+  if (!customFieldsJson) return "";
+  try {
+    const parsed = JSON.parse(customFieldsJson);
+    const value = parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed[fieldKey] : undefined;
+    return typeof value === "string" ? value : "";
+  } catch {
+    return "";
+  }
+}
+
+/** Powers the Tickets tab. Owed always reflects each invitee's own ticket-tier price
+ * (unchanged) — only Paid attributes a live equal share of any group-tagged payment to
+ * each of the group's *current* members, so nothing needs to be recomputed or migrated
+ * when a member is later added to or removed from a group: the next read just divides by
+ * however many active members the group has at that moment. A member's own individually-
+ * tagged payments always add on top of that share. Per-member group shares are rounded for
+ * display only (Math.round(total/n)) and can therefore sum to within ±(n-1) cents of the
+ * group's own exact total shown on its own row — that row is never the sum of the rounded
+ * shares, it's the real total, so nothing is actually lost or gained. */
+export async function getTicketingSummary(eventId: string, assemblyId?: string | null): Promise<TicketingSummary> {
+  const config = await getTicketingConfig(eventId);
+  if (!config.enabled || !config.field) {
+    return { enabled: config.enabled, fieldLabel: null, fieldKey: null, invitees: [], groups: [], hasGroups: false };
+  }
+  const fieldKey = config.field.key;
+
+  const [rows, groupRows, paidByInvitee, paidByGroup] = await Promise.all([
+    listInviteeResponseRows(eventId, assemblyId),
+    listGroups(eventId, assemblyId),
+    sumPaymentsByInvitee(eventId, assemblyId),
+    sumPaymentsByGroup(eventId, assemblyId),
+  ]);
+
+  const membersByGroup = new Map<string, typeof rows>();
+  for (const row of rows) {
+    if (!row.group_id) continue;
+    const list = membersByGroup.get(row.group_id);
+    if (list) list.push(row);
+    else membersByGroup.set(row.group_id, [row]);
+  }
+
+  const invitees: TicketingSummaryInvitee[] = rows.map((row) => {
+    const tier = tierValueFromCustomFields(row.custom_fields, fieldKey);
+    const owedCents = priceForInvitee(row.custom_fields, fieldKey, config.tiers);
+    const individualPaid = paidByInvitee[row.invitee_id] || 0;
+    const members = row.group_id ? membersByGroup.get(row.group_id) : undefined;
+    const groupShareCents = row.group_id && members && members.length > 0
+      ? Math.round((paidByGroup[row.group_id] || 0) / members.length)
+      : 0;
+    const paidCents = individualPaid + groupShareCents;
+    return {
+      inviteeId: row.invitee_id,
+      name: fullName(row.first_name, row.last_name),
+      groupId: row.group_id,
+      groupName: row.group_name,
+      tier,
+      owedCents,
+      paidCents,
+      groupShareCents,
+      balanceCents: owedCents - paidCents,
+    };
+  });
+
+  const groups: TicketingSummaryGroup[] = groupRows.map((g) => {
+    const members = membersByGroup.get(g.id) || [];
+    const owedCents = priceForGroup(members, fieldKey, config.tiers);
+    const membersIndividualPaid = members.reduce((sum, m) => sum + (paidByInvitee[m.invitee_id] || 0), 0);
+    const paidCents = (paidByGroup[g.id] || 0) + membersIndividualPaid;
+
+    const tierCounts = new Map<string, number>();
+    for (const m of members) {
+      const t = tierValueFromCustomFields(m.custom_fields, fieldKey);
+      tierCounts.set(t, (tierCounts.get(t) || 0) + 1);
+    }
+    const tierBreakdown = [...tierCounts.entries()]
+      .map(([tier, count]) => ({ tier, count }))
+      .sort((a, b) => {
+        if (a.tier === "" || b.tier === "") return a.tier === "" ? 1 : -1;
+        return b.count - a.count || a.tier.localeCompare(b.tier);
+      });
+
+    return { groupId: g.id, name: g.name, memberCount: members.length, tierBreakdown, owedCents, paidCents, balanceCents: owedCents - paidCents };
+  });
+
+  return { enabled: true, fieldLabel: config.field.label, fieldKey, invitees, groups, hasGroups: groups.length > 0 };
 }

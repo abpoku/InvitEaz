@@ -1,4 +1,5 @@
 import { sendEmail, appUrl } from "@/lib/email";
+import { sendSms } from "@/lib/sms";
 import { formatDate, formatTime } from "@/lib/utils";
 import type { EventRow } from "@/lib/models/events";
 
@@ -102,4 +103,20 @@ export async function sendCoPlannerInviteEmail(
     url
   );
   return sendEmail({ to, subject: `You've been added to plan: ${event.name}`, html });
+}
+
+export async function sendInvitationSms(event: EventRow, to: string, name: string, token: string) {
+  const url = appUrl(`/r/${token}`);
+  return sendSms({ to, body: `You're invited to ${event.name}, ${name}! Please RSVP: ${url}` });
+}
+
+export async function sendReminderSms(event: EventRow, to: string, name: string, token: string, isFinal = false) {
+  const url = appUrl(`/r/${token}`);
+  const lead = isFinal ? "Last chance to RSVP for" : "Reminder to RSVP for";
+  return sendSms({ to, body: `${lead} ${event.name}, ${name}: ${url}` });
+}
+
+export async function sendCustomSms(event: EventRow, to: string, name: string, token: string, subject: string, body: string) {
+  const url = appUrl(`/r/${token}`);
+  return sendSms({ to, body: `${event.name}: ${body}\n${url}` });
 }

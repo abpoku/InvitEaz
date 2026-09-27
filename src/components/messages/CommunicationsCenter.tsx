@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 
 interface Group { id: string; name: string; }
 interface Assembly { id: string; name: string; }
-interface Comm { id: string; type: string; subject: string; recipients_filter: string; recipient_count: number; created_at: string; }
+interface Comm { id: string; type: string; channel: "email" | "sms"; subject: string; recipients_filter: string; recipient_count: number; created_at: string; }
 
 const TYPES = [
   { value: "invitation", label: "Invitation", subject: "You're invited!", body: "We'd love to have you join us — please RSVP when you get a chance." },
@@ -25,6 +25,7 @@ const AUDIENCES = [
 
 export function CommunicationsCenter({ eventId, groups, assemblies }: { eventId: string; groups: Group[]; assemblies: Assembly[] }) {
   const [history, setHistory] = useState<Comm[]>([]);
+  const [channel, setChannel] = useState<"email" | "sms">("email");
   const [type, setType] = useState("reminder");
   const [subject, setSubject] = useState(TYPES[1].subject);
   const [message, setMessage] = useState(TYPES[1].body);
@@ -57,8 +58,8 @@ export function CommunicationsCenter({ eventId, groups, assemblies }: { eventId:
   async function send() {
     setError(null);
     setResult(null);
-    if (!subject.trim() || !message.trim()) {
-      setError("Add a subject and message.");
+    if (!message.trim() || (channel === "email" && !subject.trim())) {
+      setError(channel === "email" ? "Add a subject and message." : "Add a message.");
       return;
     }
     setSending(true);
@@ -66,7 +67,7 @@ export function CommunicationsCenter({ eventId, groups, assemblies }: { eventId:
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        type, subject, message, audience,
+        type, channel, subject, message, audience,
         groupId: audience === "group" ? groupId : undefined,
         assemblyId: audience === "assembly" ? assemblyId : undefined,
       }),
@@ -85,11 +86,33 @@ export function CommunicationsCenter({ eventId, groups, assemblies }: { eventId:
     <div className="p-4 sm:p-8 grid lg:grid-cols-[1fr_360px] gap-6 sm:gap-8 max-w-5xl">
       <div>
         <h2 className="font-serif text-xl text-ink">Send a message</h2>
-        <p className="mt-1 text-sm text-ink-soft">Emails go to whichever invitees have an email address on file.</p>
+        <p className="mt-1 text-sm text-ink-soft">
+          {channel === "email" ? "Emails go to whichever invitees have an email address on file." : "Texts go to whichever invitees have a phone number on file."}
+        </p>
 
         <div className="mt-5 card p-6 space-y-4">
           {error && <div className="rounded border border-clay-500/30 bg-clay-500/5 text-clay-600 text-sm px-3 py-2.5">{error}</div>}
           {result && <div className="rounded border border-moss-400/30 bg-moss-50 text-moss-600 text-sm px-3 py-2.5">{result}</div>}
+
+          <div>
+            <label className="label">Channel</label>
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={() => setChannel("email")}
+                className={`chip border ${channel === "email" ? "bg-wine-500 text-paper border-wine-500" : "border-paper-line text-ink-soft"}`}
+              >
+                Email
+              </button>
+              <button
+                type="button"
+                onClick={() => setChannel("sms")}
+                className={`chip border ${channel === "sms" ? "bg-wine-500 text-paper border-wine-500" : "border-paper-line text-ink-soft"}`}
+              >
+                Text message
+              </button>
+            </div>
+          </div>
 
           <div>
             <label className="label">Message type</label>
@@ -142,10 +165,12 @@ export function CommunicationsCenter({ eventId, groups, assemblies }: { eventId:
               </select>
             )}
           </div>
-          <div>
-            <label className="label">Subject</label>
-            <input className="input" value={subject} onChange={(e) => setSubject(e.target.value)} />
-          </div>
+          {channel === "email" && (
+            <div>
+              <label className="label">Subject</label>
+              <input className="input" value={subject} onChange={(e) => setSubject(e.target.value)} />
+            </div>
+          )}
           <div>
             <label className="label">Message</label>
             <textarea className="input min-h-[140px]" value={message} onChange={(e) => setMessage(e.target.value)} />
@@ -164,7 +189,10 @@ export function CommunicationsCenter({ eventId, groups, assemblies }: { eventId:
           ) : (
             history.map((c) => (
               <div key={c.id} className="card p-4">
-                <p className="text-sm text-ink">{c.subject}</p>
+                <div className="flex items-center gap-2">
+                  <span className="chip bg-ink/[0.06] text-[10px] shrink-0">{c.channel === "sms" ? "Text" : "Email"}</span>
+                  <p className="text-sm text-ink truncate">{c.subject}</p>
+                </div>
                 <p className="mt-1 text-xs text-ink-faint">
                   {c.recipient_count} recipient{c.recipient_count === 1 ? "" : "s"} · {new Date(c.created_at).toLocaleString()}
                 </p>
