@@ -233,11 +233,16 @@ export interface EventStats {
 }
 
 export async function getEventStats(eventId: string): Promise<EventStats> {
+  // Removing an invitee is a soft delete (invitees.active = 0) — their invitation row is never
+  // actually deleted, so it must be explicitly excluded here or a removed invitee keeps counting
+  // toward "Invited" forever. getAssemblyStats already does this join; this mirrors it.
   const rows = await query<{ invitation_id: string; rsvp_status: string | null; num_attending: number | null }>(
     `SELECT i.id as invitation_id,
       (SELECT r.rsvp_status FROM rsvp_responses r WHERE r.invitation_id = i.id ORDER BY r.responded_at DESC LIMIT 1) as rsvp_status,
       (SELECT r.num_attending FROM rsvp_responses r WHERE r.invitation_id = i.id ORDER BY r.responded_at DESC LIMIT 1) as num_attending
-     FROM invitations i WHERE i.event_id = ?`,
+     FROM invitations i
+     JOIN invitees iv ON iv.id = i.invitee_id
+     WHERE i.event_id = ? AND iv.active = 1`,
     [eventId]
   );
 

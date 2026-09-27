@@ -207,12 +207,14 @@ export async function recordManualResponse(input: {
 }
 
 export async function listResponsesForEvent(eventId: string, assemblyId?: string | null) {
+  // Removing an invitee is a soft delete (invitees.active = 0), not a real row delete, so a
+  // removed invitee's response would otherwise still show up in the CSV export forever.
   return query(
     `SELECT r.*, iv.first_name, iv.last_name, iv.email as invitee_email, iv.assembly_id, i.token
      FROM rsvp_responses r
      JOIN invitations i ON i.id = r.invitation_id
-     LEFT JOIN invitees iv ON iv.id = i.invitee_id
-     WHERE r.event_id = ? AND r.id IN (
+     JOIN invitees iv ON iv.id = i.invitee_id
+     WHERE r.event_id = ? AND iv.active = 1 AND r.id IN (
        SELECT r2.id FROM rsvp_responses r2
        WHERE r2.invitation_id = r.invitation_id
        ORDER BY r2.responded_at DESC LIMIT 1
@@ -270,12 +272,14 @@ export async function listInviteeResponseRows(eventId: string, assemblyId?: stri
 }
 
 export async function questionReport(eventId: string, questionId: string, assemblyId?: string | null): Promise<{ value: string; count: number }[]> {
+  // Same active-invitee filter as listResponsesForEvent — a removed invitee's answers shouldn't
+  // keep contributing to the Reports page's question breakdown.
   const rows = await query<{ value: string; count: string }>(
     `SELECT a.value, COUNT(*) as count FROM rsvp_answers a
      JOIN rsvp_responses r ON r.id = a.response_id
      JOIN invitations i ON i.id = r.invitation_id
-     LEFT JOIN invitees iv ON iv.id = i.invitee_id
-     WHERE a.question_id = ? AND r.event_id = ? AND r.id IN (
+     JOIN invitees iv ON iv.id = i.invitee_id
+     WHERE a.question_id = ? AND r.event_id = ? AND iv.active = 1 AND r.id IN (
        SELECT r2.id FROM rsvp_responses r2 WHERE r2.invitation_id = r.invitation_id ORDER BY r2.responded_at DESC LIMIT 1
      )
      ${assemblyId ? "AND iv.assembly_id = ?" : ""}
