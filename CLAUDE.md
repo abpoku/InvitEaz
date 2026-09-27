@@ -33,7 +33,7 @@ see "Known gotchas" below.
 
 Next.js 14 App Router + TypeScript + Tailwind. No ORM: `src/lib/db.ts` wraps a `pg` Pool,
 and `src/lib/models/*.ts` hold hand-written SQL per entity (events, invitees, rsvp,
-assemblies, comms, users, invitee-fields). Model queries are written with `?` placeholders
+assemblies, comms, users, invitee-fields, ticketing). Model queries are written with `?` placeholders
 (a holdover from an earlier SQLite version) — `query()`/`exec()` in `db.ts` rewrite them to
 Postgres's `$1, $2…` at call time; keep using `?` in new queries rather than mixing styles.
 Timestamps are plain ISO-8601 `TEXT`, not native `Date`/`timestamptz`, so every value is
@@ -107,7 +107,10 @@ authority first, then fall back to this restricted path).
   personalized RSVP page is `/r/[token]`. Public/open events also allow self-signup via
   `/e/[slug]`.
 - **RSVP Response** + free-form **Answers** to planner-defined **Questions**
-  (`rsvp_questions`), shown/hidden per-question via `show_if_attending`.
+  (`rsvp_questions`), shown/hidden per-question via `show_if_attending`. A response's
+  `rsvp_status` is `attending | declined | maybe` — see RSVP status & manual entry below.
+- **Ticket Tiers** + **Ticket Payments** — optional per-event pricing (no payment
+  processing) — see Ticketing below.
 - **Communications** — a log of every email sent (type + recipients + body), scopable to
   one clone. **EventMembers** carries every role above. **AuditLog** records actions.
 
@@ -118,6 +121,125 @@ invitation rows stay `no_response` even though the household counts as responded
 headcount totals. Relatedly, `groups.leader_invitee_id` (settable via the template's
 "Group Leader" column) is currently write-only — nothing reads it. It doesn't change who
 sees the household checklist or anything else yet.
+
+### Invitee CSV upload
+
+`src/components/invitees/UploadModal.tsx` is a multi-step wizard (`select → map → review →
+fix/duplicates → done`) backed by `src/app/api/events/[id]/invitees/upload/route.ts`
+(preview, no DB writes) and `.../upload/confirm/route.ts` (the actual import). Column
+matching and validation are pure functions in `src/lib/invitee-field-matching.ts` so the
+client can re-validate instantly after the planner adjusts a column mapping, with no round
+trip.
+
+- **Duplicate detection is whole-event, not assembly-scoped**, and checks both against rows
+  already in the file and against invitees already in the database (email → phone → name,
+  in that priority) — a lead/co-planner's upload can still collide with a duplicate sitting
+  in a different clone, which is exactly the mistake this needs to catch. Every duplicate
+  needs an explicit planner decision (Keep both / Merge / Skip) — nothing is silently
+  skipped or silently overwritten. A merge only ever unconditionally overwrites the fields
+  actually shown in the merge picker (name/email/phone); every other field on the target
+  invitee (notes, group, custom fields) is preserved unless the uploaded row actually
+  supplies a non-empty value — this bit through us once already (a merge that fills in a
+  missing phone number used to also blank out an existing `notes` value from an unrelated
+  edit) and is exactly the kind of "which side wins" bug to watch for if this logic changes.
+- **Missing/invalid data is advisory, not blocking** — a summary banner ("N of M rows
+  missing X") offers Continue-anyway or Fix-before-upload (inline per-row editing, plus
+  bulk multi-select edit reusing the same pattern as the live Invitees page — see below).
+  When building the per-field summary, don't let two different validation rules that can
+  both fire for the same field on the same row (e.g. "email is individually required" and
+  "at least one of email/phone is required") both push an issue — a row can otherwise get
+  double-counted in that field's total, which is exactly what happened here (one row
+  reported twice made "97 of 107 rows missing Phone" read "194 of 107").
+- **Bulk multi-select editing** (`src/components/invitees/BulkEditModal.tsx` +
+  `groupCounts()` in `src/lib/bulk-select.ts`) is a genuinely shared component: it's used
+  both inside the upload wizard's fix step (mutating in-memory preview rows, no network
+  call) and on the live Invitees page (`InviteesManager.tsx`, real `PATCH
+  /api/events/[id]/invitees/bulk`) — it's parameterized entirely through an `onApply`
+  callback so the caller decides whether a field-value change is persisted immediately or
+  just held in local state. The live Invitees page's bulk route (and its sibling bulk
+  `DELETE`, a soft `deactivateInvitee` per selected id) follow the same
+  scope-check-and-skip pattern as every other assembly-scoped bulk route: an out-of-scope id
+  is silently dropped from the write and reported back via a `skipped` count, rather than
+  failing the whole request.
+
+### RSVP status & manual entry
+
+Guests self-submit via the public `/r/[token]` form, which stays a strict binary
+Attending/Declined — never touched by anything below. Separately, planners can now record a
+status on an invitee's behalf from the Responses tab (`src/components/responses/
+ResponsesManager.tsx`, which lists **every** invitee for the event, not just ones who've
+actually responded — contrast with `listResponsesForEvent` in `rsvp.ts`, which still only
+returns invitations with a response row and backs the CSV export).
+
+- **A third status, "Maybe", is a real tri-state**, not just a UI label — it gets its own
+  bucket in every stat (`EventStats`/`AssemblyStats` both carry a `maybe` field alongside
+  `attending`/`declined`) rather than being lumped into declined. `rsvp_responses` gained an
+  `rsvp_status: 'attending' | 'declined' | 'maybe'` column for this; the legacy boolean
+  `attending` column is still written on every insert (1 only for real attending) so nothing
+  that reads it directly needed to change. "Maybe" is **planner-only** — it's never an
+  option the public form itself offers.
+- **A manual "Attending" behaves exactly like a real guest submission** for stats purposes:
+  `recordManualResponse()` (`src/lib/models/rsvp.ts`) inserts a real `rsvp_responses` row
+  (not just an `invitations.status` flip), because `getEventStats`/`getAssemblyStats`
+  compute headcount by reading each invitation's *latest* response row, never
+  `invitations.status` directly — a manual entry that only touched the status column would
+  silently not count toward "Attending" or "Total attendees" anywhere.
+- **A later guest submission always wins over a planner's manual entry**, with zero special
+  locking logic: every response path (`submitResponse` for guests, `recordManualResponse`
+  for planners) always `INSERT`s a new row rather than updating one in place, and everything
+  reads "latest by `responded_at`" — so a guest who shows up and RSVPs themselves after a
+  planner recorded something on their behalf just becomes the new latest row automatically.
+  `rsvp_responses.recorded_by` (planner's email, `NULL` for real guest submissions) is the
+  only place this distinction is visible.
+
+### Ticketing
+
+No payment processing anywhere — `ticketing_enabled`/`ticket_field_id` (on `events`),
+`ticket_tiers`, and `ticket_payments` exist purely to record configured prices and manually
+track who's paid. Managed from `src/components/ticketing/TicketingManager.tsx` on the
+Overview tab (full-event only — gated `requireEventRole(id, "admin")`, same as the rest of
+Overview's config sections; clone-scoped roles never see it).
+
+- **Tiers are authored on the Ticketing card, not on the linked field.** A planner adds
+  tiers (name + price) directly; the *field*'s dropdown options are a byproduct, kept in
+  sync automatically by `createTier`/`deleteTier` in `src/lib/models/ticketing.ts` calling
+  `updateInviteeField()` under the hood. This inverted an earlier version of the feature
+  that required creating the field first (via Manage Fields) and pricing its existing
+  options after — that direction caused a two-tab round trip and a "drift" state (field
+  options edited elsewhere no longer matching configured prices) that needed its own
+  reconciliation UI. The current one-way design has no drift to detect: once a field is
+  linked, editing its `options` directly through `PATCH
+  /api/events/[id]/invitee-fields/[fieldId]` is rejected outright (see the guard in that
+  route) — the tier list is the only way to change them. First tier added with no field
+  linked yet auto-creates one (an ordinary custom dropdown field, `collect_at_signup:
+  false` by default); an already-existing dropdown field can be "adopted" instead
+  (`adoptFieldAsTicketing`), seeding its current options as $0 tiers. Tier *names* are
+  immutable after creation (only price can change) — renaming would mean reconciling every
+  invitee already holding the old option string, so delete-and-recreate is the intended path
+  if a name is wrong.
+- **An invitee's assigned tier is just their value for that (ordinary) custom field** —
+  `custom_fields[field.key]`. `priceForInvitee()`/`priceForGroup()` in `ticketing.ts` are
+  pure functions that look that value up against the configured tiers; no tier assigned (or
+  a value that matches no configured tier) owes **$0**, never an error, never blocking.
+  Both the Invitees table and the Responses table render this field as an inline `<select>`
+  when it's the linked ticketing field (not the generic read-only text every other custom
+  field gets) — the dropdown's options always come from the tier list, so the two tables
+  can't disagree with each other or with the Ticketing card.
+- **Payments are a flexible ledger** (`ticket_payments`): one entry is tagged to exactly one
+  of an invitee or a group (DB `CHECK (num_nonnulls(invitee_id, group_id) = 1)`), so a
+  planner can record either "$50 from Alex" or "$150 from the Johnson family" as a single
+  entry. Unlike `rsvp_responses`, entries are **editable in place** with a soft void
+  (`voided_at`/`voided_by`), not append-only — a planner fixing a mis-entered amount is the
+  common case here, not a rare correction. A group's "Paid" total on the Responses tab's
+  "Group ticket balances" panel is payments tagged to the group *plus* the sum of that
+  group's members' own individually-tagged payments — an individual invitee's own Paid
+  column, though, only ever shows payments tagged directly to them, never an attributed
+  share of a group payment (there's no way to know who a lump sum was meant to cover). All
+  four payment operations (`POST`/`GET .../payments`, `PATCH`/`DELETE
+  .../payments/[paymentId]`) are `requireAssemblyScope`-gated, viewers fully blocked, and
+  every write re-derives the target invitee/group from the *payment's own* stored row (not
+  the request body) before checking `canManageInvitee`/`canManageGroup` — so a lead/co-planner
+  can't spoof scope by naming a payment ID that happens to belong to someone else's clone.
 
 ### Schema changes (read before editing schema.sql)
 
@@ -172,6 +294,15 @@ Consequences for editing `schema.sql`:
   *uncaught* exception in that case, which silently aborts the handler with zero user
   feedback — no error shown, nothing saved, no clue why. Wrap it: `let data = {}; try { data
   = await res.json(); } catch {}` before checking `res.ok`.
+- **Removing an invitee is a soft delete** (`invitees.active = 0` via `deactivateInvitee` —
+  their `invitations`/`rsvp_responses` rows are never actually deleted). Any *new* aggregate
+  query that joins back to `invitations`/`rsvp_responses` without also joining `invitees` and
+  filtering `active = 1` will keep counting removed people forever — this hit
+  `getEventStats` in production (the event-header "N Invited" numbers never went down after
+  a bulk removal) even though the assembly-scoped equivalent, `getAssemblyStats`, already had
+  the filter. `listInvitees`, `listInviteeResponseRows`, `listResponsesForEvent`, and
+  `questionReport` all filter on this correctly today — copy one of those, not a query that
+  predates this fix.
 
 ## Environment note
 
