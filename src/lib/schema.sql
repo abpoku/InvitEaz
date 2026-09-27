@@ -136,7 +136,7 @@ CREATE TABLE IF NOT EXISTS invitations (
   invitee_id TEXT REFERENCES invitees(id) ON DELETE CASCADE,
   token TEXT UNIQUE NOT NULL,
   is_public_signup INTEGER NOT NULL DEFAULT 0,
-  status TEXT NOT NULL DEFAULT 'invited', -- invited|delivered|opened|attending|declined|no_response|rsvp_locked
+  status TEXT NOT NULL DEFAULT 'invited', -- invited|delivered|opened|attending|declined|maybe|no_response|rsvp_locked
   opened_at TEXT,
   created_at TEXT NOT NULL DEFAULT to_char(now() AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')
 );
@@ -183,6 +183,21 @@ CREATE TABLE IF NOT EXISTS rsvp_responses (
 CREATE INDEX IF NOT EXISTS idx_responses_invitation ON rsvp_responses(invitation_id);
 CREATE INDEX IF NOT EXISTS idx_responses_event ON rsvp_responses(event_id);
 
+-- Additive migration for tri-state RSVP status ("maybe") + manual-entry audit trail. rsvp_status
+-- becomes the source of truth for attending/declined/maybe going forward; the legacy `attending`
+-- column is left untouched and still populated on every insert (1 for 'attending', 0 for
+-- 'declined' or 'maybe') so every existing reader of that raw column keeps working unmodified.
+ALTER TABLE rsvp_responses ADD COLUMN IF NOT EXISTS rsvp_status TEXT; -- 'attending' | 'declined' | 'maybe'
+ALTER TABLE rsvp_responses ADD COLUMN IF NOT EXISTS recorded_by TEXT; -- planner's email if manually recorded; NULL = guest self-submission
+
+-- Backfill existing rows exactly once. Guarded by `WHERE rsvp_status IS NULL` so re-running this
+-- script (it reruns in full on every boot) is a true no-op once every row has a value — every
+-- INSERT path that writes rsvp_responses always sets rsvp_status explicitly, so a NULL only ever
+-- means "predates this migration." This can never stomp a real 'maybe' back down to 'declined'.
+UPDATE rsvp_responses
+SET rsvp_status = CASE WHEN attending = 1 THEN 'attending' ELSE 'declined' END
+WHERE rsvp_status IS NULL;
+
 CREATE TABLE IF NOT EXISTS rsvp_answers (
   id TEXT PRIMARY KEY,
   response_id TEXT NOT NULL REFERENCES rsvp_responses(id) ON DELETE CASCADE,
@@ -206,6 +221,7 @@ CREATE TABLE IF NOT EXISTS communications (
 );
 CREATE INDEX IF NOT EXISTS idx_comms_event ON communications(event_id);
 ALTER TABLE communications ADD COLUMN IF NOT EXISTS assembly_id TEXT REFERENCES assemblies(id) ON DELETE SET NULL;
+ALTER TABLE communications ADD COLUMN IF NOT EXISTS channel TEXT NOT NULL DEFAULT 'email'; -- email | sms
 
 CREATE TABLE IF NOT EXISTS audit_logs (
   id TEXT PRIMARY KEY,

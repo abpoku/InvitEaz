@@ -99,7 +99,7 @@ export function InviteesManager({ eventId, groupRsvpMode, nameFormat }: { eventI
   const filtered = useMemo(() => {
     return invitees.filter((i) => {
       if (statusFilter !== "all") {
-        if (statusFilter === "no_response" && ["attending", "declined"].includes(i.status)) return false;
+        if (statusFilter === "no_response" && ["attending", "declined", "maybe"].includes(i.status)) return false;
         if (statusFilter !== "no_response" && i.status !== statusFilter) return false;
       }
       if (assemblyFilter === "unassigned" && i.assembly_id) return false;
@@ -189,6 +189,7 @@ export function InviteesManager({ eventId, groupRsvpMode, nameFormat }: { eventI
           <select className="input max-w-[180px]" value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
             <option value="all">All statuses</option>
             <option value="attending">Attending</option>
+            <option value="maybe">Maybe</option>
             <option value="declined">Declined</option>
             <option value="no_response">No response</option>
           </select>

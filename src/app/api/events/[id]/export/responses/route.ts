@@ -22,7 +22,8 @@ export async function GET(_req: Request, { params }: { params: { id: string } })
     const answerMap = new Map(answers.map((a) => [a.question_id, a.value]));
     const guestNames = r.guest_names_json ? JSON.parse(r.guest_names_json).join("; ") : "";
     lines.push([
-      csvEscape(r.first_name), csvEscape(r.last_name), csvEscape(r.attending ? "Yes" : "No"),
+      csvEscape(r.first_name), csvEscape(r.last_name),
+      csvEscape(r.rsvp_status === "attending" ? "Yes" : r.rsvp_status === "maybe" ? "Maybe" : "No"),
       csvEscape(r.num_attending), csvEscape(guestNames), csvEscape(r.responded_at),
       ...questions.map((q) => csvEscape(answerMap.get(q.id) || "")),
     ].join(","));

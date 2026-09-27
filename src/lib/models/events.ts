@@ -223,27 +223,30 @@ export interface EventStats {
   responded: number;
   attending: number;
   declined: number;
+  maybe: number;
   noResponse: number;
   totalAttendees: number;
   responseRate: number;
 }
 
 export async function getEventStats(eventId: string): Promise<EventStats> {
-  const rows = await query<{ invitation_id: string; attending: number | null; num_attending: number | null }>(
+  const rows = await query<{ invitation_id: string; rsvp_status: string | null; num_attending: number | null }>(
     `SELECT i.id as invitation_id,
-      (SELECT r.attending FROM rsvp_responses r WHERE r.invitation_id = i.id ORDER BY r.responded_at DESC LIMIT 1) as attending,
+      (SELECT r.rsvp_status FROM rsvp_responses r WHERE r.invitation_id = i.id ORDER BY r.responded_at DESC LIMIT 1) as rsvp_status,
       (SELECT r.num_attending FROM rsvp_responses r WHERE r.invitation_id = i.id ORDER BY r.responded_at DESC LIMIT 1) as num_attending
      FROM invitations i WHERE i.event_id = ?`,
     [eventId]
   );
 
-  let responded = 0, attending = 0, declined = 0, totalAttendees = 0;
+  let responded = 0, attending = 0, declined = 0, maybe = 0, totalAttendees = 0;
   for (const r of rows) {
-    if (r.attending === null) continue;
+    if (r.rsvp_status === null) continue;
     responded += 1;
-    if (r.attending) {
+    if (r.rsvp_status === "attending") {
       attending += 1;
       totalAttendees += r.num_attending || 1;
+    } else if (r.rsvp_status === "maybe") {
+      maybe += 1;
     } else {
       declined += 1;
     }
@@ -254,6 +257,7 @@ export async function getEventStats(eventId: string): Promise<EventStats> {
     responded,
     attending,
     declined,
+    maybe,
     noResponse: invited - responded,
     totalAttendees,
     responseRate: invited > 0 ? Math.round((responded / invited) * 100) : 0,

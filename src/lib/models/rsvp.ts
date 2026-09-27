@@ -1,5 +1,6 @@
 import { query, queryOne, exec } from "@/lib/db";
 import { newId } from "@/lib/utils";
+import { setInvitationStatus } from "@/lib/models/invitees";
 
 export type QuestionType =
   | "short_text" | "long_text" | "single_choice" | "multiple_choice" | "dropdown"
@@ -124,6 +125,8 @@ export interface ResponseRow {
   is_modification: number;
   reopened_after_deadline: number;
   responded_at: string;
+  rsvp_status: "attending" | "declined" | "maybe";
+  recorded_by: string | null;
 }
 
 export async function getLatestResponse(invitationId: string): Promise<ResponseRow | undefined> {
@@ -154,13 +157,15 @@ export async function submitResponse(input: {
   await exec(
     `INSERT INTO rsvp_responses (
       id, invitation_id, event_id, attending, num_attending, guest_names_json,
-      responder_name, responder_email, responder_phone, is_modification, reopened_after_deadline
-    ) VALUES (?,?,?,?,?,?,?,?,?,?,?)`,
+      responder_name, responder_email, responder_phone, is_modification, reopened_after_deadline,
+      rsvp_status, recorded_by
+    ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`,
     [
       id, input.invitationId, input.eventId, input.attending ? 1 : 0, input.numAttending,
       input.guestNames ? JSON.stringify(input.guestNames) : null,
       input.responderName || null, input.responderEmail || null, input.responderPhone || null,
       isModification ? 1 : 0, input.reopenedAfterDeadline ? 1 : 0,
+      input.attending ? "attending" : "declined", null,
     ]
   );
 
@@ -173,6 +178,31 @@ export async function submitResponse(input: {
 
   await exec("UPDATE invitations SET status = ? WHERE id = ?", [input.attending ? "attending" : "declined", input.invitationId]);
 
+  return (await queryOne<ResponseRow>("SELECT * FROM rsvp_responses WHERE id = ?", [id]))!;
+}
+
+/** The planner-entry path — records a status on an invitee's behalf (e.g. they called in). Unlike
+ * submitResponse, this deliberately doesn't collect answers/guest-names/responder-contact info —
+ * just a status and an optional party size. Always inserts a new row (never updates in place), so
+ * a guest who later submits themselves via their own link automatically supersedes this: their
+ * row just becomes the new latest by responded_at, with no special-casing needed anywhere. */
+export async function recordManualResponse(input: {
+  invitationId: string;
+  eventId: string;
+  status: "attending" | "declined" | "maybe";
+  numAttending?: number;
+  recordedBy: string;
+}): Promise<ResponseRow> {
+  const isModification = !!(await getLatestResponse(input.invitationId));
+  const id = newId("resp");
+  const attending = input.status === "attending" ? 1 : 0;
+  const numAttending = input.status === "attending" ? Math.max(1, input.numAttending || 1) : 0;
+  await exec(
+    `INSERT INTO rsvp_responses (id, invitation_id, event_id, attending, num_attending, is_modification, rsvp_status, recorded_by)
+     VALUES (?,?,?,?,?,?,?,?)`,
+    [id, input.invitationId, input.eventId, attending, numAttending, isModification ? 1 : 0, input.status, input.recordedBy]
+  );
+  await setInvitationStatus(input.invitationId, input.status);
   return (await queryOne<ResponseRow>("SELECT * FROM rsvp_responses WHERE id = ?", [id]))!;
 }
 
@@ -189,6 +219,49 @@ export async function listResponsesForEvent(eventId: string, assemblyId?: string
      )
      ${assemblyId ? "AND iv.assembly_id = ?" : ""}
      ORDER BY r.responded_at DESC`,
+    assemblyId ? [eventId, assemblyId] : [eventId]
+  );
+}
+
+export interface InviteeResponseRow {
+  invitee_id: string;
+  first_name: string;
+  last_name: string;
+  email: string | null;
+  assembly_id: string | null;
+  assembly_name: string | null;
+  group_name: string | null;
+  invitation_id: string | null;
+  invitation_status: string | null;
+  token: string | null;
+  response_id: string | null;
+  rsvp_status: "attending" | "declined" | "maybe" | null;
+  num_attending: number | null;
+  responded_at: string | null;
+  is_modification: number | null;
+  recorded_by: string | null;
+}
+
+/** Powers the Responses tab: every invitee for the event (unlike listResponsesForEvent, which
+ * only returns invitations that already have a response), each with their invitation and latest
+ * response detail joined in, so planners can see and set a status for people who've never
+ * responded at all. */
+export async function listInviteeResponseRows(eventId: string, assemblyId?: string | null): Promise<InviteeResponseRow[]> {
+  return query<InviteeResponseRow>(
+    `SELECT iv.id as invitee_id, iv.first_name, iv.last_name, iv.email, iv.assembly_id,
+       a.name as assembly_name, g.name as group_name,
+       i.id as invitation_id, i.status as invitation_status, i.token,
+       r.id as response_id, r.rsvp_status, r.num_attending, r.responded_at, r.is_modification, r.recorded_by
+     FROM invitees iv
+     LEFT JOIN invitations i ON i.invitee_id = iv.id
+     LEFT JOIN assemblies a ON a.id = iv.assembly_id
+     LEFT JOIN groups g ON g.id = iv.group_id
+     LEFT JOIN rsvp_responses r ON r.id = (
+       SELECT r2.id FROM rsvp_responses r2 WHERE r2.invitation_id = i.id ORDER BY r2.responded_at DESC LIMIT 1
+     )
+     WHERE iv.event_id = ? AND iv.active = 1
+     ${assemblyId ? "AND iv.assembly_id = ?" : ""}
+     ORDER BY iv.created_at ASC`,
     assemblyId ? [eventId, assemblyId] : [eventId]
   );
 }

@@ -144,6 +144,26 @@ export async function canManageInvitee(inviteeId: string, eventId: string, assem
   return !!invitee && invitee.event_id === eventId && invitee.assembly_id === assemblyId;
 }
 
+/** Same scope rule as canManageInvitee, but keyed on an invitation id (the Responses tab acts on
+ * invitations). Joins through to the invitee for assembly_id, since invitations carries none.
+ * Unlike canManageInvitee's unscoped branch, this always verifies event_id even for full-scope
+ * roles — a small deliberate tightening, not a bug fix to the older helper. */
+export async function canManageInvitation(invitationId: string, eventId: string, assemblyId: string | null): Promise<boolean> {
+  const row = await queryOne<{ assembly_id: string | null }>(
+    `SELECT iv.assembly_id FROM invitations i JOIN invitees iv ON iv.id = i.invitee_id WHERE i.id = ? AND i.event_id = ?`,
+    [invitationId, eventId]
+  );
+  if (!row) return false;
+  return !assemblyId || row.assembly_id === assemblyId;
+}
+
+/** Sets an invitation's lifecycle/RSVP status directly — the write path for a planner manually
+ * recording a response (see rsvp.ts's recordManualResponse), which needs this alongside a real
+ * rsvp_responses row rather than the guest-facing submitResponse flow. */
+export async function setInvitationStatus(id: string, status: string) {
+  await exec("UPDATE invitations SET status = ? WHERE id = ?", [status, id]);
+}
+
 export async function updateInvitee(id: string, patch: Partial<InviteeRow>) {
   const allowed = ["first_name", "last_name", "email", "phone", "is_adult", "plus_one_policy", "notes", "group_id", "assembly_id", "custom_fields"];
   const keys = Object.keys(patch).filter((k) => allowed.includes(k));
@@ -182,10 +202,6 @@ export async function markInvitationOpened(id: string) {
       [new Date().toISOString(), id]
     );
   }
-}
-
-export async function setInvitationStatus(id: string, status: string) {
-  await exec("UPDATE invitations SET status = ? WHERE id = ?", [status, id]);
 }
 
 export async function groupMembers(groupId: string): Promise<InviteeRow[]> {

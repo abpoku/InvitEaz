@@ -47,6 +47,7 @@ export default async function EventLayout({ children, params }: { children: Reac
         <div className="mt-6 flex flex-wrap items-center gap-x-6 gap-y-2 text-sm">
           <MiniStat label="Invited" value={stats.invited} />
           <MiniStat label="Attending" value={stats.attending} />
+          <MiniStat label="Maybe" value={stats.maybe} />
           <MiniStat label="Declined" value={stats.declined} />
           <MiniStat label="No response" value={stats.noResponse} />
           <MiniStat label="Response rate" value={`${stats.responseRate}%`} />

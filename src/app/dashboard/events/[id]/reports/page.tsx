@@ -47,6 +47,7 @@ export default async function ReportsPage({ params }: { params: { id: string } }
           <p className="text-sm text-ink-faint">RSVP summary</p>
           <dl className="mt-3 space-y-1.5 text-sm">
             <Row label="Attending" value={stats.attending} />
+            <Row label="Maybe" value={stats.maybe} />
             <Row label="Declined" value={stats.declined} />
             <Row label="Pending" value={stats.noResponse} />
           </dl>
