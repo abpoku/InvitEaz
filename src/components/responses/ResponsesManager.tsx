@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { Fragment, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { StatusBadge } from "@/components/StatusBadge";
 import { ViewToggle } from "@/components/ViewToggle";
@@ -42,6 +42,16 @@ export function ResponsesManager({
   const [groupBulkStatus, setGroupBulkStatus] = useState<Status>("attending");
   const [groupBulkNumAttending, setGroupBulkNumAttending] = useState("1");
   const [groupBulkBusy, setGroupBulkBusy] = useState(false);
+  const [expandedGroupIds, setExpandedGroupIds] = useState<Set<string>>(new Set());
+
+  function toggleGroupExpanded(groupId: string) {
+    setExpandedGroupIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(groupId)) next.delete(groupId);
+      else next.add(groupId);
+      return next;
+    });
+  }
 
   const selectableRows = useMemo(() => rows.filter((r) => r.invitation_id), [rows]);
   const allSelected = selectableRows.length > 0 && selectableRows.every((r) => selectedIds.has(r.invitation_id!));
@@ -101,16 +111,18 @@ export function ResponsesManager({
   const groupOptions = useMemo(() => groupCounts(selectableRows, (r) => r.group_name), [selectableRows]);
 
   const groupStatusRows = useMemo(() => {
-    const map = new Map<string, { groupId: string; name: string; invitationIds: string[]; counts: Record<Status | "no_response", number> }>();
+    const map = new Map<string, { groupId: string; name: string; invitationIds: string[]; members: InviteeResponseRow[]; counts: Record<Status | "no_response", number> }>();
     for (const r of rows) {
       if (!r.group_id) continue;
       const entry = map.get(r.group_id) ?? {
         groupId: r.group_id,
         name: r.group_name || "Group",
         invitationIds: [],
+        members: [],
         counts: { attending: 0, maybe: 0, declined: 0, no_response: 0 },
       };
       if (r.invitation_id) entry.invitationIds.push(r.invitation_id);
+      entry.members.push(r);
       const status = (r.rsvp_status as Status | null) || "no_response";
       entry.counts[status]++;
       map.set(r.group_id, entry);
@@ -210,14 +222,29 @@ export function ResponsesManager({
                 </tr>
               </thead>
               <tbody>
-                {groupStatusRows.map((g) => (
-                  <tr key={g.groupId} className="border-b border-paper-line last:border-0 hover:bg-paper-soft/40">
+                {groupStatusRows.map((g) => {
+                  const expanded = expandedGroupIds.has(g.groupId);
+                  const groupColSpan = 2 + (canMutate ? 2 : 0);
+                  return (
+                  <Fragment key={g.groupId}>
+                  <tr className="border-b border-paper-line last:border-0 hover:bg-paper-soft/40">
                     {canMutate && (
                       <td className="px-5 py-3">
                         <input type="checkbox" checked={selectedGroupIds.has(g.groupId)} onChange={() => toggleGroupSelected(g.groupId)} aria-label={`Select ${g.name}`} />
                       </td>
                     )}
-                    <td className="px-5 py-3 text-ink whitespace-nowrap">{g.name}</td>
+                    <td className="px-5 py-3 text-ink whitespace-nowrap">
+                      <div className="flex items-center gap-2">
+                        <button
+                          onClick={() => toggleGroupExpanded(g.groupId)}
+                          className="text-ink-faint hover:text-ink w-4 shrink-0"
+                          aria-label={expanded ? `Collapse ${g.name}` : `Expand ${g.name}`}
+                        >
+                          {expanded ? "▾" : "▸"}
+                        </button>
+                        {g.name}
+                      </div>
+                    </td>
                     <td className="px-5 py-3 text-ink-soft whitespace-nowrap">
                       {g.counts.attending} attending · {g.counts.maybe} maybe · {g.counts.declined} declined · {g.counts.no_response} no response
                     </td>
@@ -238,7 +265,54 @@ export function ResponsesManager({
                       </td>
                     )}
                   </tr>
-                ))}
+                  {expanded && (
+                    <tr className="border-b border-paper-line last:border-0 bg-paper-soft/30">
+                      <td colSpan={groupColSpan} className="px-5 py-3">
+                        <div className="pl-6 space-y-2">
+                          {g.members.map((r) => {
+                            const currentStatus = r.rsvp_status as Status | null;
+                            const isBusy = busyId === r.invitation_id;
+                            return (
+                              <div key={r.invitee_id} className="flex flex-wrap items-center justify-between gap-3 text-sm border-b border-paper-line/60 pb-2 last:border-0 last:pb-0">
+                                <span className="text-ink">{fullName(r.first_name, r.last_name)}</span>
+                                <div className="flex items-center gap-3">
+                                  {currentStatus === "attending" && canMutate && r.invitation_id && (
+                                    <input
+                                      type="number" min={1} className="input w-16 py-1 text-xs"
+                                      defaultValue={r.num_attending ?? 1}
+                                      onBlur={(e) => setStatus(r, "attending", Number(e.target.value) || 1)}
+                                    />
+                                  )}
+                                  {canMutate && r.invitation_id ? (
+                                    <div className="inline-flex rounded border border-paper-line overflow-hidden text-xs">
+                                      {STATUSES.map((s) => (
+                                        <button
+                                          key={s}
+                                          disabled={isBusy}
+                                          onClick={() => setStatus(r, s)}
+                                          className={cn(
+                                            "px-2 py-1 disabled:opacity-50",
+                                            currentStatus === s ? STATUS_ACTIVE_CLASSES[s] : "text-ink-faint hover:bg-paper-soft"
+                                          )}
+                                        >
+                                          {STATUS_LABEL[s]}
+                                        </button>
+                                      ))}
+                                    </div>
+                                  ) : (
+                                    <StatusBadge status={currentStatus || "no_response"} />
+                                  )}
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </td>
+                    </tr>
+                  )}
+                  </Fragment>
+                  );
+                })}
               </tbody>
             </table>
           )}

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { Fragment, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { StatusBadge } from "@/components/StatusBadge";
 import { AddInviteeModal } from "@/components/invitees/AddInviteeModal";
@@ -88,6 +88,16 @@ export function InviteesManager({ eventId, groupRsvpMode, nameFormat }: { eventI
   const [groupBusyId, setGroupBusyId] = useState<string | null>(null);
   const [selectedGroupIds, setSelectedGroupIds] = useState<Set<string>>(new Set());
   const [groupBulkBusy, setGroupBulkBusy] = useState(false);
+  const [expandedGroupIds, setExpandedGroupIds] = useState<Set<string>>(new Set());
+
+  function toggleGroupExpanded(groupId: string) {
+    setExpandedGroupIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(groupId)) next.delete(groupId);
+      else next.add(groupId);
+      return next;
+    });
+  }
 
   async function load() {
     setLoading(true);
@@ -489,24 +499,38 @@ export function InviteesManager({ eventId, groupRsvpMode, nameFormat }: { eventI
                   </tr>
                 </thead>
                 <tbody>
-                  {groupRows.map((g) => (
-                    <tr key={g.id} className="border-b border-paper-line last:border-0 hover:bg-paper-soft/40">
+                  {groupRows.map((g) => {
+                    const expanded = expandedGroupIds.has(g.id);
+                    const groupColSpan = 4 + (assemblies.length > 0 ? 1 : 0);
+                    return (
+                    <Fragment key={g.id}>
+                    <tr className="border-b border-paper-line last:border-0 hover:bg-paper-soft/40">
                       <td className="px-5 py-3">
                         <input type="checkbox" checked={selectedGroupIds.has(g.id)} onChange={() => toggleGroupSelected(g.id)} aria-label={`Select ${g.name}`} />
                       </td>
                       <td className="px-5 py-3 text-ink">
-                        {renamingGroupId === g.id ? (
-                          <input
-                            className="input py-1 text-xs"
-                            autoFocus
-                            value={renameValue}
-                            onChange={(e) => setRenameValue(e.target.value)}
-                            onBlur={() => saveRenameGroup(g.id)}
-                            onKeyDown={(e) => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); if (e.key === "Escape") setRenamingGroupId(null); }}
-                          />
-                        ) : (
-                          g.name
-                        )}
+                        <div className="flex items-center gap-2">
+                          <button
+                            onClick={() => toggleGroupExpanded(g.id)}
+                            className="text-ink-faint hover:text-ink w-4 shrink-0"
+                            aria-label={expanded ? `Collapse ${g.name}` : `Expand ${g.name}`}
+                            disabled={g.members.length === 0}
+                          >
+                            {g.members.length > 0 ? (expanded ? "▾" : "▸") : ""}
+                          </button>
+                          {renamingGroupId === g.id ? (
+                            <input
+                              className="input py-1 text-xs"
+                              autoFocus
+                              value={renameValue}
+                              onChange={(e) => setRenameValue(e.target.value)}
+                              onBlur={() => saveRenameGroup(g.id)}
+                              onKeyDown={(e) => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); if (e.key === "Escape") setRenamingGroupId(null); }}
+                            />
+                          ) : (
+                            g.name
+                          )}
+                        </div>
                       </td>
                       {assemblies.length > 0 && (
                         <td className="px-5 py-3 text-ink-soft whitespace-nowrap">
@@ -525,7 +549,32 @@ export function InviteesManager({ eventId, groupRsvpMode, nameFormat }: { eventI
                         )}
                       </td>
                     </tr>
-                  ))}
+                    {expanded && g.members.length > 0 && (
+                      <tr className="border-b border-paper-line last:border-0 bg-paper-soft/30">
+                        <td colSpan={groupColSpan} className="px-5 py-3">
+                          <div className="pl-6 space-y-2">
+                            {g.members.map((m) => (
+                              <div key={m.id} className="flex flex-wrap items-center justify-between gap-3 text-sm border-b border-paper-line/60 pb-2 last:border-0 last:pb-0">
+                                <div className="flex items-center gap-3">
+                                  <span className="text-ink">{fullName(m.first_name, m.last_name)}</span>
+                                  <StatusBadge status={m.status} />
+                                </div>
+                                <div className="flex items-center gap-3">
+                                  <button onClick={() => copyLink(m)} className="text-wine-500 hover:underline text-xs font-medium">
+                                    {copiedId === m.id ? "Copied!" : "Copy link"}
+                                  </button>
+                                  <button onClick={() => setEditing(m)} className="text-xs text-ink-faint hover:text-ink">Edit</button>
+                                  <button onClick={() => removeInvitee(m.id)} className="text-xs text-ink-faint hover:text-clay-600">Remove</button>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        </td>
+                      </tr>
+                    )}
+                    </Fragment>
+                    );
+                  })}
                 </tbody>
               </table>
             )}
