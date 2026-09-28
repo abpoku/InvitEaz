@@ -260,6 +260,20 @@ caches the promise per process. Two distinct production incidents have come from
    a time; everyone else waits briefly and finds it already done), plus no longer caching a
    *rejected* promise forever — a failed attempt now lets the next call retry from scratch
    instead of leaving that process permanently broken until it recycles.
+3. **Orphaned advisory lock, no timeout anywhere** (2026-09-28): the fix for #2 above assumed
+   the lock holder always releases it, but never accounted for one dying mid-hold (a Vercel
+   function killed at its max duration, a dropped connection during a Neon compute
+   wake-from-suspend, etc.). `getPool()`'s `Pool` had no `connectionTimeoutMillis`,
+   `statement_timeout`, or `lock_timeout` set anywhere, so every other instance's
+   `pg_advisory_lock` call — and this runs before *every* query, via `ensureSchema()` — just
+   blocked forever waiting on a lock nothing would ever release, hanging the entire site
+   until Vercel force-killed each request at 300s. Recurred repeatedly (worse right after a
+   deploy, since that recycles every instance at once) until diagnosed. Fixed by giving the
+   pool real timeouts (`lock_timeout`, `statement_timeout`, `connectionTimeoutMillis`,
+   `idle_in_transaction_session_timeout`, all in the 10-20s range) — a stuck lock now fails
+   fast and the existing retry-on-next-call logic from incident #2 takes it from there, so
+   the whole site self-heals within seconds instead of needing someone to manually kill the
+   stuck backend in Neon.
 
 Consequences for editing `schema.sql`:
 

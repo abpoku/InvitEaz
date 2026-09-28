@@ -22,6 +22,16 @@ function createPool(): Pool {
     // SSL. sslmode is usually already in the connection string, but this is
     // a safe default for providers that don't set it themselves.
     ssl: connectionString.includes("sslmode=disable") ? false : { rejectUnauthorized: false },
+    // Without these, nothing here can ever time out — a wedged connection attempt, a stuck lock
+    // (see ensureSchema's advisory lock below), or a runaway query all just hang forever, and on
+    // Vercel that means every request blocks until the platform force-kills it at the function's
+    // max duration, taking the whole site down with it. These bound every wait to single-digit
+    // seconds instead, so the worst case is one fast failure (retried on the next request) rather
+    // than a multi-minute outage. Comfortably above any legitimate query this app runs.
+    connectionTimeoutMillis: 10_000,
+    statement_timeout: 20_000,
+    lock_timeout: 10_000,
+    idle_in_transaction_session_timeout: 20_000,
   });
 }
 
@@ -43,7 +53,13 @@ const SCHEMA_MIGRATION_LOCK_KEY = 727001727001;
  * overlapping tables in different orders can deadlock Postgres outright — this happened in
  * production. A session-held advisory lock serializes them: only one instance actually applies
  * the schema at a time, everyone else just waits (briefly, since a no-op re-run is fast) and then
- * finds it already done — no concurrent DDL, no deadlock. */
+ * finds it already done — no concurrent DDL, no deadlock.
+ *
+ * That wait is bounded by the pool's lock_timeout (see createPool) — if the lock holder ever dies
+ * without releasing it (another production incident: a function killed mid-hold left the lock
+ * orphaned, and every other instance's pg_advisory_lock call blocked forever with nothing to time
+ * it out, hanging the entire site until Vercel force-killed each request at its max duration), this
+ * throws instead of hanging, the promise below rejects, and the next call just retries. */
 function ensureSchema(): Promise<void> {
   if (!global.__inviteazSchemaReady) {
     global.__inviteazSchemaReady = (async () => {
