@@ -44,17 +44,6 @@ function createPool(): Pool {
     query_timeout: 20_000,
     keepAlive: true,
     keepAliveInitialDelayMillis: 10_000,
-    // None of the above helps a connection that finished its last query cleanly, then got
-    // orphaned — its owning function died (Vercel killed it, or it hung on something else
-    // entirely) without ever calling client.release(), so it's not "checked out" from the
-    // pool's own JS bookkeeping (idleTimeoutMillis never sees it) but it's also not usable —
-    // just an idle socket nobody will ever send another command on. Confirmed live: a
-    // connection sat in exactly this state (Postgres-side "idle", ClientRead) for 9+ minutes.
-    // idle_session_timeout is a server-side GUC (Postgres 14+) with no first-class option in
-    // this pg version's types, so it's set via the raw `-c` startup-options escape hatch — it
-    // has Postgres itself reap a plain-idle (not idle-in-transaction) session on a timer,
-    // independent of whatever the client-side pool thinks that connection's state is.
-    options: "-c idle_session_timeout=60000",
   });
 }
 
