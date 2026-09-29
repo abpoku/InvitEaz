@@ -284,6 +284,18 @@ caches the promise per process. Two distinct production incidents have come from
    of the server) plus `keepAlive`/`keepAliveInitialDelayMillis` so a dead connection is more
    likely to be caught and evicted by the OS before it's ever handed back out of the pool.
 
+**Attempted and reverted**: setting `idle_session_timeout` via the raw `options: "-c
+idle_session_timeout=..."` startup-parameter escape hatch (this `pg` version has no first-class
+typed option for it) to have Postgres reap orphaned-idle connections server-side. Worked and
+verified against local Postgres, but broke production outright once deployed — every request
+started failing fast with a server-side exception instead of hanging, strongly suggesting Neon's
+connection (likely pooled, PgBouncer-based) rejects or mishandles that raw options mechanism even
+though the GUC itself is standard Postgres 14+. Reverted (commit `b6d3b37`). If this is worth
+retrying, verify against Neon specifically (not just local Postgres) before deploying, and prefer
+`SET idle_session_timeout = ...` run once per connection via the pool's `connect` event over the
+`options` string, since that goes through the same regular query path every other query already
+uses successfully rather than a startup parameter.
+
 Consequences for editing `schema.sql`:
 
 - New tables use `CREATE TABLE IF NOT EXISTS`; new columns on existing tables use
