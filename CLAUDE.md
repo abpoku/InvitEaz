@@ -274,6 +274,15 @@ caches the promise per process. Two distinct production incidents have come from
    fast and the existing retry-on-next-call logic from incident #2 takes it from there, so
    the whole site self-heals within seconds instead of needing someone to manually kill the
    stuck backend in Neon.
+4. **Silently dead pooled connection, server-side timeouts don't cover it** (2026-09-29): #3's
+   timeouts are all enforced by Postgres itself, so they only apply once a query actually
+   reaches the server. Recurred the very next day — DevTools Network showed
+   invitees/assemblies/ticketing requests still pending after 5+ minutes, far past those 10-20s
+   settings — because a pooled connection had gone silently dead (no clean close, just a black
+   hole between Vercel and Neon) and the query sent over it never reached Postgres to be timed
+   out at all. Fixed by adding `query_timeout` (enforced client-side by `pg` itself, regardless
+   of the server) plus `keepAlive`/`keepAliveInitialDelayMillis` so a dead connection is more
+   likely to be caught and evicted by the OS before it's ever handed back out of the pool.
 
 Consequences for editing `schema.sql`:
 
