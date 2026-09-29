@@ -32,6 +32,18 @@ function createPool(): Pool {
     statement_timeout: 20_000,
     lock_timeout: 10_000,
     idle_in_transaction_session_timeout: 20_000,
+    // statement_timeout/lock_timeout are enforced by Postgres itself, so they only help once a
+    // query actually reaches the server. A pooled connection can also go silently dead — no clean
+    // close, just a black hole (a network blip, Neon's proxy dropping it during maintenance) —
+    // and a query sent over it then waits forever for a reply the server never even received,
+    // which none of the settings above can catch. query_timeout is enforced client-side instead:
+    // the pg library itself gives up after this long regardless of what the server does or
+    // doesn't do. keepAlive makes that scenario rarer in the first place by having the OS
+    // periodically probe idle connections, so a dead one is more likely to be caught and closed
+    // before it's ever handed back out of the pool.
+    query_timeout: 20_000,
+    keepAlive: true,
+    keepAliveInitialDelayMillis: 10_000,
   });
 }
 
