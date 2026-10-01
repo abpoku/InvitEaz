@@ -1,6 +1,7 @@
 import { NextAuthOptions } from "next-auth";
 import CredentialsProvider from "next-auth/providers/credentials";
 import { getUserByEmail, verifyPassword } from "@/lib/models/users";
+import { AUTH_SERVICE_UNAVAILABLE } from "@/lib/auth-errors";
 
 export const authOptions: NextAuthOptions = {
   session: { strategy: "jwt" },
@@ -16,7 +17,17 @@ export const authOptions: NextAuthOptions = {
       },
       async authorize(credentials) {
         if (!credentials?.email || !credentials?.password) return null;
-        const user = await getUserByEmail(credentials.email);
+        // A DB failure here (timeout, dead pooled connection, Neon waking from suspend) must not
+        // look like a wrong password: returning null gives the client "CredentialsSignin", while
+        // a thrown Error's message is passed through as `error` instead — the login page keys off
+        // this exact string to show a "try again" message, and the real cause lands in the logs.
+        let user;
+        try {
+          user = await getUserByEmail(credentials.email);
+        } catch (err) {
+          console.error("[auth] user lookup failed during sign-in:", err);
+          throw new Error(AUTH_SERVICE_UNAVAILABLE);
+        }
         if (!user) return null;
         if (!verifyPassword(user, credentials.password)) return null;
         return {

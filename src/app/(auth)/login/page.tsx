@@ -4,6 +4,7 @@ import { Suspense, useState } from "react";
 import { signIn } from "next-auth/react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
+import { AUTH_SERVICE_UNAVAILABLE } from "@/lib/auth-errors";
 
 export default function LoginPage() {
   return (
@@ -28,7 +29,11 @@ function LoginForm() {
     const res = await signIn("credentials", { email, password, redirect: false });
     setLoading(false);
     if (res?.error) {
-      setError("That email and password don't match an InvitEaz account.");
+      setError(
+        res.error === AUTH_SERVICE_UNAVAILABLE
+          ? "We couldn't reach the server just now — please try again in a moment."
+          : "That email and password don't match an InvitEaz account."
+      );
       return;
     }
     router.push(params.get("next") || "/dashboard");
