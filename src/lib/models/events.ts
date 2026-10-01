@@ -1,4 +1,5 @@
 import { query, queryOne, exec } from "@/lib/db";
+import { eventGuestAllowance, legacyPolicyFor, type GuestAllowanceMode } from "@/lib/guest-allowance";
 import { newId, defaultRsvpDeadline, isPastDeadline, eventStartDateTime } from "@/lib/utils";
 
 export type EventStatus = "draft" | "published" | "rsvp_closed" | "completed" | "cancelled";
@@ -47,6 +48,8 @@ export interface EventRow {
   visibility: Visibility;
   group_rsvp_mode: GroupRsvpMode;
   default_plus_one_policy: PlusOnePolicy;
+  guest_allowance_mode: GuestAllowanceMode | null;
+  guest_allowance_count: number | null;
   cancellation_message: string | null;
   theme: string;
   invitee_name_format: InviteeNameFormat;
@@ -88,11 +91,17 @@ export async function createEvent(ownerId: string, input: {
   visibility?: Visibility;
   groupRsvpMode?: GroupRsvpMode;
   defaultPlusOnePolicy?: PlusOnePolicy;
+  guestAllowanceMode?: GuestAllowanceMode;
+  guestAllowanceCount?: number;
 }): Promise<EventRow> {
   const id = newId("evt");
   const slug = await uniqueSlugFor(input.name, id);
   const deadline = input.rsvpDeadline || defaultRsvpDeadline(input.date, input.time);
   const isCustom = !!input.rsvpDeadline;
+  // Explicit allowance wins; otherwise translate the legacy policy, so both columns always agree.
+  const allowance = input.guestAllowanceMode
+    ? eventGuestAllowance({ guest_allowance_mode: input.guestAllowanceMode, guest_allowance_count: input.guestAllowanceCount })
+    : eventGuestAllowance({ default_plus_one_policy: input.defaultPlusOnePolicy || "none" });
 
   await exec(
     `INSERT INTO events (
@@ -100,15 +109,16 @@ export async function createEvent(ownerId: string, input: {
       location_type, venue_name, address, city, state, zip, country,
       meeting_url, meeting_instructions, organizer_name, organizer_contact,
       website, dress_code, instructions, rsvp_deadline, rsvp_deadline_is_custom,
-      status, visibility, group_rsvp_mode, default_plus_one_policy
-    ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+      status, visibility, group_rsvp_mode, default_plus_one_policy, guest_allowance_mode, guest_allowance_count
+    ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
     [
       id, ownerId, input.name, slug, input.description || null, input.date, input.time, input.endTime || null,
       input.locationType, input.venueName || null, input.address || null, input.city || null, input.state || null,
       input.zip || null, input.country || null, input.meetingUrl || null, input.meetingInstructions || null,
       input.organizerName || null, input.organizerContact || null, input.website || null, input.dressCode || null,
       input.instructions || null, deadline, isCustom ? 1 : 0, "draft",
-      input.visibility || "invite_only", input.groupRsvpMode || "primary_contact", input.defaultPlusOnePolicy || "none",
+      input.visibility || "invite_only", input.groupRsvpMode || "primary_contact", legacyPolicyFor(allowance),
+      allowance.mode, allowance.count,
     ]
   );
 
@@ -156,7 +166,7 @@ export async function updateEvent(id: string, patch: Partial<EventRow>) {
     "organizer_name", "organizer_contact", "website", "dress_code", "instructions", "rsvp_deadline",
     "rsvp_deadline_is_custom", "status", "visibility", "group_rsvp_mode", "default_plus_one_policy",
     "cancellation_message", "theme", "rsvp_reopened", "invitee_name_format",
-    "ticketing_enabled", "ticket_field_id",
+    "ticketing_enabled", "ticket_field_id", "guest_allowance_mode", "guest_allowance_count",
   ];
   const keys = Object.keys(patch).filter((k) => allowed.includes(k));
   if (keys.length === 0) return;

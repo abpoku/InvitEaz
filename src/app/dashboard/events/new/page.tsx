@@ -3,6 +3,8 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
+import { GuestAllowanceFields } from "@/components/settings/GuestAllowanceFields";
+import type { GuestAllowanceMode } from "@/lib/guest-allowance";
 
 type LocationType = "physical" | "virtual" | "hybrid";
 
@@ -21,7 +23,8 @@ export default function NewEventPage() {
     rsvpDeadline: "",
     visibility: "invite_only" as "invite_only" | "public" | "hybrid",
     groupRsvpMode: "primary_contact" as "group" | "individual" | "primary_contact",
-    defaultPlusOnePolicy: "none" as "none" | "one" | "multiple",
+    guestAllowanceMode: "none" as GuestAllowanceMode,
+    guestAllowanceCount: 1,
   });
 
   function set<K extends keyof typeof form>(k: K, v: (typeof form)[K]) {
@@ -175,15 +178,11 @@ export default function NewEventPage() {
                 </select>
               </div>
             </div>
-            <div>
-              <label className="label">Default plus-one policy</label>
-              <select className="input" value={form.defaultPlusOnePolicy} onChange={(e) => set("defaultPlusOnePolicy", e.target.value as any)}>
-                <option value="none">No plus-ones</option>
-                <option value="one">May bring one guest</option>
-                <option value="multiple">May bring multiple guests</option>
-              </select>
-              <p className="mt-1 text-xs text-ink-faint">You can override this for individual invitees later.</p>
-            </div>
+            <GuestAllowanceFields
+              mode={form.guestAllowanceMode}
+              count={form.guestAllowanceCount}
+              onChange={(mode, count) => setForm((f) => ({ ...f, guestAllowanceMode: mode, guestAllowanceCount: count }))}
+            />
           </div>
         )}
 

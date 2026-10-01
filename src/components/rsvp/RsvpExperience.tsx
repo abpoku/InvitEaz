@@ -3,8 +3,9 @@
 import { useEffect, useState } from "react";
 import { EnvelopeMark } from "@/components/EnvelopeMark";
 import { formatDate, formatTime } from "@/lib/utils";
+import { personExtraGuests } from "@/lib/guest-allowance";
 
-interface Question {
+export interface Question {
   id: string; label: string; type: string; options_json: string | null; required: number; show_if_attending: "yes" | "no" | null;
   kind: "core" | "custom"; key: string | null; active: number;
 }
@@ -70,7 +71,7 @@ export function RsvpExperience({ token }: { token: string }) {
   return <RsvpForm data={data} token={token} onSubmitted={() => { setEditing(false); load(); }} />;
 }
 
-function Shell({ children }: { children: React.ReactNode }) {
+export function Shell({ children }: { children: React.ReactNode }) {
   return (
     <div className="min-h-screen bg-paper flex flex-col items-center px-4 py-10 sm:py-16">
       <EnvelopeMark className="w-9 h-6" />
@@ -79,7 +80,7 @@ function Shell({ children }: { children: React.ReactNode }) {
   );
 }
 
-function MessageScreen({ title, body, eventName, loading }: { title: string; body: string; eventName?: string; loading?: boolean }) {
+export function MessageScreen({ title, body, eventName, loading }: { title: string; body: string; eventName?: string; loading?: boolean }) {
   return (
     <Shell>
       <div className="card p-8 text-center">
@@ -92,7 +93,7 @@ function MessageScreen({ title, body, eventName, loading }: { title: string; bod
   );
 }
 
-function EventHeader({ event }: { event: any }) {
+export function EventHeader({ event }: { event: any }) {
   const where =
     event.location_type === "virtual"
       ? "Virtual event — link provided after you RSVP"
@@ -140,8 +141,9 @@ function Confirmation({ data, onEdit }: { data: Data; onEdit: () => void }) {
 function RsvpForm({ data, token, onSubmitted }: { data: Data; token: string; onSubmitted: () => void }) {
   const { event, invitee, questions, groupMembers, existingResponse } = data;
   const isGroupMode = event.group_rsvp_mode !== "individual" && groupMembers.length > 0;
-  const policy = invitee?.plus_one_policy || event.default_plus_one_policy || "none";
-  const maxGuests = policy === "none" ? 1 : policy === "one" ? 2 : 8;
+  // Party size = the invitee + whatever additional guests the event's allowance gives them.
+  const extraGuests = personExtraGuests(event, invitee?.plus_one_policy);
+  const maxGuests = 1 + extraGuests;
 
   const [attending, setAttending] = useState<boolean | null>(existingResponse ? !!existingResponse.attending : null);
   const [checkedMembers, setCheckedMembers] = useState<Set<string>>(new Set([invitee?.id || "", ...groupMembers.map((m) => m.id)]));
@@ -266,7 +268,7 @@ function RsvpForm({ data, token, onSubmitted }: { data: Data; token: string; onS
           </div>
         )}
 
-        {attending === true && !isGroupMode && policy !== "none" && guestCountShown && (
+        {attending === true && !isGroupMode && extraGuests > 0 && guestCountShown && (
           <div>
             <label className="label">{guestCountQ?.label || "How many in your party (including you)?"}</label>
             <select className="input" value={numAttending} onChange={(e) => setNumAttending(Number(e.target.value))}>
@@ -327,7 +329,7 @@ function RsvpForm({ data, token, onSubmitted }: { data: Data; token: string; onS
   );
 }
 
-function QuestionField({ question, value, onChange }: { question: Question; value: string; onChange: (v: string) => void }) {
+export function QuestionField({ question, value, onChange }: { question: Question; value: string; onChange: (v: string) => void }) {
   const options: string[] = question.options_json ? JSON.parse(question.options_json) : [];
   const label = (
     <label className="label">{question.label} {question.required ? <span className="text-clay-600">*</span> : null}</label>

@@ -114,13 +114,30 @@ authority first, then fall back to this restricted path).
 - **Communications** — a log of every email sent (type + recipients + body), scopable to
   one clone. **EventMembers** carries every role above. **AuditLog** records actions.
 
-**Group RSVP simplification** (intentional, not a bug): when `group_rsvp_mode` is `group`
-or `primary_contact`, whichever group member opens their link first can RSVP for the whole
-household; that response is recorded against *their* invitation only — other members'
-invitation rows stay `no_response` even though the household counts as responded in
-headcount totals. Relatedly, `groups.leader_invitee_id` (settable via the template's
-"Group Leader" column) is currently write-only — nothing reads it. It doesn't change who
-sees the household checklist or anything else yet.
+**Group RSVP — two paths.** (1) The legacy *individual-link* path (intentional, not a bug):
+when `group_rsvp_mode` is `group` or `primary_contact`, whichever member opens their own `/r/[token]`
+link first can RSVP for the household; that response is recorded against *their* invitation only —
+other members' rows stay `no_response`. (2) The **group link** (`/g/[token]`,
+`src/lib/models/group-rsvp.ts`, `GroupRsvpExperience.tsx`, "Copy group link" on the Invitees tab's
+group view) has none of that simplification: each member gets their own attending/not-attending,
+their own answers to the custom RSVP questions, and their own `rsvp_responses` row on their own
+invitation (`num_attending` 1/0), so stats and reports are exact per person. Its token is
+`groups.rsvp_token`, filled by a column `DEFAULT` (every group has one; nothing has to set it).
+Specifics:
+- Name edits and guest-editable invitee fields write straight to the invitee. Guest-editable means
+  `active && collect_at_signup`, minus `group`, `plus_one_policy`, and the linked ticketing field
+  (`guestEditableFields()`). Custom-field writes only touch the keys the guest was shown.
+- Guests can add people only within the event's **guest allowance** (`events.guest_allowance_mode`
+  `none | per_person | per_group` + `guest_allowance_count`; pure helpers in
+  `src/lib/guest-allowance.ts`, set from Settings / new-event). `per_person` sums each planner-added
+  member's allowance (honoring their `plus_one_policy` override); guest-added members
+  (`invitees.added_by_guest = 1`) never earn allowance and are the only ones a guest may remove
+  (soft delete). Plan invitee limits still apply. `default_plus_one_policy` is now *derived* from the
+  allowance on every write (`legacyPolicyFor`) — don't write it on its own.
+- The submit validates everything before writing anything, and rejects (409) a member list that
+  doesn't match the group's current members, so a stale tab can't silently skip someone.
+- Still true for both paths: `groups.leader_invitee_id` (settable via the template's "Group Leader"
+  column) is write-only — nothing reads it.
 
 ### Invitee CSV upload
 

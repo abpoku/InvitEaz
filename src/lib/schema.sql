@@ -86,6 +86,11 @@ CREATE TABLE IF NOT EXISTS groups (
 );
 CREATE INDEX IF NOT EXISTS idx_groups_event ON groups(event_id);
 ALTER TABLE groups ADD COLUMN IF NOT EXISTS assembly_id TEXT REFERENCES assemblies(id) ON DELETE SET NULL;
+-- Group RSVP link (/g/[token]): one non-guessable token per household. A volatile DEFAULT is
+-- evaluated per row, so this ADD COLUMN backfills every existing group with its own distinct token
+-- and every future INSERT gets one automatically — no application code has to remember to set it.
+ALTER TABLE groups ADD COLUMN IF NOT EXISTS rsvp_token TEXT DEFAULT replace(gen_random_uuid()::text, '-', '');
+CREATE UNIQUE INDEX IF NOT EXISTS idx_groups_rsvp_token ON groups(rsvp_token);
 
 CREATE TABLE IF NOT EXISTS invitees (
   id TEXT PRIMARY KEY,
@@ -111,6 +116,19 @@ CREATE INDEX IF NOT EXISTS idx_invitees_group ON invitees(group_id);
 ALTER TABLE invitees ADD COLUMN IF NOT EXISTS custom_fields TEXT;
 ALTER TABLE invitees ADD COLUMN IF NOT EXISTS assembly_id TEXT REFERENCES assemblies(id) ON DELETE SET NULL;
 ALTER TABLE events ADD COLUMN IF NOT EXISTS invitee_name_format TEXT NOT NULL DEFAULT 'first_last'; -- first_last | full
+-- Set when a guest adds someone to their own household from the group RSVP link (counts against
+-- the event's guest allowance; planner-added invitees never do).
+ALTER TABLE invitees ADD COLUMN IF NOT EXISTS added_by_guest INTEGER NOT NULL DEFAULT 0;
+-- Explicit additional-guest allowance, replacing default_plus_one_policy's vague 'multiple'
+-- (see src/lib/guest-allowance.ts). NULL = never set; backfilled once from the legacy policy below,
+-- and the WHERE makes that backfill a no-op on every later run. default_plus_one_policy is still
+-- kept in sync on every write so nothing that reads it directly needs to change.
+ALTER TABLE events ADD COLUMN IF NOT EXISTS guest_allowance_mode TEXT;   -- none | per_person | per_group
+ALTER TABLE events ADD COLUMN IF NOT EXISTS guest_allowance_count INTEGER; -- additional guests allowed (per person or per group)
+UPDATE events SET
+  guest_allowance_mode = CASE default_plus_one_policy WHEN 'none' THEN 'none' ELSE 'per_person' END,
+  guest_allowance_count = CASE default_plus_one_policy WHEN 'one' THEN 1 WHEN 'multiple' THEN 7 ELSE 0 END
+WHERE guest_allowance_mode IS NULL;
 CREATE INDEX IF NOT EXISTS idx_invitees_assembly ON invitees(assembly_id);
 
 CREATE TABLE IF NOT EXISTS invitee_fields (

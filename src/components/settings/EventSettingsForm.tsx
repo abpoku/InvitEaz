@@ -3,6 +3,8 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import type { EventRow } from "@/lib/models/events";
+import { eventGuestAllowance } from "@/lib/guest-allowance";
+import { GuestAllowanceFields } from "@/components/settings/GuestAllowanceFields";
 
 export function EventSettingsForm({ event }: { event: EventRow }) {
   const router = useRouter();
@@ -15,6 +17,8 @@ export function EventSettingsForm({ event }: { event: EventRow }) {
     instructions: event.instructions || "", dress_code: event.dress_code || "",
     rsvp_deadline: event.rsvp_deadline ? toLocalInput(event.rsvp_deadline) : "",
     visibility: event.visibility,
+    guest_allowance_mode: eventGuestAllowance(event).mode,
+    guest_allowance_count: Math.max(1, eventGuestAllowance(event).count),
   });
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
@@ -100,6 +104,11 @@ export function EventSettingsForm({ event }: { event: EventRow }) {
           </select>
         </div>
       </div>
+      <GuestAllowanceFields
+        mode={form.guest_allowance_mode}
+        count={form.guest_allowance_count}
+        onChange={(mode, count) => { set("guest_allowance_mode", mode); set("guest_allowance_count", count); }}
+      />
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <input className="input" placeholder="Organizer name" value={form.organizer_name} onChange={(e) => set("organizer_name", e.target.value)} />
         <input className="input" placeholder="Organizer contact" value={form.organizer_contact} onChange={(e) => set("organizer_contact", e.target.value)} />

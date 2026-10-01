@@ -4,6 +4,7 @@ import { listInvitees } from "@/lib/models/invitees";
 import { sendEventUpdateEmail } from "@/lib/notify";
 import { requireEventRole } from "@/lib/session";
 import { formatDate, formatTime, defaultRsvpDeadline } from "@/lib/utils";
+import { eventGuestAllowance, legacyPolicyFor } from "@/lib/guest-allowance";
 
 const MATERIAL_FIELDS = ["event_date", "event_time", "venue_name", "address", "city", "meeting_url", "rsvp_deadline", "instructions"] as const;
 
@@ -27,9 +28,22 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
     "name", "description", "event_date", "event_time", "end_time", "location_type", "venue_name",
     "address", "city", "state", "zip", "country", "meeting_url", "meeting_instructions",
     "organizer_name", "organizer_contact", "website", "dress_code", "instructions",
-    "rsvp_deadline", "visibility", "group_rsvp_mode", "default_plus_one_policy", "theme", "invitee_name_format",
+    "rsvp_deadline", "visibility", "group_rsvp_mode", "theme", "invitee_name_format",
   ]) {
     if (body[key] !== undefined) patch[key] = body[key];
+  }
+  // The explicit guest allowance is the source of truth; default_plus_one_policy is derived from it
+  // (never accepted on its own alongside it) so the two columns can't drift apart.
+  if (body.guest_allowance_mode !== undefined || body.default_plus_one_policy !== undefined) {
+    if (body.guest_allowance_mode !== undefined && !["none", "per_person", "per_group"].includes(body.guest_allowance_mode)) {
+      return NextResponse.json({ error: "Invalid guest allowance." }, { status: 400 });
+    }
+    const allowance = body.guest_allowance_mode !== undefined
+      ? eventGuestAllowance({ guest_allowance_mode: body.guest_allowance_mode, guest_allowance_count: body.guest_allowance_count })
+      : eventGuestAllowance({ default_plus_one_policy: body.default_plus_one_policy });
+    patch.guest_allowance_mode = allowance.mode;
+    patch.guest_allowance_count = allowance.count;
+    patch.default_plus_one_policy = legacyPolicyFor(allowance);
   }
   if (body.rsvpDeadline !== undefined) {
     patch.rsvp_deadline = body.rsvpDeadline;

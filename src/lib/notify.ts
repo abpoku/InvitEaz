@@ -59,6 +59,23 @@ export async function sendConfirmationEmail(event: EventRow, to: string, name: s
   return sendEmail({ to, subject: `RSVP confirmed: ${event.name}`, html });
 }
 
+/** Unlike the planner-authored strings above, the responder name here is typed by a guest on a
+ * public page, so it's escaped before it goes into the email body. */
+function escapeHtml(v: string): string {
+  return v.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]!));
+}
+
+export async function sendGroupConfirmationEmail(event: EventRow, to: string, name: string, groupName: string, groupToken: string, attendingCount: number, memberCount: number) {
+  const html = wrap(
+    event,
+    `Thanks, ${escapeHtml(name)} — your group's RSVP is in`,
+    `<p>We've recorded the RSVP for <strong>${escapeHtml(groupName)}</strong>: ${attendingCount} of ${memberCount} attending. Anyone in your group can review or change it from the same link any time before the RSVP deadline.</p>`,
+    "View or edit your group's RSVP",
+    appUrl(`/g/${groupToken}`)
+  );
+  return sendEmail({ to, subject: `RSVP confirmed: ${event.name}`, html });
+}
+
 export async function sendEventUpdateEmail(event: EventRow, to: string, name: string, token: string, changeSummary: string) {
   const url = appUrl(`/r/${token}`);
   const html = wrap(

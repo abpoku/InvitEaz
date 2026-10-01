@@ -29,6 +29,8 @@ const schema = z.object({
   visibility: z.enum(["invite_only", "public", "hybrid"]).optional(),
   groupRsvpMode: z.enum(["group", "individual", "primary_contact"]).optional(),
   defaultPlusOnePolicy: z.enum(["none", "one", "multiple"]).optional(),
+  guestAllowanceMode: z.enum(["none", "per_person", "per_group"]).optional(),
+  guestAllowanceCount: z.number().int().min(0).optional(),
 });
 
 export async function GET() {

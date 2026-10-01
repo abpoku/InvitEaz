@@ -12,7 +12,7 @@ import { fullName } from "@/lib/utils";
 import { groupCounts } from "@/lib/bulk-select";
 import type { InviteeFieldType } from "@/lib/models/invitee-fields";
 
-interface GroupRow { id: string; name: string; assembly_id: string | null; }
+interface GroupRow { id: string; name: string; assembly_id: string | null; rsvp_token: string; }
 
 export interface InviteeField {
   id: string;
@@ -45,6 +45,7 @@ export interface InviteeRow {
   custom_fields: string | null;
   token: string;
   status: string;
+  added_by_guest: number;
 }
 
 function fieldValue(field: InviteeField, i: InviteeRow): string {
@@ -177,6 +178,13 @@ export function InviteesManager({ eventId, groupRsvpMode, nameFormat }: { eventI
     if (!confirm("Remove this invitee? Their RSVP history will be preserved for your records.")) return;
     await fetch(`/api/events/${eventId}/invitees/${id}`, { method: "DELETE" });
     load();
+  }
+
+  /** The household's /g/[token] link — one link that lets anyone in the group RSVP for everyone. */
+  function copyGroupLink(group: GroupRow) {
+    navigator.clipboard.writeText(`${window.location.origin}/g/${group.rsvp_token}`);
+    setCopiedId(group.id);
+    setTimeout(() => setCopiedId(null), 1600);
   }
 
   function copyLink(invitee: InviteeRow) {
@@ -561,6 +569,11 @@ export function InviteesManager({ eventId, groupRsvpMode, nameFormat }: { eventI
                       )}
                       <td className="px-5 py-3 text-ink-soft whitespace-nowrap">{g.members.length} member{g.members.length === 1 ? "" : "s"}</td>
                       <td className="px-5 py-3 text-right whitespace-nowrap">
+                        {g.members.length > 0 && g.rsvp_token && (
+                          <button onClick={() => copyGroupLink(g)} className="text-wine-500 hover:underline text-xs font-medium mr-3" title="One link for the whole group to RSVP together">
+                            {copiedId === g.id ? "Copied!" : "Copy group link"}
+                          </button>
+                        )}
                         <button onClick={() => bulkEditGroup(g.id)} disabled={g.members.length === 0} className="text-xs text-ink-faint hover:text-ink mr-3 disabled:opacity-40">Bulk edit</button>
                         <button onClick={() => removeGroup(g.id)} disabled={g.members.length === 0} className="text-xs text-ink-faint hover:text-clay-600 mr-3 disabled:opacity-40">Remove</button>
                         <button onClick={() => startRenameGroup(g)} className="text-xs text-ink-faint hover:text-ink mr-3">Rename</button>
@@ -580,6 +593,7 @@ export function InviteesManager({ eventId, groupRsvpMode, nameFormat }: { eventI
                                 <div className="flex items-center gap-3">
                                   <span className="text-ink">{fullName(m.first_name, m.last_name)}</span>
                                   <StatusBadge status={m.status} />
+                                  {!!m.added_by_guest && <span className="chip bg-brass-500/10 text-brass-600">Added by guest</span>}
                                 </div>
                                 <div className="flex items-center gap-3">
                                   <button onClick={() => copyLink(m)} className="text-wine-500 hover:underline text-xs font-medium">
