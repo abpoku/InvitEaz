@@ -69,6 +69,7 @@ export function InviteesManager({ eventId, groupRsvpMode, nameFormat }: { eventI
   const [assemblies, setAssemblies] = useState<Assembly[]>([]);
   const [groups, setGroups] = useState<GroupRow[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [query, setQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
   const [assemblyFilter, setAssemblyFilter] = useState("all");
@@ -101,24 +102,40 @@ export function InviteesManager({ eventId, groupRsvpMode, nameFormat }: { eventI
 
   async function load() {
     setLoading(true);
-    const [inviteesRes, fieldsRes, assembliesRes, ticketingRes, groupsRes] = await Promise.all([
-      fetch(`/api/events/${eventId}/invitees`),
-      fetch(`/api/events/${eventId}/invitee-fields`),
-      fetch(`/api/events/${eventId}/assemblies`),
-      fetch(`/api/events/${eventId}/ticketing`),
-      fetch(`/api/events/${eventId}/groups`),
-    ]);
-    const inviteesData = await inviteesRes.json();
-    const fieldsData = await fieldsRes.json();
-    setInvitees(inviteesData.invitees || []);
-    setFields((fieldsData.fields || []).filter((f: InviteeField) => f.active).sort((a: InviteeField, b: InviteeField) => a.order_index - b.order_index));
-    // 403 for a lead planner (or a network hiccup) just means no assembly filter/picker — not fatal.
-    setAssemblies(assembliesRes.ok ? (await assembliesRes.json()).assemblies || [] : []);
-    // Same tolerance for ticketing — a lead planner can't reach requireEventRole's "viewer" gate
-    // the way this route checks it in every case, and it's a non-fatal, ticketing-only detail.
-    setTicketFieldId(ticketingRes.ok ? (await ticketingRes.json()).config?.field?.id ?? null : null);
-    setGroups(groupsRes.ok ? (await groupsRes.json()).groups || [] : []);
-    setLoading(false);
+    setLoadError(null);
+    try {
+      const [inviteesRes, fieldsRes, assembliesRes, ticketingRes, groupsRes] = await Promise.all([
+        fetch(`/api/events/${eventId}/invitees`),
+        fetch(`/api/events/${eventId}/invitee-fields`),
+        fetch(`/api/events/${eventId}/assemblies`),
+        fetch(`/api/events/${eventId}/ticketing`),
+        fetch(`/api/events/${eventId}/groups`),
+      ]);
+      // A 500 has an empty, non-JSON body — never let parsing it throw and strand the page on
+      // "Loading invitees…" forever (this happened in production when one request hit a dead DB
+      // connection). Invitees and fields are required to render the table, so failing either is
+      // shown as an error with a retry; the rest degrade to empty exactly as before.
+      const json = async (res: Response) => { try { return await res.json(); } catch { return {}; } };
+      if (!inviteesRes.ok || !fieldsRes.ok) {
+        setLoadError("We couldn't load your invitees just now.");
+        return;
+      }
+      const inviteesData = await json(inviteesRes);
+      const fieldsData = await json(fieldsRes);
+      setInvitees(inviteesData.invitees || []);
+      setFields((fieldsData.fields || []).filter((f: InviteeField) => f.active).sort((a: InviteeField, b: InviteeField) => a.order_index - b.order_index));
+      // 403 for a lead planner (or a network hiccup) just means no assembly filter/picker — not fatal.
+      setAssemblies(assembliesRes.ok ? (await json(assembliesRes)).assemblies || [] : []);
+      // Same tolerance for ticketing — a lead planner can't reach requireEventRole's "viewer" gate
+      // the way this route checks it in every case, and it's a non-fatal, ticketing-only detail.
+      setTicketFieldId(ticketingRes.ok ? (await json(ticketingRes)).config?.field?.id ?? null : null);
+      setGroups(groupsRes.ok ? (await json(groupsRes)).groups || [] : []);
+    } catch {
+      // fetch() itself rejects only on a network failure (offline, DNS, connection reset).
+      setLoadError("We couldn't reach the server just now.");
+    } finally {
+      setLoading(false);
+    }
   }
 
   async function setTierValue(invitee: InviteeRow, fieldKey: string, value: string) {
@@ -389,6 +406,11 @@ export function InviteesManager({ eventId, groupRsvpMode, nameFormat }: { eventI
           <div className="mt-6 card overflow-x-auto">
             {loading ? (
               <p className="p-8 text-sm text-ink-faint text-center">Loading invitees…</p>
+            ) : loadError ? (
+              <div className="p-8 text-sm text-center">
+                <p className="text-clay-600">{loadError}</p>
+                <button onClick={load} className="mt-3 btn-secondary">Try again</button>
+              </div>
             ) : filtered.length === 0 ? (
               <p className="p-10 text-sm text-ink-faint text-center">
                 {invitees.length === 0 ? "No invitees yet. Add someone or upload a spreadsheet to get started." : "No invitees match your search."}

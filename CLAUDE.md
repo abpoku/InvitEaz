@@ -283,6 +283,20 @@ caches the promise per process. Two distinct production incidents have come from
    out at all. Fixed by adding `query_timeout` (enforced client-side by `pg` itself, regardless
    of the server) plus `keepAlive`/`keepAliveInitialDelayMillis` so a dead connection is more
    likely to be caught and evicted by the OS before it's ever handed back out of the pool.
+5. **Dead connections were still being handed out, just failing faster** (2026-10-01): after #4,
+   Vercel logs showed `Query read timeout` 500s on some of a page's parallel requests while
+   siblings fired at the same instant succeeded — some pooled connections dead, others fine.
+   Root cause: Vercel suspends an instance between requests, Neon's proxy drops its idle
+   connections meanwhile, and the pool's idle-reaping timer can't run while suspended, so the
+   next request gets a stale connection. Fixed at the source with `attachDatabasePool(pool)`
+   from `@vercel/functions` + a short `idleTimeoutMillis` (keeps the instance alive until idle
+   connections are closed cleanly before it suspends), plus a safety net in `db.ts`: a
+   **read-only** (`SELECT`/`WITH`) query that fails with a connection-level error is retried
+   once on a fresh connection (writes never are — a timed-out write may have applied), and
+   `ensureSchema` now destroys a failed client (`release(err)`) instead of returning it to the
+   pool. The client side also needed fixing: `InviteesManager`'s `load()` called `res.json()`
+   on the failed 500's empty body, threw, and never reached `setLoading(false)`, so the tab sat
+   on "Loading invitees…" forever — see the `res.json()` gotcha below.
 
 **Attempted and reverted**: setting `idle_session_timeout` via the raw `options: "-c
 idle_session_timeout=..."` startup-parameter escape hatch (this `pg` version has no first-class

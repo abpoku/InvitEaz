@@ -1,4 +1,5 @@
 import { Pool } from "pg";
+import { attachDatabasePool } from "@vercel/functions";
 import fs from "fs";
 import path from "path";
 
@@ -16,7 +17,7 @@ function createPool(): Pool {
       "DATABASE_URL is not set. Add a Postgres connection string to your environment (see .env.example)."
     );
   }
-  return new Pool({
+  const pool = new Pool({
     connectionString,
     // Most managed Postgres providers (Neon, Supabase, Render, etc.) require
     // SSL. sslmode is usually already in the connection string, but this is
@@ -44,7 +45,18 @@ function createPool(): Pool {
     query_timeout: 20_000,
     keepAlive: true,
     keepAliveInitialDelayMillis: 10_000,
+    // The root cause of those silently dead connections (incident #5 in CLAUDE.md): Vercel
+    // suspends a function instance between requests, and while it's suspended Neon's proxy drops
+    // its idle connections. The pool's own idle-reaping timer can't fire while suspended, so on
+    // the next request the pool happily hands out a connection that's already gone. Keeping this
+    // short, combined with attachDatabasePool below, closes every idle connection cleanly *before*
+    // the instance is allowed to suspend — nothing stale survives into the next request.
+    idleTimeoutMillis: 5_000,
   });
+  // Uses waitUntil to keep the instance alive until idleTimeoutMillis has passed and the pool's
+  // idle clients are actually closed. A no-op outside Vercel (local dev, builds).
+  attachDatabasePool(pool);
+  return pool;
 }
 
 export function getPool(): Pool {
@@ -78,6 +90,7 @@ function ensureSchema(): Promise<void> {
       const schemaPath = path.join(process.cwd(), "src", "lib", "schema.sql");
       const schema = fs.readFileSync(schemaPath, "utf-8");
       const client = await getPool().connect();
+      let failure: Error | undefined;
       try {
         await client.query("SELECT pg_advisory_lock($1)", [SCHEMA_MIGRATION_LOCK_KEY]);
         try {
@@ -85,8 +98,14 @@ function ensureSchema(): Promise<void> {
         } finally {
           await client.query("SELECT pg_advisory_unlock($1)", [SCHEMA_MIGRATION_LOCK_KEY]);
         }
+      } catch (err) {
+        failure = err as Error;
+        throw err;
       } finally {
-        client.release();
+        // Passing the error destroys the client instead of returning it to the pool — a connection
+        // that just failed (possibly dead, possibly still holding the advisory lock) must never be
+        // handed to the next query.
+        client.release(failure);
       }
     })();
     // Never leave this process permanently broken from one failed attempt (e.g. a transient
@@ -98,15 +117,43 @@ function ensureSchema(): Promise<void> {
   return global.__inviteazSchemaReady;
 }
 
+// Errors that mean "this connection was dead or died under us", not "the query was wrong". When
+// one hits a read-only statement it's always safe to just try again: pg-pool has already destroyed
+// the failed client (pool.query releases with the error), so the retry gets a fresh connection.
+const CONNECTION_FAILURE = /Query read timeout|Connection terminated|ECONNRESET|EPIPE|ETIMEDOUT|socket hang up|Client has encountered a connection error/i;
+const READ_ONLY = /^\s*(SELECT|WITH)\b/i;
+
+/** ensureSchema, retried once if the attempt died on a dead connection rather than a real error. */
+async function schemaReady(): Promise<void> {
+  try {
+    await ensureSchema();
+  } catch (err) {
+    if (!CONNECTION_FAILURE.test(String((err as Error)?.message))) throw err;
+    console.warn("[db] retrying schema check on a fresh connection after:", (err as Error).message);
+    await ensureSchema();
+  }
+}
+
+async function runQuery(pgText: string, params: any[]) {
+  try {
+    return await getPool().query(pgText, params);
+  } catch (err) {
+    // Writes are never retried: a timed-out write may still have been applied server-side.
+    if (!READ_ONLY.test(pgText) || !CONNECTION_FAILURE.test(String((err as Error)?.message))) throw err;
+    console.warn("[db] retrying read on a fresh connection after:", (err as Error).message);
+    return await getPool().query(pgText, params);
+  }
+}
+
 /** Run a query, converting `?` placeholders (kept from the original SQLite
  * query text throughout the model files) into Postgres's `$1, $2...` style,
  * and returns the row array — matching the shape callers already expect.
  */
 export async function query<T = any>(text: string, params: any[] = []): Promise<T[]> {
-  await ensureSchema();
+  await schemaReady();
   let i = 0;
   const pgText = text.replace(/\?/g, () => `$${++i}`);
-  const result = await getPool().query(pgText, params);
+  const result = await runQuery(pgText, params);
   return result.rows as T[];
 }
 
@@ -116,9 +163,9 @@ export async function queryOne<T = any>(text: string, params: any[] = []): Promi
 }
 
 export async function exec(text: string, params: any[] = []): Promise<number> {
-  await ensureSchema();
+  await schemaReady();
   let i = 0;
   const pgText = text.replace(/\?/g, () => `$${++i}`);
-  const result = await getPool().query(pgText, params);
+  const result = await runQuery(pgText, params);
   return result.rowCount ?? 0;
 }

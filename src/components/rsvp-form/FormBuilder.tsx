@@ -27,15 +27,28 @@ const NEEDS_OPTIONS = ["single_choice", "multiple_choice", "dropdown"];
 export function FormBuilder({ eventId }: { eventId: string }) {
   const [questions, setQuestions] = useState<Question[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(false);
   const [showAdd, setShowAdd] = useState(false);
   const [editing, setEditing] = useState<Question | null>(null);
 
   async function load() {
     setLoading(true);
-    const res = await fetch(`/api/events/${eventId}/questions`);
-    const data = await res.json();
-    setQuestions((data.questions || []).sort((a: Question, b: Question) => a.order_index - b.order_index));
-    setLoading(false);
+    setLoadError(false);
+    try {
+      const res = await fetch(`/api/events/${eventId}/questions`);
+      // Same guard as InviteesManager.load: a 500's empty body must not throw and leave this stuck on "Loading…".
+      let data: any = {};
+      try { data = await res.json(); } catch {}
+      if (!res.ok) {
+        setLoadError(true);
+        return;
+      }
+      setQuestions((data.questions || []).sort((a: Question, b: Question) => a.order_index - b.order_index));
+    } catch {
+      setLoadError(true);
+    } finally {
+      setLoading(false);
+    }
   }
 
   useEffect(() => {
@@ -87,6 +100,11 @@ export function FormBuilder({ eventId }: { eventId: string }) {
       <div className="mt-6 space-y-3">
         {loading ? (
           <p className="text-sm text-ink-faint">Loading…</p>
+        ) : loadError ? (
+          <div className="text-sm">
+            <p className="text-clay-600">We couldn&apos;t load your RSVP questions just now.</p>
+            <button onClick={load} className="mt-3 btn-secondary">Try again</button>
+          </div>
         ) : (
           coreQuestions.map((q) => (
             <div key={q.id} className="card p-4 flex flex-wrap items-center gap-3 sm:gap-4">
@@ -111,7 +129,7 @@ export function FormBuilder({ eventId }: { eventId: string }) {
       </div>
 
       <div className="mt-6 space-y-3">
-        {!loading && customQuestions.length === 0 ? (
+        {!loading && !loadError && customQuestions.length === 0 ? (
           <div className="card p-10 text-center text-sm text-ink-faint">No custom questions yet — meal choice, transportation, t-shirt size, anything your event needs.</div>
         ) : (
           customQuestions.map((q, idx) => (
