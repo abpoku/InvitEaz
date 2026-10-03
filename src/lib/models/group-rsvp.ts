@@ -7,6 +7,7 @@ import { getEventById, computeEffectiveStatus, logAudit, type EventRow } from "@
 import { listQuestions, submitResponse, getAnswersForResponse, type QuestionRow } from "@/lib/models/rsvp";
 import { listInviteeFields, type InviteeFieldRow } from "@/lib/models/invitee-fields";
 import { getUserById, PLAN_LIMITS } from "@/lib/models/users";
+import { getGroupTicketBalance } from "@/lib/models/ticketing";
 import { groupExtraGuests } from "@/lib/guest-allowance";
 import { isPastDeadline, fullName } from "@/lib/utils";
 
@@ -102,10 +103,11 @@ async function resolve(token: string): Promise<{ group: GroupRow; event: EventRo
 
 export async function loadGroupInvitation(token: string) {
   const { group, event } = await resolve(token);
-  const [members, questions, allFields] = await Promise.all([
+  const [members, questions, allFields, tickets] = await Promise.all([
     listGroupMembersWithResponses(group.id),
     listQuestions(event.id),
     listInviteeFields(event.id),
+    getGroupTicketBalance(event.id, group.id),
   ]);
   const fields = guestEditableFields(allFields, event);
 
@@ -137,6 +139,7 @@ export async function loadGroupInvitation(token: string) {
     responder: latest
       ? { name: latest.responder_name || "", email: latest.responder_email || "", phone: latest.responder_phone || "" }
       : null,
+    tickets,
     locked: isLocked(event),
   };
 }

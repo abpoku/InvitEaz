@@ -134,6 +134,9 @@ Specifics:
   (`invitees.added_by_guest = 1`) never earn allowance and are the only ones a guest may remove
   (soft delete). Plan invitee limits still apply. `default_plus_one_policy` is now *derived* from the
   allowance on every write (`legacyPolicyFor`) — don't write it on its own.
+- When ticketing is on, the link also shows the group's ticket price, amount paid, and balance,
+  from `getGroupTicketBalance()` in `ticketing.ts` — it shares `groupTotals()` with the Tickets
+  tab's group rows, so the guest and the planner always see the same numbers. Read-only for guests.
 - The submit validates everything before writing anything, and rejects (409) a member list that
   doesn't match the group's current members, so a stale tab can't silently skip someone.
 - Still true for both paths: `groups.leader_invitee_id` (settable via the template's "Group Leader"

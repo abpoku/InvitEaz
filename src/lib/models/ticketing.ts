@@ -296,6 +296,69 @@ function tierValueFromCustomFields(customFieldsJson: string | null, fieldKey: st
   }
 }
 
+/** The one rule for a group's totals — shared by the Tickets tab's group rows (getTicketingSummary)
+ * and the guest-facing group RSVP link (getGroupTicketBalance), so the two can never disagree.
+ * Owed = every current member's own tier price; Paid = payments tagged to the group itself plus
+ * each current member's individually-tagged payments. */
+function groupTotals(
+  members: { invitee_id: string; custom_fields: string | null }[],
+  groupPaidCents: number,
+  paidByInvitee: Record<string, number>,
+  fieldKey: string,
+  tiers: TicketTierRow[]
+): { owedCents: number; paidCents: number } {
+  const owedCents = priceForGroup(members, fieldKey, tiers);
+  const paidCents = groupPaidCents + members.reduce((sum, m) => sum + (paidByInvitee[m.invitee_id] || 0), 0);
+  return { owedCents, paidCents };
+}
+
+export interface GroupTicketBalance {
+  members: { inviteeId: string; name: string; tier: string; priceCents: number }[];
+  owedCents: number;
+  paidCents: number;
+  balanceCents: number;
+}
+
+/** One group's ticket price, payments, and balance, for the public group RSVP link. Null when the
+ * event has no ticketing configured. Members are the group's *active* invitees — the same set
+ * listInviteeResponseRows gives getTicketingSummary. */
+export async function getGroupTicketBalance(eventId: string, groupId: string): Promise<GroupTicketBalance | null> {
+  const config = await getTicketingConfig(eventId);
+  if (!config.enabled || !config.field) return null;
+  const fieldKey = config.field.key;
+  const [members, groupPaid, memberPaid] = await Promise.all([
+    query<{ invitee_id: string; first_name: string; last_name: string; custom_fields: string | null }>(
+      `SELECT id as invitee_id, first_name, last_name, custom_fields FROM invitees
+       WHERE group_id = ? AND active = 1 ORDER BY added_by_guest ASC, created_at ASC`,
+      [groupId]
+    ),
+    queryOne<{ total: string | null }>(
+      "SELECT SUM(amount_cents) as total FROM ticket_payments WHERE group_id = ? AND voided_at IS NULL",
+      [groupId]
+    ),
+    query<{ invitee_id: string; total: string }>(
+      `SELECT tp.invitee_id, SUM(tp.amount_cents) as total FROM ticket_payments tp
+       JOIN invitees iv ON iv.id = tp.invitee_id
+       WHERE iv.group_id = ? AND iv.active = 1 AND tp.voided_at IS NULL
+       GROUP BY tp.invitee_id`,
+      [groupId]
+    ),
+  ]);
+  const paidByInvitee = Object.fromEntries(memberPaid.map((r) => [r.invitee_id, Number(r.total)]));
+  const { owedCents, paidCents } = groupTotals(members, Number(groupPaid?.total || 0), paidByInvitee, fieldKey, config.tiers);
+  return {
+    members: members.map((m) => ({
+      inviteeId: m.invitee_id,
+      name: fullName(m.first_name, m.last_name),
+      tier: tierValueFromCustomFields(m.custom_fields, fieldKey),
+      priceCents: priceForInvitee(m.custom_fields, fieldKey, config.tiers),
+    })),
+    owedCents,
+    paidCents,
+    balanceCents: owedCents - paidCents,
+  };
+}
+
 /** Powers the Tickets tab. Owed always reflects each invitee's own ticket-tier price
  * (unchanged) — only Paid attributes a live equal share of any group-tagged payment to
  * each of the group's *current* members, so nothing needs to be recomputed or migrated
@@ -351,9 +414,7 @@ export async function getTicketingSummary(eventId: string, assemblyId?: string |
 
   const groups: TicketingSummaryGroup[] = groupRows.map((g) => {
     const members = membersByGroup.get(g.id) || [];
-    const owedCents = priceForGroup(members, fieldKey, config.tiers);
-    const membersIndividualPaid = members.reduce((sum, m) => sum + (paidByInvitee[m.invitee_id] || 0), 0);
-    const paidCents = (paidByGroup[g.id] || 0) + membersIndividualPaid;
+    const { owedCents, paidCents } = groupTotals(members, paidByGroup[g.id] || 0, paidByInvitee, fieldKey, config.tiers);
 
     const tierCounts = new Map<string, number>();
     for (const m of members) {

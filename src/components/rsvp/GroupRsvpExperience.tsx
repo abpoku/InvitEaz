@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { Shell, MessageScreen, EventHeader, QuestionField, type Question } from "@/components/rsvp/RsvpExperience";
 import { InviteeFieldInput } from "@/components/invitees/InviteeFieldInput";
 import type { InviteeField } from "@/components/invitees/InviteesManager";
+import { formatCurrency } from "@/lib/utils";
 
 interface Member {
   id: string;
@@ -21,6 +22,13 @@ interface Data {
   questions: Question[];
   fields: InviteeField[];
   allowance: { extraGuests: number; guestsAdded: number };
+  // Null when the event has no ticketing configured.
+  tickets: {
+    members: { inviteeId: string; name: string; tier: string; priceCents: number }[];
+    owedCents: number;
+    paidCents: number;
+    balanceCents: number;
+  } | null;
   responder: { name: string; email: string; phone: string } | null;
   locked: boolean;
 }
@@ -122,7 +130,49 @@ function GroupConfirmation({ data, onEdit }: { data: Data; onEdit: () => void })
           {data.locked && <p className="mt-4 text-xs text-ink-faint">RSVPs are closed — these are your final responses.</p>}
         </div>
       </div>
+      {data.tickets && <TicketSummary tickets={data.tickets} />}
     </Shell>
+  );
+}
+
+/** The group's ticket price, payments, and balance — the same figures the planner's Tickets tab
+ * shows for this group (both come from getGroupTicketBalance's shared rule). Payments are
+ * recorded by the planner; there's no way to pay from here. */
+function TicketSummary({ tickets }: { tickets: NonNullable<Data["tickets"]> }) {
+  const { owedCents, paidCents, balanceCents } = tickets;
+  return (
+    <div className="card p-6 mt-4">
+      <div className="flex items-center justify-between gap-3">
+        <p className="font-serif text-lg text-ink">Tickets</p>
+        {owedCents > 0 && balanceCents <= 0 && <span className="chip bg-moss-50 text-moss-600">Paid in full</span>}
+      </div>
+      <ul className="mt-3 divide-y divide-paper-line border-y border-paper-line text-sm">
+        {tickets.members.map((m) => (
+          <li key={m.inviteeId} className="flex items-center justify-between gap-3 py-2">
+            <span className="text-ink">
+              {m.name}
+              {m.tier && <span className="text-ink-faint"> · {m.tier}</span>}
+            </span>
+            <span className="text-ink-soft tabular-nums">{formatCurrency(m.priceCents)}</span>
+          </li>
+        ))}
+      </ul>
+      <dl className="mt-3 space-y-1.5 text-sm">
+        <div className="flex justify-between gap-3">
+          <dt className="text-ink-soft">Group ticket price</dt>
+          <dd className="text-ink tabular-nums">{formatCurrency(owedCents)}</dd>
+        </div>
+        <div className="flex justify-between gap-3">
+          <dt className="text-ink-soft">Amount paid</dt>
+          <dd className="text-ink tabular-nums">{formatCurrency(paidCents)}</dd>
+        </div>
+        <div className="flex justify-between gap-3 pt-2 border-t border-paper-line font-medium">
+          <dt className="text-ink">{balanceCents < 0 ? "Credit" : "Balance owed"}</dt>
+          <dd className={`tabular-nums ${balanceCents > 0 ? "text-wine-700" : "text-moss-600"}`}>{formatCurrency(Math.abs(balanceCents))}</dd>
+        </div>
+      </dl>
+      <p className="mt-3 text-xs text-ink-faint">Payments are recorded by the organizer. Contact them with any questions about your balance.</p>
+    </div>
   );
 }
 
@@ -258,6 +308,7 @@ function GroupRsvpForm({ data, token, onSubmitted }: { data: Data; token: string
     <Shell>
       <GroupBanner name={data.group.name} />
       <EventHeader event={event} />
+      {data.tickets && <TicketSummary tickets={data.tickets} />}
 
       <form onSubmit={submit} className="mt-4 space-y-4">
         {error && (
