@@ -28,7 +28,13 @@ export interface TicketPaymentRow {
   updated_at: string;
   voided_at: string | null;
   voided_by: string | null;
+  paid_on: string | null;      // YYYY-MM-DD the money changed hands (backfilled from recorded_at)
+  method: string | null;       // see src/lib/payment-methods.ts; NULL for payments that predate it
+  method_other: string | null; // description when method = 'other'
 }
+
+export interface PaymentAllocation { invitee_id: string; amount_cents: number; }
+export type PaymentWithAllocations = TicketPaymentRow & { allocations: PaymentAllocation[] };
 
 export interface TicketingConfig {
   enabled: boolean;
@@ -182,14 +188,19 @@ export async function createPayment(input: {
   inviteeId?: string;
   groupId?: string;
   amountCents: number;
+  paidOn: string;
+  method: string;
+  methodOther?: string;
   note?: string;
   recordedBy: string;
 }): Promise<TicketPaymentRow> {
   if (!!input.inviteeId === !!input.groupId) throw new Error("Exactly one of inviteeId/groupId must be set.");
   const id = newId("pay");
   await exec(
-    "INSERT INTO ticket_payments (id, event_id, invitee_id, group_id, amount_cents, note, recorded_by) VALUES (?,?,?,?,?,?,?)",
-    [id, input.eventId, input.inviteeId || null, input.groupId || null, input.amountCents, input.note || null, input.recordedBy]
+    `INSERT INTO ticket_payments (id, event_id, invitee_id, group_id, amount_cents, paid_on, method, method_other, note, recorded_by)
+     VALUES (?,?,?,?,?,?,?,?,?,?)`,
+    [id, input.eventId, input.inviteeId || null, input.groupId || null, input.amountCents, input.paidOn, input.method,
+      input.method === "other" ? input.methodOther || null : null, input.note || null, input.recordedBy]
   );
   return (await queryOne<TicketPaymentRow>("SELECT * FROM ticket_payments WHERE id = ?", [id]))!;
 }
@@ -198,11 +209,18 @@ export async function getPayment(id: string): Promise<TicketPaymentRow | undefin
   return queryOne<TicketPaymentRow>("SELECT * FROM ticket_payments WHERE id = ?", [id]);
 }
 
-export async function updatePayment(id: string, patch: { amountCents?: number; note?: string }): Promise<void> {
+export async function updatePayment(id: string, patch: {
+  amountCents?: number; note?: string | null; paidOn?: string; method?: string; methodOther?: string | null;
+}): Promise<void> {
   const fields: string[] = [];
   const values: any[] = [];
   if (patch.amountCents !== undefined) { fields.push("amount_cents = ?"); values.push(patch.amountCents); }
   if (patch.note !== undefined) { fields.push("note = ?"); values.push(patch.note); }
+  if (patch.paidOn !== undefined) { fields.push("paid_on = ?"); values.push(patch.paidOn); }
+  if (patch.method !== undefined) {
+    fields.push("method = ?", "method_other = ?");
+    values.push(patch.method, patch.method === "other" ? patch.methodOther || null : null);
+  }
   if (fields.length === 0) return;
   fields.push("updated_at = ?");
   values.push(new Date().toISOString());
@@ -214,6 +232,71 @@ export async function voidPayment(id: string, actorEmail: string): Promise<void>
     "UPDATE ticket_payments SET voided_at = ?, voided_by = ? WHERE id = ? AND voided_at IS NULL",
     [new Date().toISOString(), actorEmail, id]
   );
+}
+
+export async function listAllocations(paymentId: string): Promise<PaymentAllocation[]> {
+  return query<PaymentAllocation>(
+    "SELECT invitee_id, amount_cents FROM ticket_payment_allocations WHERE payment_id = ? ORDER BY created_at ASC",
+    [paymentId]
+  );
+}
+
+/** Replaces a group payment's custom split wholesale. Callers validate first (group payment, not
+ * voided, every invitee an active member of that group, total <= the payment amount). */
+export async function replaceAllocations(paymentId: string, allocations: { inviteeId: string; amountCents: number }[]): Promise<void> {
+  await exec("DELETE FROM ticket_payment_allocations WHERE payment_id = ?", [paymentId]);
+  for (const a of allocations) {
+    await exec(
+      "INSERT INTO ticket_payment_allocations (id, payment_id, invitee_id, amount_cents) VALUES (?,?,?,?)",
+      [newId("alc"), paymentId, a.inviteeId, a.amountCents]
+    );
+  }
+}
+
+/** Every payment for one invitee or group, newest payment date first, each with its custom split. */
+export async function listPaymentsWithAllocations(
+  target: { inviteeId: string } | { groupId: string },
+  includeVoided = false
+): Promise<PaymentWithAllocations[]> {
+  const [col, id] = "inviteeId" in target ? ["invitee_id", target.inviteeId] : ["group_id", target.groupId];
+  const payments = await query<TicketPaymentRow>(
+    `SELECT * FROM ticket_payments WHERE ${col} = ? ${includeVoided ? "" : "AND voided_at IS NULL"}
+     ORDER BY voided_at IS NOT NULL, paid_on DESC, recorded_at DESC`,
+    [id]
+  );
+  if (payments.length === 0) return [];
+  const allocs = await query<PaymentAllocation & { payment_id: string }>(
+    `SELECT payment_id, invitee_id, amount_cents FROM ticket_payment_allocations
+     WHERE payment_id IN (${payments.map(() => "?").join(",")}) ORDER BY created_at ASC`,
+    payments.map((p) => p.id)
+  );
+  return payments.map((p) => ({
+    ...p,
+    allocations: allocs.filter((a) => a.payment_id === p.id).map(({ invitee_id, amount_cents }) => ({ invitee_id, amount_cents })),
+  }));
+}
+
+/** Sets each invitee's ticket tier — their value for the linked ticketing field. `tier` must be one
+ * of the configured tier names, or "" to clear it. Merges into custom_fields (never trusting it to
+ * be a JSON object — see CLAUDE.md), so every other custom field is preserved. */
+export async function setTicketTiers(eventId: string, assignments: { inviteeId: string; tier: string }[]): Promise<void> {
+  const config = await getTicketingConfig(eventId);
+  if (!config.enabled || !config.field) throw new Error("Ticketing isn't set up for this event.");
+  const key = config.field.key;
+  for (const a of assignments) {
+    const row = await queryOne<{ custom_fields: string | null }>(
+      "SELECT custom_fields FROM invitees WHERE id = ? AND event_id = ?",
+      [a.inviteeId, eventId]
+    );
+    if (!row) continue;
+    let custom: Record<string, string> = {};
+    try {
+      const parsed = row.custom_fields ? JSON.parse(row.custom_fields) : {};
+      if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) custom = parsed;
+    } catch {}
+    if (a.tier) custom[key] = a.tier; else delete custom[key];
+    await exec("UPDATE invitees SET custom_fields = ? WHERE id = ?", [Object.keys(custom).length ? JSON.stringify(custom) : null, a.inviteeId]);
+  }
 }
 
 export async function listPaymentsForInvitee(inviteeId: string, includeVoided = false): Promise<TicketPaymentRow[]> {
@@ -280,6 +363,7 @@ export interface TicketingSummary {
   enabled: boolean;
   fieldLabel: string | null;
   fieldKey: string | null;
+  tiers: { name: string; priceCents: number }[];
   invitees: TicketingSummaryInvitee[];
   groups: TicketingSummaryGroup[];
   hasGroups: boolean;
@@ -371,15 +455,21 @@ export async function getGroupTicketBalance(eventId: string, groupId: string): P
 export async function getTicketingSummary(eventId: string, assemblyId?: string | null): Promise<TicketingSummary> {
   const config = await getTicketingConfig(eventId);
   if (!config.enabled || !config.field) {
-    return { enabled: config.enabled, fieldLabel: null, fieldKey: null, invitees: [], groups: [], hasGroups: false };
+    return { enabled: config.enabled, fieldLabel: null, fieldKey: null, tiers: [], invitees: [], groups: [], hasGroups: false };
   }
   const fieldKey = config.field.key;
 
-  const [rows, groupRows, paidByInvitee, paidByGroup] = await Promise.all([
+  const [rows, groupRows, paidByInvitee, paidByGroup, allocations] = await Promise.all([
     listInviteeResponseRows(eventId, assemblyId),
     listGroups(eventId, assemblyId),
     sumPaymentsByInvitee(eventId, assemblyId),
     sumPaymentsByGroup(eventId, assemblyId),
+    query<{ group_id: string; invitee_id: string; amount_cents: number }>(
+      `SELECT p.group_id, a.invitee_id, a.amount_cents FROM ticket_payment_allocations a
+       JOIN ticket_payments p ON p.id = a.payment_id
+       WHERE p.event_id = ? AND p.group_id IS NOT NULL AND p.voided_at IS NULL`,
+      [eventId]
+    ),
   ]);
 
   const membersByGroup = new Map<string, typeof rows>();
@@ -395,9 +485,17 @@ export async function getTicketingSummary(eventId: string, assemblyId?: string |
     const owedCents = priceForInvitee(row.custom_fields, fieldKey, config.tiers);
     const individualPaid = paidByInvitee[row.invitee_id] || 0;
     const members = row.group_id ? membersByGroup.get(row.group_id) : undefined;
-    const groupShareCents = row.group_id && members && members.length > 0
-      ? Math.round((paidByGroup[row.group_id] || 0) / members.length)
-      : 0;
+    let groupShareCents = 0;
+    if (row.group_id && members && members.length > 0) {
+      // Custom-split portions go straight to their member; only what's left of the group's payments
+      // is shared equally. An allocation to someone no longer an active member of this group falls
+      // back into the equal pool, so the current members' shares always add up to the group total.
+      const memberIds = new Set(members.map((m) => m.invitee_id));
+      const valid = allocations.filter((a) => a.group_id === row.group_id && memberIds.has(a.invitee_id));
+      const pool = (paidByGroup[row.group_id] || 0) - valid.reduce((sum, a) => sum + a.amount_cents, 0);
+      const mine = valid.filter((a) => a.invitee_id === row.invitee_id).reduce((sum, a) => sum + a.amount_cents, 0);
+      groupShareCents = mine + Math.round(pool / members.length);
+    }
     const paidCents = individualPaid + groupShareCents;
     return {
       inviteeId: row.invitee_id,
@@ -431,5 +529,9 @@ export async function getTicketingSummary(eventId: string, assemblyId?: string |
     return { groupId: g.id, name: g.name, memberCount: members.length, tierBreakdown, owedCents, paidCents, balanceCents: owedCents - paidCents };
   });
 
-  return { enabled: true, fieldLabel: config.field.label, fieldKey, invitees, groups, hasGroups: groups.length > 0 };
+  return {
+    enabled: true, fieldLabel: config.field.label, fieldKey,
+    tiers: config.tiers.map((t) => ({ name: t.option_value, priceCents: t.price_cents })),
+    invitees, groups, hasGroups: groups.length > 0,
+  };
 }

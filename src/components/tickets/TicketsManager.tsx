@@ -3,11 +3,18 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { formatCurrency } from "@/lib/utils";
-import { PaymentModal } from "@/components/tickets/PaymentModal";
+import { KebabMenu } from "@/components/KebabMenu";
+import { ReceivePaymentModal, type PaymentTarget } from "@/components/tickets/ReceivePaymentModal";
+import { EditPaymentsModal } from "@/components/tickets/EditPaymentsModal";
+import { ChangeTicketTypeModal } from "@/components/tickets/ChangeTicketTypeModal";
 import { ViewToggle } from "@/components/ViewToggle";
 import type { TicketingSummary } from "@/lib/models/ticketing";
 
 type View = "individual" | "group";
+type Dialog =
+  | { kind: "receive"; target?: PaymentTarget } // no target = the top-of-page button: pick who first
+  | { kind: "edit"; target: PaymentTarget }
+  | { kind: "tier"; target: PaymentTarget };
 
 export function TicketsManager({
   eventId, summary, canMutate,
@@ -18,7 +25,23 @@ export function TicketsManager({
 }) {
   const router = useRouter();
   const [view, setView] = useState<View>("individual");
-  const [paymentTarget, setPaymentTarget] = useState<{ targetType: "invitee" | "group"; targetId: string; targetLabel: string } | null>(null);
+  const [dialog, setDialog] = useState<Dialog | null>(null);
+
+  const groupMembers = (groupId: string) =>
+    summary.invitees.filter((i) => i.groupId === groupId).map((i) => ({ id: i.inviteeId, name: i.name, tier: i.tier }));
+
+  function rowActions(target: PaymentTarget) {
+    return (
+      <KebabMenu
+        label={`Ticket actions for ${target.label}`}
+        items={[
+          { label: "Edit", onSelect: () => setDialog({ kind: "edit", target }) },
+          { label: "Receive payment", onSelect: () => setDialog({ kind: "receive", target }) },
+          { label: `Change ${summary.fieldLabel?.toLowerCase() || "ticket type"}`, onSelect: () => setDialog({ kind: "tier", target }) },
+        ]}
+      />
+    );
+  }
 
   if (!summary.fieldLabel) {
     return (
@@ -30,11 +53,12 @@ export function TicketsManager({
 
   return (
     <div>
-      {summary.hasGroups && (
-        <div className="mt-4">
-          <ViewToggle value={view} onChange={setView} />
-        </div>
-      )}
+      <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
+        {summary.hasGroups ? <ViewToggle value={view} onChange={setView} /> : <span />}
+        {canMutate && (
+          <button onClick={() => setDialog({ kind: "receive" })} className="btn-primary">Receive payment</button>
+        )}
+      </div>
 
       <div className="mt-4 card overflow-x-auto">
         {view === "individual" ? (
@@ -68,13 +92,8 @@ export function TicketsManager({
                     </td>
                     <td className="px-5 py-3 text-ink-soft whitespace-nowrap">{formatCurrency(inv.balanceCents)}</td>
                     {canMutate && (
-                      <td className="px-5 py-3 text-right whitespace-nowrap">
-                        <button
-                          onClick={() => setPaymentTarget({ targetType: "invitee", targetId: inv.inviteeId, targetLabel: inv.name })}
-                          className="text-xs font-medium text-wine-500 hover:underline"
-                        >
-                          Payments
-                        </button>
+                      <td className="px-3 py-1.5 text-right whitespace-nowrap w-12">
+                        {rowActions({ type: "invitee", id: inv.inviteeId, label: inv.name })}
                       </td>
                     )}
                   </tr>
@@ -109,13 +128,8 @@ export function TicketsManager({
                   <td className="px-5 py-3 text-ink-soft whitespace-nowrap">{formatCurrency(g.paidCents)}</td>
                   <td className="px-5 py-3 text-ink-soft whitespace-nowrap">{formatCurrency(g.balanceCents)}</td>
                   {canMutate && (
-                    <td className="px-5 py-3 text-right whitespace-nowrap">
-                      <button
-                        onClick={() => setPaymentTarget({ targetType: "group", targetId: g.groupId, targetLabel: g.name })}
-                        className="text-xs font-medium text-wine-500 hover:underline"
-                      >
-                        Payments
-                      </button>
+                    <td className="px-3 py-1.5 text-right whitespace-nowrap w-12">
+                      {rowActions({ type: "group", id: g.groupId, label: g.name })}
                     </td>
                   )}
                 </tr>
@@ -125,14 +139,38 @@ export function TicketsManager({
         )}
       </div>
 
-      {paymentTarget && (
-        <PaymentModal
+      {dialog?.kind === "receive" && (
+        <ReceivePaymentModal
           eventId={eventId}
-          targetType={paymentTarget.targetType}
-          targetId={paymentTarget.targetId}
-          targetLabel={paymentTarget.targetLabel}
-          onClose={() => setPaymentTarget(null)}
+          summary={summary}
+          target={dialog.target}
+          onClose={() => setDialog(null)}
+          onSaved={() => router.refresh()}
+        />
+      )}
+      {dialog?.kind === "edit" && (
+        <EditPaymentsModal
+          eventId={eventId}
+          target={dialog.target}
+          members={dialog.target.type === "group" ? groupMembers(dialog.target.id) : []}
+          onClose={() => setDialog(null)}
           onChanged={() => router.refresh()}
+          onReceive={() => setDialog({ kind: "receive", target: dialog.target })}
+        />
+      )}
+      {dialog?.kind === "tier" && (
+        <ChangeTicketTypeModal
+          eventId={eventId}
+          target={dialog.target}
+          fieldLabel={summary.fieldLabel || "Ticket type"}
+          tiers={summary.tiers}
+          members={
+            dialog.target.type === "group"
+              ? groupMembers(dialog.target.id)
+              : summary.invitees.filter((i) => i.inviteeId === dialog.target.id).map((i) => ({ id: i.inviteeId, name: i.name, tier: i.tier }))
+          }
+          onClose={() => setDialog(null)}
+          onSaved={() => router.refresh()}
         />
       )}
     </div>

@@ -248,18 +248,33 @@ Overview's config sections; clone-scoped roles never see it).
 - **Payments are a flexible ledger** (`ticket_payments`): one entry is tagged to exactly one
   of an invitee or a group (DB `CHECK (num_nonnulls(invitee_id, group_id) = 1)`), so a
   planner can record either "$50 from Alex" or "$150 from the Johnson family" as a single
-  entry. Unlike `rsvp_responses`, entries are **editable in place** with a soft void
-  (`voided_at`/`voided_by`), not append-only — a planner fixing a mis-entered amount is the
-  common case here, not a rare correction. A group's "Paid" total on the Responses tab's
-  "Group ticket balances" panel is payments tagged to the group *plus* the sum of that
-  group's members' own individually-tagged payments — an individual invitee's own Paid
-  column, though, only ever shows payments tagged directly to them, never an attributed
-  share of a group payment (there's no way to know who a lump sum was meant to cover). All
-  four payment operations (`POST`/`GET .../payments`, `PATCH`/`DELETE
-  .../payments/[paymentId]`) are `requireAssemblyScope`-gated, viewers fully blocked, and
-  every write re-derives the target invitee/group from the *payment's own* stored row (not
-  the request body) before checking `canManageInvitee`/`canManageGroup` — so a lead/co-planner
-  can't spoof scope by naming a payment ID that happens to belong to someone else's clone.
+  entry. Each carries `paid_on` (YYYY-MM-DD the money changed hands — planner-chosen, defaults
+  to the planner's *local* today, backdatable, never future; distinct from `recorded_at`) and
+  `method` (`cash | card | cashapp_venmo | check | other`, with a required `method_other`
+  description for `other`; list + validation in `src/lib/payment-methods.ts`). Payments that
+  predate these have `paid_on` backfilled from `recorded_at` and `method` NULL — editing one
+  doesn't force a method onto it. Unlike `rsvp_responses`, entries are **editable in place**
+  with a soft void (`voided_at`/`voided_by`), not append-only — a planner fixing a mis-entered
+  amount is the common case here, not a rare correction.
+- **Group payments can be custom-split** (`ticket_payment_allocations`): portions credited to
+  specific current members instead of shared equally. The payment's own amount/group tag never
+  change, so the group total doesn't either — only the per-member breakdown does. On the
+  Tickets tab, a member's Paid = their own payments + their allocations + an equal share of
+  whatever's left unallocated across the group's payments; an allocation to someone no longer
+  an active member falls back into the equal pool, so members' shares always sum to the group
+  total. An edit can't lower a payment below its allocated total (the `PATCH` returns a 400).
+  The Responses tab's per-invitee Paid column still shows only payments tagged directly to them.
+- **Tickets tab UI**: a "Receive payment" button (pick an invitee or group first) plus a ⋮
+  `KebabMenu` per row — Edit (`EditPaymentsModal`: edit/void/split), Receive payment, Change
+  ticket type (`ChangeTicketTypeModal` → `PATCH .../ticketing/assignments`, assembly-scoped
+  like payments, only configured tier names accepted). `KebabMenu` positions its panel
+  `fixed` and *follows* its button on scroll rather than closing — the table scrolls sideways
+  on phones, and closing on any scroll made the menu unusable there.
+- Every payment operation (`POST`/`GET .../payments`, `PATCH`/`DELETE .../payments/[paymentId]`,
+  `PUT .../payments/[paymentId]/allocations`) is `requireAssemblyScope`-gated, viewers fully
+  blocked, and every write re-derives the target invitee/group from the *payment's own* stored
+  row (not the request body) before checking `canManageInvitee`/`canManageGroup` — so a
+  lead/co-planner can't spoof scope by naming a payment ID that belongs to someone else's clone.
 
 ### Schema changes (read before editing schema.sql)
 

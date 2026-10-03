@@ -303,3 +303,24 @@ CREATE TABLE IF NOT EXISTS ticket_payments (
 CREATE INDEX IF NOT EXISTS idx_ticket_payments_event ON ticket_payments(event_id);
 CREATE INDEX IF NOT EXISTS idx_ticket_payments_invitee ON ticket_payments(invitee_id);
 CREATE INDEX IF NOT EXISTS idx_ticket_payments_group ON ticket_payments(group_id);
+-- When the money actually changed hands (planner-chosen, defaults to today) and how — distinct from
+-- recorded_at, which is when someone typed it in. paid_on is a plain YYYY-MM-DD date (no time, no
+-- zone). Backfilled once from recorded_at for payments that predate this; the WHERE makes later
+-- runs a no-op.
+ALTER TABLE ticket_payments ADD COLUMN IF NOT EXISTS paid_on TEXT;
+ALTER TABLE ticket_payments ADD COLUMN IF NOT EXISTS method TEXT;        -- cash | card | cashapp_venmo | check | other
+ALTER TABLE ticket_payments ADD COLUMN IF NOT EXISTS method_other TEXT;  -- required description when method = 'other'
+UPDATE ticket_payments SET paid_on = substr(recorded_at, 1, 10) WHERE paid_on IS NULL;
+
+-- Custom split of a group payment: portions of it credited to specific members instead of being
+-- shared equally. The payment's own amount and group tag never change, so the group's total is
+-- unaffected; only the per-member breakdown is. Whatever isn't allocated (or is allocated to someone
+-- no longer an active member of that group) is still shared equally — see getTicketingSummary.
+CREATE TABLE IF NOT EXISTS ticket_payment_allocations (
+  id TEXT PRIMARY KEY,
+  payment_id TEXT NOT NULL REFERENCES ticket_payments(id) ON DELETE CASCADE,
+  invitee_id TEXT NOT NULL REFERENCES invitees(id) ON DELETE CASCADE,
+  amount_cents INTEGER NOT NULL CHECK (amount_cents > 0),
+  created_at TEXT NOT NULL DEFAULT to_char(now() AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_payment_allocations_unique ON ticket_payment_allocations(payment_id, invitee_id);
