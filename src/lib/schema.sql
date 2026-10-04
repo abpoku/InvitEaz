@@ -336,3 +336,13 @@ CREATE TABLE IF NOT EXISTS ticket_payment_allocations (
   created_at TEXT NOT NULL DEFAULT to_char(now() AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')
 );
 CREATE UNIQUE INDEX IF NOT EXISTS idx_payment_allocations_unique ON ticket_payment_allocations(payment_id, invitee_id);
+
+-- When duplicate groups are merged (Invitees tab → Group view → Merge), each merged-away group's
+-- /g/[token] link is kept here pointing at the surviving group, so a link already sent to a guest
+-- keeps working instead of turning into "this link isn't valid".
+CREATE TABLE IF NOT EXISTS group_link_aliases (
+  token TEXT PRIMARY KEY,
+  group_id TEXT NOT NULL REFERENCES groups(id) ON DELETE CASCADE,
+  created_at TEXT NOT NULL DEFAULT to_char(now() AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')
+);
+CREATE INDEX IF NOT EXISTS idx_group_link_aliases_group ON group_link_aliases(group_id);

@@ -57,7 +57,48 @@ export async function getGroupById(id: string): Promise<GroupRow | undefined> {
 }
 
 export async function getGroupByRsvpToken(token: string): Promise<GroupRow | undefined> {
-  return queryOne<GroupRow>("SELECT * FROM groups WHERE rsvp_token = ?", [token]);
+  const direct = await queryOne<GroupRow>("SELECT * FROM groups WHERE rsvp_token = ?", [token]);
+  if (direct) return direct;
+  // The link of a group that was merged into another one (see mergeGroups).
+  return queryOne<GroupRow>(
+    "SELECT g.* FROM group_link_aliases a JOIN groups g ON g.id = a.group_id WHERE a.token = ?",
+    [token]
+  );
+}
+
+/** The group a typed name refers to: same event, same clone (or both unassigned), name compared
+ * case- and whitespace-insensitively — the same rule the spreadsheet upload uses, so "Boakye Family"
+ * typed in the Add Invitee form joins the existing household instead of starting a duplicate. */
+export async function findGroupByName(eventId: string, name: string, assemblyId: string | null): Promise<GroupRow | undefined> {
+  return queryOne<GroupRow>(
+    `SELECT * FROM groups
+     WHERE event_id = ? AND lower(trim(name)) = lower(trim(?)) AND assembly_id IS NOT DISTINCT FROM ?
+     ORDER BY created_at ASC LIMIT 1`,
+    [eventId, name, assemblyId]
+  );
+}
+
+/** Folds `sourceIds` into `targetId`: members and group-tagged payments move over, the target keeps
+ * its name and RSVP link, each source's link (and any links already aliased to it) becomes an alias
+ * of the target so links already sent keep working, and the emptied source groups are deleted.
+ * Callers validate first (same event, same clone, permission on every group). */
+export async function mergeGroups(targetId: string, sourceIds: string[]): Promise<void> {
+  const target = (await getGroupById(targetId))!;
+  for (const sourceId of sourceIds) {
+    const source = await getGroupById(sourceId);
+    if (!source || source.id === targetId) continue;
+    await exec("UPDATE invitees SET group_id = ? WHERE group_id = ?", [targetId, sourceId]);
+    await exec("UPDATE ticket_payments SET group_id = ? WHERE group_id = ?", [targetId, sourceId]);
+    await exec("UPDATE group_link_aliases SET group_id = ? WHERE group_id = ?", [targetId, sourceId]);
+    if (source.rsvp_token) {
+      await exec("INSERT INTO group_link_aliases (token, group_id) VALUES (?, ?) ON CONFLICT (token) DO NOTHING", [source.rsvp_token, targetId]);
+    }
+    if (!target.leader_invitee_id && source.leader_invitee_id) {
+      await setGroupLeader(targetId, source.leader_invitee_id);
+      target.leader_invitee_id = source.leader_invitee_id;
+    }
+    await exec("DELETE FROM groups WHERE id = ?", [sourceId]);
+  }
 }
 
 export async function setGroupLeader(groupId: string, inviteeId: string) {

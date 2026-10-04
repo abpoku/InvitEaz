@@ -7,6 +7,7 @@ import { AddInviteeModal } from "@/components/invitees/AddInviteeModal";
 import { UploadModal } from "@/components/invitees/UploadModal";
 import { FieldsManagerModal } from "@/components/invitees/FieldsManagerModal";
 import { BulkEditModal } from "@/components/invitees/BulkEditModal";
+import { MergeGroupsModal } from "@/components/invitees/MergeGroupsModal";
 import { ViewToggle } from "@/components/ViewToggle";
 import { fullName } from "@/lib/utils";
 import { groupCounts } from "@/lib/bulk-select";
@@ -90,6 +91,7 @@ export function InviteesManager({ eventId, groupRsvpMode, nameFormat }: { eventI
   const [groupBusyId, setGroupBusyId] = useState<string | null>(null);
   const [selectedGroupIds, setSelectedGroupIds] = useState<Set<string>>(new Set());
   const [groupBulkBusy, setGroupBulkBusy] = useState(false);
+  const [showMerge, setShowMerge] = useState(false);
   const [expandedGroupIds, setExpandedGroupIds] = useState<Set<string>>(new Set());
 
   function toggleGroupExpanded(groupId: string) {
@@ -518,6 +520,9 @@ export function InviteesManager({ eventId, groupRsvpMode, nameFormat }: { eventI
             <div className="mt-4 flex flex-wrap items-center justify-between gap-2 rounded border border-wine-200 bg-wine-50 px-4 py-2.5">
               <p className="text-sm text-wine-700">{selectedGroupIds.size} group{selectedGroupIds.size === 1 ? "" : "s"} selected</p>
               <div className="flex items-center gap-3 flex-wrap">
+                {selectedGroupIds.size >= 2 && (
+                  <button onClick={() => setShowMerge(true)} className="text-sm font-medium text-wine-700 hover:underline">Merge</button>
+                )}
                 <button onClick={bulkEditSelectedGroups} className="text-sm font-medium text-wine-700 hover:underline">Bulk edit</button>
                 <button onClick={removeSelectedGroups} className="text-sm font-medium text-clay-600 hover:underline">Remove selected</button>
                 <button onClick={deleteSelectedGroups} disabled={groupBulkBusy} className="text-sm font-medium text-clay-600 hover:underline disabled:opacity-50">
@@ -638,6 +643,14 @@ export function InviteesManager({ eventId, groupRsvpMode, nameFormat }: { eventI
         </>
       )}
 
+      {showMerge && (
+        <MergeGroupsModal
+          eventId={eventId}
+          groups={groupRows.filter((g) => selectedGroupIds.has(g.id)).map((g) => ({ id: g.id, name: g.name, assembly_id: g.assembly_id, members: g.members.map((m) => fullName(m.first_name, m.last_name)) }))}
+          onClose={() => setShowMerge(false)}
+          onMerged={() => { setShowMerge(false); setSelectedGroupIds(new Set()); load(); router.refresh(); }}
+        />
+      )}
       {(showAdd || editing) && (
         <AddInviteeModal
           eventId={eventId}
@@ -646,6 +659,7 @@ export function InviteesManager({ eventId, groupRsvpMode, nameFormat }: { eventI
           fields={fields}
           assemblies={assemblies}
           invitee={editing || undefined}
+          groups={groupRows.map((g) => ({ id: g.id, name: g.name, assembly_id: g.assembly_id, memberCount: g.members.length }))}
           onClose={() => { setShowAdd(false); setEditing(null); }}
           onSaved={() => {
             setShowAdd(false);

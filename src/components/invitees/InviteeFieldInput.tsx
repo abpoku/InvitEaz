@@ -8,19 +8,28 @@ import type { InviteeField } from "@/components/invitees/InviteesManager";
  * value gets written, so this same component works across all three without baking in any
  * persistence assumption. */
 export function InviteeFieldInput({
-  field, value, onChange, groupRsvpMode,
+  field, value, onChange, groupRsvpMode, groupSuggestions, groupHint,
 }: {
   field: InviteeField;
   value: string;
   onChange: (value: string) => void;
   groupRsvpMode?: string;
+  groupSuggestions?: string[]; // existing group names, offered as you type
+  groupHint?: string;          // e.g. "Will be added to the existing group …"
 }) {
   if (field.key === "group") {
     if (groupRsvpMode === "individual") return null;
+    const listId = groupSuggestions?.length ? `group-suggestions-${field.id}` : undefined;
     return (
       <div>
-        <label className="label">{field.label} <span className="text-ink-faint font-normal">(optional)</span></label>
-        <input className="input" placeholder="e.g. Johnson Family" value={value || ""} onChange={(e) => onChange(e.target.value)} />
+        <label className="label" htmlFor={`field-${field.id}`}>{field.label} <span className="text-ink-faint font-normal">(optional)</span></label>
+        <input id={`field-${field.id}`} className="input" placeholder="e.g. Johnson Family" list={listId} autoComplete="off" value={value || ""} onChange={(e) => onChange(e.target.value)} />
+        {listId && (
+          <datalist id={listId}>
+            {groupSuggestions!.map((n) => <option key={n} value={n} />)}
+          </datalist>
+        )}
+        {groupHint && <p className="mt-1 text-xs text-ink-faint">{groupHint}</p>}
       </div>
     );
   }

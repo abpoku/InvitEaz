@@ -114,6 +114,16 @@ authority first, then fall back to this restricted path).
 - **Communications** — a log of every email sent (type + recipients + body), scopable to
   one clone. **EventMembers** carries every role above. **AuditLog** records actions.
 
+**Groups are identified by name within a clone.** `POST /api/events/[id]/groups` is
+find-or-create (`findGroupByName`: same event, same clone or both unassigned, name compared
+ignoring case/surrounding spaces) — the same rule the spreadsheet upload already used. Before this,
+the Add/Edit Invitee form created a brand-new group on every save, so adding a household one person
+at a time produced one single-member group per person. Duplicates that already exist are combined
+with **Merge** in the Invitees tab's Group view (`POST .../groups/merge` → `mergeGroups`): members and
+group-tagged payments move to the kept group (moved *before* the emptied groups are deleted, since
+`ticket_payments.group_id` is `ON DELETE CASCADE`), and each merged-away group's `/g/[token]` link
+becomes a row in `group_link_aliases` pointing at the kept group, so links already sent keep working.
+
 **Group RSVP — two paths.** (1) The legacy *individual-link* path (intentional, not a bug):
 when `group_rsvp_mode` is `group` or `primary_contact`, whichever member opens their own `/r/[token]`
 link first can RSVP for the household; that response is recorded against *their* invitation only —

@@ -19,10 +19,12 @@ function parseCustomFields(raw: string | null): Record<string, string> {
 }
 
 export function AddInviteeModal({
-  eventId, groupRsvpMode, nameFormat, fields, assemblies, invitee, onClose, onSaved,
+  eventId, groupRsvpMode, nameFormat, fields, assemblies, invitee, onClose, onSaved, groups = [],
 }: {
   eventId: string; groupRsvpMode: string; nameFormat: "first_last" | "full"; fields: InviteeField[]; assemblies: Assembly[];
   invitee?: InviteeRow; onClose: () => void; onSaved: () => void;
+  // Existing groups, so typing a household's name joins it instead of creating a duplicate.
+  groups?: { id: string; name: string; assembly_id: string | null; memberCount: number }[];
 }) {
   const [firstName, setFirstName] = useState(() =>
     invitee ? (nameFormat === "full" ? fullName(invitee.first_name, invitee.last_name) : invitee.first_name) : ""
@@ -46,6 +48,13 @@ export function AddInviteeModal({
   const emailActive = fields.some((f) => f.key === "email");
   const phoneActive = fields.some((f) => f.key === "phone");
   const groupField = fields.find((f) => f.key === "group");
+  // Same matching rule as the server (findGroupByName): same clone, name ignoring case/spaces.
+  const sameName = (a: string, b: string) => a.trim().toLowerCase() === b.trim().toLowerCase();
+  const typedGroup = core.group.trim();
+  const matchedGroup = typedGroup
+    ? groups.find((g) => sameName(g.name, typedGroup) && (g.assembly_id || "") === (assemblyId || ""))
+    : undefined;
+  const groupUnchanged = !!invitee?.group_name && sameName(invitee.group_name, typedGroup);
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -72,22 +81,30 @@ export function AddInviteeModal({
     }
     setSaving(true);
 
-    // Only mint a new group when the value actually changed — otherwise every no-op save of an
-    // already-grouped invitee would silently create a duplicate group (createGroup has no
-    // dedup-by-name check).
+    // Resolve the typed group name only when it actually changed. The groups endpoint reuses an
+    // existing group with the same name in the same clone (findGroupByName), so adding family
+    // members one at a time puts them all in one household rather than one group each.
     let groupId: string | null = invitee?.group_id ?? null;
     const originalGroupName = invitee?.group_name || "";
-    if (groupField && core.group && core.group !== originalGroupName) {
-      const gRes = await fetch(`/api/events/${eventId}/groups`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: core.group, assemblyId: assemblyId || undefined }),
-      });
-      if (gRes.ok) {
-        const gData = await gRes.json();
-        groupId = gData.group.id;
+    if (groupField && typedGroup && !groupUnchanged) {
+      let gData: any = {};
+      let gOk = false;
+      try {
+        const gRes = await fetch(`/api/events/${eventId}/groups`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ name: typedGroup, assemblyId: assemblyId || undefined }),
+        });
+        try { gData = await gRes.json(); } catch {}
+        gOk = gRes.ok && !!gData.group;
+      } catch {}
+      if (!gOk) {
+        setSaving(false);
+        setError(gData.error || "We couldn't save the group. Please try again.");
+        return;
       }
-    } else if (groupField && !core.group && originalGroupName) {
+      groupId = gData.group.id;
+    } else if (groupField && !typedGroup && originalGroupName) {
       groupId = null;
     }
 
@@ -176,6 +193,14 @@ export function AddInviteeModal({
             groupRsvpMode={groupRsvpMode}
             value={f.key === "group" ? core.group : f.kind === "core" ? core[f.key] : customFields[f.key]}
             onChange={(v) => (f.kind === "core" ? setCore((c) => ({ ...c, [f.key]: v })) : setCustomFields((c) => ({ ...c, [f.key]: v })))}
+            groupSuggestions={f.key === "group" ? [...new Set(groups.filter((g) => (g.assembly_id || "") === (assemblyId || "")).map((g) => g.name))] : undefined}
+            groupHint={
+              f.key === "group" && typedGroup && !groupUnchanged
+                ? matchedGroup
+                  ? `Will be added to the existing group "${matchedGroup.name}" (${matchedGroup.memberCount} member${matchedGroup.memberCount === 1 ? "" : "s"}).`
+                  : `A new group "${typedGroup}" will be created.`
+                : undefined
+            }
           />
         ))}
 

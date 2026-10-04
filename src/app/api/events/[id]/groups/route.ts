@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { requireAssemblyScope } from "@/lib/session";
-import { createGroup, listGroups } from "@/lib/models/invitees";
+import { createGroup, listGroups, findGroupByName } from "@/lib/models/invitees";
 import { getAssembly } from "@/lib/models/assemblies";
 
 export async function GET(_req: Request, { params }: { params: { id: string } }) {
@@ -25,6 +25,11 @@ export async function POST(req: Request, { params }: { params: { id: string } })
     assemblyId = assembly.id;
   }
 
-  const group = await createGroup(params.id, body.name, assemblyId);
-  return NextResponse.json({ group });
+  // Reuse an existing group with the same name in the same clone rather than starting a duplicate
+  // household — adding family members one at a time must all land in one group.
+  const name = String(body.name).trim();
+  const existing = await findGroupByName(params.id, name, assemblyId || null);
+  if (existing) return NextResponse.json({ group: existing, existed: true });
+  const group = await createGroup(params.id, name, assemblyId);
+  return NextResponse.json({ group, existed: false });
 }
