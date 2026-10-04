@@ -5,6 +5,7 @@ import { getInviteeField, createInviteeField, updateInviteeField, type InviteeFi
 import { listGroups } from "@/lib/models/invitees";
 import type { InviteeRow } from "@/lib/models/invitees";
 import { listInviteeResponseRows } from "@/lib/models/rsvp";
+import { distributeGroupPayment } from "@/lib/group-payment-share";
 
 export interface TicketTierRow {
   id: string;
@@ -560,6 +561,21 @@ export async function getGroupTicketBalance(eventId: string, groupId: string): P
  * display only (Math.round(total/n)) and can therefore sum to within ±(n-1) cents of the
  * group's own exact total shown on its own row — that row is never the sum of the rounded
  * shares, it's the real total, so nothing is actually lost or gained. */
+/** What each active member of a group owes right now (owedFor) — the split route uses it to refuse
+ * crediting money to someone who owes nothing. */
+export async function groupMemberOwed(eventId: string, groupId: string): Promise<Record<string, number>> {
+  const config = await getTicketingConfig(eventId);
+  if (!config.enabled || !config.field) return {};
+  const rows = await query<{ invitee_id: string; custom_fields: string | null; rsvp_status: RsvpStatus }>(
+    `SELECT iv.id as invitee_id, iv.custom_fields,
+       (SELECT r.rsvp_status FROM rsvp_responses r JOIN invitations i ON i.id = r.invitation_id
+         WHERE i.invitee_id = iv.id ORDER BY r.responded_at DESC LIMIT 1) as rsvp_status
+     FROM invitees iv WHERE iv.group_id = ? AND iv.active = 1`,
+    [groupId]
+  );
+  return Object.fromEntries(rows.map((r) => [r.invitee_id, owedFor(r, config.field!.key, config.tiers)]));
+}
+
 export async function getTicketingSummary(eventId: string, assemblyId?: string | null): Promise<TicketingSummary> {
   const config = await getTicketingConfig(eventId);
   if (!config.enabled || !config.field) {
@@ -600,27 +616,30 @@ export async function getTicketingSummary(eventId: string, assemblyId?: string |
     else membersByGroup.set(row.group_id, [row]);
   }
 
+  // Each member's share of their group's payments. Custom-split portions go straight to their
+  // member; the rest is applied only to members with an amount due (distributeGroupPayment). A
+  // split portion that no longer has a valid home — the member left the group, or now owes nothing
+  // (e.g. declined) — falls back into the shared pool rather than sitting on someone owing $0.
+  const groupShareById: Record<string, number> = {};
+  for (const [groupId, members] of membersByGroup) {
+    const owed = new Map(members.map((m) => [m.invitee_id, owedFor(m, fieldKey, config.tiers)]));
+    const valid = allocations.filter((a) => a.group_id === groupId && (owed.get(a.invitee_id) || 0) > 0);
+    const split: Record<string, number> = {};
+    for (const a of valid) split[a.invitee_id] = (split[a.invitee_id] || 0) + a.amount_cents;
+    const pool = (paidByGroup[groupId] || 0) - valid.reduce((sum, a) => sum + a.amount_cents, 0);
+    const shared = distributeGroupPayment(pool, members.map((m) => ({
+      id: m.invitee_id,
+      owedCents: owed.get(m.invitee_id) || 0,
+      alreadyPaidCents: (paidByInvitee[m.invitee_id] || 0) + (split[m.invitee_id] || 0),
+    })));
+    for (const m of members) groupShareById[m.invitee_id] = (split[m.invitee_id] || 0) + (shared[m.invitee_id] || 0);
+  }
+
   const invitees: TicketingSummaryInvitee[] = rows.map((row) => {
     const tier = tierValueFromCustomFields(row.custom_fields, fieldKey);
     const owedCents = owedFor(row, fieldKey, config.tiers);
     const individualPaid = paidByInvitee[row.invitee_id] || 0;
-    const members = row.group_id ? membersByGroup.get(row.group_id) : undefined;
-    let groupShareCents = 0;
-    if (row.group_id && members && members.length > 0) {
-      // Custom-split portions go straight to their member; only what's left of the group's payments
-      // is shared equally. An allocation to someone no longer an active member of this group falls
-      // back into the equal pool, so the current members' shares always add up to the group total.
-      const memberIds = new Set(members.map((m) => m.invitee_id));
-      const valid = allocations.filter((a) => a.group_id === row.group_id && memberIds.has(a.invitee_id));
-      const pool = (paidByGroup[row.group_id] || 0) - valid.reduce((sum, a) => sum + a.amount_cents, 0);
-      const mine = valid.filter((a) => a.invitee_id === row.invitee_id).reduce((sum, a) => sum + a.amount_cents, 0);
-      // The equal share goes to members who still need a ticket — a declined member owes $0, so
-      // giving them a slice would show them in credit while the people attending looked short.
-      // (If everyone declined, it's shared across all of them as before.)
-      const sharers = members.some((m) => m.rsvp_status !== "declined") ? members.filter((m) => m.rsvp_status !== "declined") : members;
-      const isSharer = sharers.some((m) => m.invitee_id === row.invitee_id);
-      groupShareCents = mine + (isSharer ? Math.round(pool / sharers.length) : 0);
-    }
+    const groupShareCents = row.group_id ? groupShareById[row.invitee_id] || 0 : 0;
     const paidCents = individualPaid + groupShareCents;
     return {
       inviteeId: row.invitee_id,

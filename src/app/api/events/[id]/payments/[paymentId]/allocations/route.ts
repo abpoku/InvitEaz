@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { requireAssemblyScope } from "@/lib/session";
 import { canManageGroup, groupMembers } from "@/lib/models/invitees";
-import { getPayment, replaceAllocations } from "@/lib/models/ticketing";
+import { getPayment, replaceAllocations, groupMemberOwed } from "@/lib/models/ticketing";
 import { logAudit } from "@/lib/models/events";
 
 /** Replaces a group payment's custom split: `{ allocations: [{ inviteeId, amountCents }] }`. An empty
@@ -23,6 +23,7 @@ export async function PUT(req: Request, { params }: { params: { id: string; paym
   try { body = await req.json(); } catch {}
   const raw: any[] = Array.isArray(body.allocations) ? body.allocations : [];
   const memberIds = new Set((await groupMembers(payment.group_id)).map((m) => m.id));
+  const owed = await groupMemberOwed(params.id, payment.group_id);
 
   const seen = new Set<string>();
   const allocations: { inviteeId: string; amountCents: number }[] = [];
@@ -34,6 +35,10 @@ export async function PUT(req: Request, { params }: { params: { id: string; paym
     seen.add(a.inviteeId);
     if (!Number.isInteger(a.amountCents) || a.amountCents < 0) {
       return NextResponse.json({ error: "Split amounts must be whole cents, zero or more." }, { status: 400 });
+    }
+    // Payments are only ever applied to people with something to pay for.
+    if (a.amountCents > 0 && !(owed[a.inviteeId] > 0)) {
+      return NextResponse.json({ error: "A member who owes nothing can't be credited part of a payment." }, { status: 400 });
     }
     if (a.amountCents > 0) allocations.push({ inviteeId: a.inviteeId, amountCents: a.amountCents });
   }

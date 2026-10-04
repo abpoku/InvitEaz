@@ -270,8 +270,12 @@ Overview's config sections; clone-scoped roles never see it).
 - **Declined invitees owe $0 — everywhere.** `owedFor()` in `ticketing.ts` is the single rule:
   tier price, or 0 if the latest response is `declined`. Tickets tab rows, group totals, the
   summary card, the payment pickers, and the guest group link all go through it, so they always
-  agree; anything a declined person already paid shows as credit (refundable). A group payment's
-  equal share goes only to members who haven't declined (all members if everyone has).
+  agree; anything a declined person already paid shows as credit (refundable).
+- **Group payments are applied only to members with an amount due** (`distributeGroupPayment` in
+  `src/lib/group-payment-share.ts`, pure + exact to the cent): in proportion to what each still owes
+  until everyone's covered, then any extra in proportion to ticket price. A member who owes nothing
+  (declined, no ticket type, or a $0 tier) never receives any — and if nobody in the group owes
+  anything, nothing is attributed to individuals; it only shows on the group row.
 - **Tickets summary card** (`TicketsSummaryCard`, from `getTicketingSummary().totals`): Expected
   is the sum of everyone's `owedFor`; Outstanding/Credits are per *party* (a group as one unit, an
   ungrouped invitee as another), so one family's credit never hides another's balance. Donations
@@ -282,12 +286,14 @@ Overview's config sections; clone-scoped roles never see it).
   `invitations.status` alone. Group views show a group when any member matches. Changing a
   filter clears the current selection, so a bulk action can never hit hidden rows.
 - **Group payments can be custom-split** (`ticket_payment_allocations`): portions credited to
-  specific current members instead of shared equally. The payment's own amount/group tag never
+  specific current members instead of the automatic rule above — but never to a member who owes
+  nothing (the split route refuses it; a split portion on someone who has since declined falls
+  back into the automatic pool). The payment's own amount/group tag never
   change, so the group total doesn't either — only the per-member breakdown does. On the
-  Tickets tab, a member's Paid = their own payments + their allocations + an equal share of
-  whatever's left unallocated across the group's payments; an allocation to someone no longer
-  an active member falls back into the equal pool, so members' shares always sum to the group
-  total. An edit can't lower a payment below its allocated total (the `PATCH` returns a 400).
+  Tickets tab, a member's Paid = their own payments + their allocations + their automatic share of
+  whatever's left unallocated; an allocation to someone no longer an active member (or who now
+  owes nothing) falls back into that pool, so members' shares sum to the group total whenever
+  anyone in the group owes something. An edit can't lower a payment below its allocated total (the `PATCH` returns a 400).
   The Responses tab's per-invitee Paid column still shows only payments tagged directly to them.
 - **Tickets tab UI**: a "Receive payment" button (pick an invitee or group first) plus a ⋮
   `KebabMenu` per row — Edit (`EditPaymentsModal`: edit/void/split), Receive payment, Change

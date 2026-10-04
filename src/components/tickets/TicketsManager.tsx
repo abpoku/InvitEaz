@@ -56,7 +56,7 @@ export function TicketsManager({
   const [sort, setSort] = useState<SortKey>("name");
 
   const groupMembers = (groupId: string) =>
-    summary.invitees.filter((i) => i.groupId === groupId).map((i) => ({ id: i.inviteeId, name: i.name, tier: i.tier, declined: i.rsvpStatus === "declined" }));
+    summary.invitees.filter((i) => i.groupId === groupId).map((i) => ({ id: i.inviteeId, name: i.name, tier: i.tier, declined: i.rsvpStatus === "declined", owedCents: i.owedCents }));
 
   const filtering = q.trim() !== "" || rsvp !== "all" || pay !== "all" || tier !== "all";
   function clearFilters() { setQ(""); setRsvp("all"); setPay("all"); setTier("all"); }

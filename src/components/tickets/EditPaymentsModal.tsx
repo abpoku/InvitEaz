@@ -49,7 +49,7 @@ export function EditPaymentsModal({
 }: {
   eventId: string;
   target: PaymentTarget;
-  members: { id: string; name: string }[]; // the group's current members (empty for an invitee)
+  members: { id: string; name: string; owedCents?: number }[]; // the group's current members (empty for an invitee)
   donations: Donations;
   onClose: () => void;
   onChanged: () => void;
@@ -150,7 +150,7 @@ export function EditPaymentsModal({
                           Split: {p.allocations.map((a) => `${memberName(a.invitee_id)} ${formatCurrency(a.amount_cents)}`).join(", ")}
                           {(() => {
                             const rest = p.amount_cents - p.donation_cents - p.allocations.reduce((s, a) => s + a.amount_cents, 0);
-                            return rest > 0 ? ` · ${formatCurrency(rest)} shared equally` : "";
+                            return rest > 0 ? ` · ${formatCurrency(rest)} applied to whoever still owes` : "";
                           })()}
                         </p>
                       )}
@@ -289,7 +289,7 @@ function SplitForm({
   payment, members, onCancel, onSave,
 }: {
   payment: Payment;
-  members: { id: string; name: string }[];
+  members: { id: string; name: string; owedCents?: number }[];
   onCancel: () => void;
   onSave: (allocations: { inviteeId: string; amountCents: number }[]) => void;
 }) {
@@ -299,7 +299,10 @@ function SplitForm({
       return [m.id, a ? (a.amount_cents / 100).toFixed(2) : ""];
     }))
   );
-  const assigned = members.reduce((sum, m) => sum + Math.max(0, dollarsToCents(values[m.id] || "")), 0);
+  // Members who owe nothing can't be credited (the server refuses it too); an old split portion on
+  // someone who has since declined is dropped here and goes back to whoever still owes.
+  const eligible = members.filter((m) => m.owedCents !== 0);
+  const assigned = eligible.reduce((sum, m) => sum + Math.max(0, dollarsToCents(values[m.id] || "")), 0);
   const ticketPortion = payment.amount_cents - payment.donation_cents;
   const remaining = ticketPortion - assigned;
   const over = remaining < 0;
@@ -308,19 +311,23 @@ function SplitForm({
     <div className="space-y-3">
       <div>
         <p className="text-sm text-ink font-medium">Split {formatCurrency(ticketPortion)} among members</p>
-        <p className="text-xs text-ink-faint">Anything you don&apos;t assign is shared equally across the group, as before.</p>
+        <p className="text-xs text-ink-faint">Anything you don&apos;t assign is applied to members who still owe, in proportion to what each owes.</p>
       </div>
       <div className="space-y-2">
         {members.map((m) => (
           <div key={m.id} className="flex items-center justify-between gap-3">
-            <label htmlFor={`split-${m.id}`} className="text-sm text-ink">{m.name}</label>
+            <label htmlFor={`split-${m.id}`} className="text-sm text-ink">
+              {m.name}
+              {m.owedCents === 0 && <span className="block text-xs text-ink-faint">Owes nothing</span>}
+            </label>
             <div className="flex items-center gap-1.5">
               <span className="text-ink-faint text-sm">$</span>
               <input
                 id={`split-${m.id}`}
                 type="number" inputMode="decimal" min="0" step="0.01"
-                className="input w-28 py-1"
+                className="input w-28 py-1 disabled:opacity-50"
                 placeholder="0.00"
+                disabled={m.owedCents === 0}
                 value={values[m.id]}
                 onChange={(e) => setValues((v) => ({ ...v, [m.id]: e.target.value }))}
               />
@@ -330,7 +337,7 @@ function SplitForm({
       </div>
       <p className={`text-sm ${over ? "text-clay-600" : "text-ink-soft"}`}>
         Assigned {formatCurrency(assigned)} of {formatCurrency(ticketPortion)}
-        {over ? ` — ${formatCurrency(-remaining)} too much` : remaining > 0 ? ` · ${formatCurrency(remaining)} shared equally` : " · fully assigned"}
+        {over ? ` — ${formatCurrency(-remaining)} too much` : remaining > 0 ? ` · ${formatCurrency(remaining)} applied to whoever still owes` : " · fully assigned"}
       </p>
       <div className="flex flex-wrap justify-end gap-2">
         {payment.allocations.length > 0 && (
@@ -340,7 +347,7 @@ function SplitForm({
         <button
           type="button"
           disabled={over}
-          onClick={() => onSave(members.map((m) => ({ inviteeId: m.id, amountCents: Math.max(0, dollarsToCents(values[m.id] || "")) })).filter((a) => a.amountCents > 0))}
+          onClick={() => onSave(eligible.map((m) => ({ inviteeId: m.id, amountCents: Math.max(0, dollarsToCents(values[m.id] || "")) })).filter((a) => a.amountCents > 0))}
           className="btn-primary"
         >
           Save split
