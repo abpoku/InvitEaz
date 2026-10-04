@@ -267,11 +267,15 @@ Overview's config sections; clone-scoped roles never see it).
   ticket money and refunds as payments. Voiding a payment, or editing its amount/donation portion,
   is rejected if a refund already drew on that money (void/edit the refund first). Splits divide
   only a payment's ticket portion.
+- **Declined invitees owe $0 — everywhere.** `owedFor()` in `ticketing.ts` is the single rule:
+  tier price, or 0 if the latest response is `declined`. Tickets tab rows, group totals, the
+  summary card, the payment pickers, and the guest group link all go through it, so they always
+  agree; anything a declined person already paid shows as credit (refundable). A group payment's
+  equal share goes only to members who haven't declined (all members if everyone has).
 - **Tickets summary card** (`TicketsSummaryCard`, from `getTicketingSummary().totals`): Expected
-  counts every non-declined invitee's tier price; Outstanding/Credits are per *party* (a group as
-  one unit, an ungrouped invitee as another) with declined members' prices excluded — so they can
-  differ from the per-row Balance column, which still charges every member regardless of RSVP.
-  Donations are their own tile, linking to `GET .../donations` (`listDonations`).
+  is the sum of everyone's `owedFor`; Outstanding/Credits are per *party* (a group as one unit, an
+  ungrouped invitee as another), so one family's credit never hides another's balance. Donations
+  are their own tile, linking to `GET .../donations` (`listDonations`).
 - **RSVP status for filtering comes from the latest response.** `listInvitees` returns
   `COALESCE(latest rsvp_status, invitations.status)` and one (earliest) invitation per invitee; the
   Invitees, Responses, and Tickets filters all key off that same source, never

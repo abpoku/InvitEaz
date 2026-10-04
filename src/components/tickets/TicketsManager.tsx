@@ -56,7 +56,7 @@ export function TicketsManager({
   const [sort, setSort] = useState<SortKey>("name");
 
   const groupMembers = (groupId: string) =>
-    summary.invitees.filter((i) => i.groupId === groupId).map((i) => ({ id: i.inviteeId, name: i.name, tier: i.tier }));
+    summary.invitees.filter((i) => i.groupId === groupId).map((i) => ({ id: i.inviteeId, name: i.name, tier: i.tier, declined: i.rsvpStatus === "declined" }));
 
   const filtering = q.trim() !== "" || rsvp !== "all" || pay !== "all" || tier !== "all";
   function clearFilters() { setQ(""); setRsvp("all"); setPay("all"); setTier("all"); }
@@ -189,7 +189,10 @@ export function TicketsManager({
                     <td className="px-5 py-3 text-ink whitespace-nowrap">{inv.name}</td>
                     <td className="px-5 py-3 text-ink-soft whitespace-nowrap">{inv.groupName || "—"}</td>
                     <td className="px-5 py-3 text-ink-soft whitespace-nowrap">{inv.tier || "—"}</td>
-                    <td className="px-5 py-3 text-ink-soft whitespace-nowrap">{formatCurrency(inv.owedCents)}</td>
+                    <td className="px-5 py-3 text-ink-soft whitespace-nowrap">
+                      {formatCurrency(inv.owedCents)}
+                      {inv.rsvpStatus === "declined" && <span className="block text-xs text-ink-faint">Declined — no ticket</span>}
+                    </td>
                     <td className="px-5 py-3 text-ink-soft whitespace-nowrap">
                       {formatCurrency(inv.paidCents)}
                       {inv.groupShareCents !== 0 && (
@@ -290,7 +293,7 @@ export function TicketsManager({
           members={
             dialog.target.type === "group"
               ? groupMembers(dialog.target.id)
-              : summary.invitees.filter((i) => i.inviteeId === dialog.target.id).map((i) => ({ id: i.inviteeId, name: i.name, tier: i.tier }))
+              : summary.invitees.filter((i) => i.inviteeId === dialog.target.id).map((i) => ({ id: i.inviteeId, name: i.name, tier: i.tier, declined: i.rsvpStatus === "declined" }))
           }
           onClose={() => setDialog(null)}
           onSaved={() => router.refresh()}

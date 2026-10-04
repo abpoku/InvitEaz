@@ -15,7 +15,7 @@ export function ChangeTicketTypeModal({
   target: PaymentTarget;
   fieldLabel: string;
   tiers: { name: string; priceCents: number }[];
-  members: { id: string; name: string; tier: string }[]; // one entry for an invitee
+  members: { id: string; name: string; tier: string; declined?: boolean }[]; // one entry for an invitee
   onClose: () => void;
   onSaved: () => void;
 }) {
@@ -24,8 +24,9 @@ export function ChangeTicketTypeModal({
   const [error, setError] = useState<string | null>(null);
 
   const price = (tier: string) => tiers.find((t) => t.name === tier)?.priceCents ?? 0;
-  const before = members.reduce((sum, m) => sum + price(m.tier), 0);
-  const after = members.reduce((sum, m) => sum + price(values[m.id] || ""), 0);
+  // Declined invitees owe $0 whatever their ticket type (owedFor in models/ticketing.ts).
+  const before = members.reduce((sum, m) => sum + (m.declined ? 0 : price(m.tier)), 0);
+  const after = members.reduce((sum, m) => sum + (m.declined ? 0 : price(values[m.id] || "")), 0);
   const changed = members.filter((m) => (values[m.id] || "") !== m.tier);
   // A member holding a value that's no longer a configured tier keeps it unless the planner changes it.
   const isKnown = (tier: string) => !tier || tiers.some((t) => t.name === tier);
@@ -91,6 +92,7 @@ export function ChangeTicketTypeModal({
                 <div key={m.id} className={target.type === "group" ? "flex items-center justify-between gap-3" : ""}>
                   <label htmlFor={`ctt-${m.id}`} className={target.type === "group" ? "text-sm text-ink" : "label"}>
                     {target.type === "group" ? m.name : fieldLabel}
+                    {m.declined && target.type === "group" && <span className="block text-xs text-ink-faint">Declined — owes $0</span>}
                   </label>
                   <select
                     id={`ctt-${m.id}`}
@@ -103,6 +105,9 @@ export function ChangeTicketTypeModal({
                 </div>
               ))}
             </div>
+            {target.type === "invitee" && members[0]?.declined && (
+              <p className="text-xs text-ink-faint">This invitee declined, so they owe $0 whatever their ticket type.</p>
+            )}
             <p className="text-sm text-ink-soft">
               {target.type === "group" ? "Group total" : "Price"}: {formatCurrency(before)}
               {after !== before && <> → <span className="font-medium text-ink">{formatCurrency(after)}</span></>}

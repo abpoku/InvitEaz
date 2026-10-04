@@ -24,7 +24,7 @@ interface Data {
   allowance: { extraGuests: number; guestsAdded: number };
   // Null when the event has no ticketing configured.
   tickets: {
-    members: { inviteeId: string; name: string; tier: string; priceCents: number }[];
+    members: { inviteeId: string; name: string; tier: string; priceCents: number; declined: boolean }[];
     owedCents: number;
     paidCents: number;
     balanceCents: number;
@@ -152,7 +152,9 @@ function TicketSummary({ tickets }: { tickets: NonNullable<Data["tickets"]> }) {
           <li key={m.inviteeId} className="flex items-center justify-between gap-3 py-2">
             <span className="text-ink">
               {m.name}
-              {m.tier && <span className="text-ink-faint"> · {m.tier}</span>}
+              {m.declined
+                ? <span className="text-ink-faint"> · Declined, no ticket needed</span>
+                : m.tier && <span className="text-ink-faint"> · {m.tier}</span>}
             </span>
             <span className="text-ink-soft tabular-nums">{formatCurrency(m.priceCents)}</span>
           </li>

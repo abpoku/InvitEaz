@@ -192,6 +192,15 @@ export function priceForInvitee(customFieldsJson: string | null, fieldKey: strin
   return tier?.price_cents ?? 0;
 }
 
+type RsvpStatus = "attending" | "declined" | "maybe" | null;
+
+/** What one invitee owes: their tier price — unless they've declined, in which case $0. Someone who
+ * isn't coming doesn't need a ticket. This is the single rule every owed/balance figure in the app
+ * goes through (Tickets tab rows, group totals, the summary card, the guest group link). */
+export function owedFor(row: { custom_fields: string | null; rsvp_status?: RsvpStatus }, fieldKey: string, tiers: TicketTierRow[]): number {
+  return row.rsvp_status === "declined" ? 0 : priceForInvitee(row.custom_fields, fieldKey, tiers);
+}
+
 export function priceForGroup(members: Pick<InviteeRow, "custom_fields">[], fieldKey: string, tiers: TicketTierRow[]): number {
   return members.reduce((sum, m) => sum + priceForInvitee(m.custom_fields, fieldKey, tiers), 0);
 }
@@ -434,7 +443,9 @@ export interface TicketingSummaryGroup {
 
 /** The Tickets tab's summary card. Expected counts everyone except people who declined; Outstanding
  * and Credits are per *party* (a group as one unit, an ungrouped invitee as another) so one family's
- * overpayment never hides another's balance. Donations are tracked entirely separately. */
+ * overpayment never hides another's balance. Declined invitees owe $0 (owedFor), so they add nothing
+ * to Expected or Outstanding — and anything they already paid shows up as credit. Donations are
+ * tracked entirely separately. */
 export interface TicketingTotals {
   expectedCents: number;
   collectedCents: number;
@@ -469,22 +480,22 @@ function tierValueFromCustomFields(customFieldsJson: string | null, fieldKey: st
 
 /** The one rule for a group's totals — shared by the Tickets tab's group rows (getTicketingSummary)
  * and the guest-facing group RSVP link (getGroupTicketBalance), so the two can never disagree.
- * Owed = every current member's own tier price; Paid = payments tagged to the group itself plus
+ * Owed = every current member's own tier price ($0 for anyone who declined — see owedFor); Paid = payments tagged to the group itself plus
  * each current member's individually-tagged payments. */
 function groupTotals(
-  members: { invitee_id: string; custom_fields: string | null }[],
+  members: { invitee_id: string; custom_fields: string | null; rsvp_status: RsvpStatus }[],
   groupPaidCents: number,
   paidByInvitee: Record<string, number>,
   fieldKey: string,
   tiers: TicketTierRow[]
 ): { owedCents: number; paidCents: number } {
-  const owedCents = priceForGroup(members, fieldKey, tiers);
+  const owedCents = members.reduce((sum, m) => sum + owedFor(m, fieldKey, tiers), 0);
   const paidCents = groupPaidCents + members.reduce((sum, m) => sum + (paidByInvitee[m.invitee_id] || 0), 0);
   return { owedCents, paidCents };
 }
 
 export interface GroupTicketBalance {
-  members: { inviteeId: string; name: string; tier: string; priceCents: number }[];
+  members: { inviteeId: string; name: string; tier: string; priceCents: number; declined: boolean }[];
   owedCents: number;
   paidCents: number;
   balanceCents: number;
@@ -500,9 +511,13 @@ export async function getGroupTicketBalance(eventId: string, groupId: string): P
   if (!config.enabled || !config.field) return null;
   const fieldKey = config.field.key;
   const [members, groupPaid, memberPaid] = await Promise.all([
-    query<{ invitee_id: string; first_name: string; last_name: string; custom_fields: string | null }>(
-      `SELECT id as invitee_id, first_name, last_name, custom_fields FROM invitees
-       WHERE group_id = ? AND active = 1 ORDER BY added_by_guest ASC, created_at ASC`,
+    query<{ invitee_id: string; first_name: string; last_name: string; custom_fields: string | null; rsvp_status: RsvpStatus }>(
+      `SELECT iv.id as invitee_id, iv.first_name, iv.last_name, iv.custom_fields,
+         (SELECT r.rsvp_status FROM rsvp_responses r
+            JOIN invitations i ON i.id = r.invitation_id
+           WHERE i.invitee_id = iv.id ORDER BY r.responded_at DESC LIMIT 1) as rsvp_status
+       FROM invitees iv
+       WHERE iv.group_id = ? AND iv.active = 1 ORDER BY iv.added_by_guest ASC, iv.created_at ASC`,
       [groupId]
     ),
     queryOne<{ total: string | null; donated: string | null }>(
@@ -526,7 +541,8 @@ export async function getGroupTicketBalance(eventId: string, groupId: string): P
       inviteeId: m.invitee_id,
       name: fullName(m.first_name, m.last_name),
       tier: tierValueFromCustomFields(m.custom_fields, fieldKey),
-      priceCents: priceForInvitee(m.custom_fields, fieldKey, config.tiers),
+      priceCents: owedFor(m, fieldKey, config.tiers),
+      declined: m.rsvp_status === "declined",
     })),
     owedCents,
     paidCents,
@@ -586,7 +602,7 @@ export async function getTicketingSummary(eventId: string, assemblyId?: string |
 
   const invitees: TicketingSummaryInvitee[] = rows.map((row) => {
     const tier = tierValueFromCustomFields(row.custom_fields, fieldKey);
-    const owedCents = priceForInvitee(row.custom_fields, fieldKey, config.tiers);
+    const owedCents = owedFor(row, fieldKey, config.tiers);
     const individualPaid = paidByInvitee[row.invitee_id] || 0;
     const members = row.group_id ? membersByGroup.get(row.group_id) : undefined;
     let groupShareCents = 0;
@@ -598,7 +614,12 @@ export async function getTicketingSummary(eventId: string, assemblyId?: string |
       const valid = allocations.filter((a) => a.group_id === row.group_id && memberIds.has(a.invitee_id));
       const pool = (paidByGroup[row.group_id] || 0) - valid.reduce((sum, a) => sum + a.amount_cents, 0);
       const mine = valid.filter((a) => a.invitee_id === row.invitee_id).reduce((sum, a) => sum + a.amount_cents, 0);
-      groupShareCents = mine + Math.round(pool / members.length);
+      // The equal share goes to members who still need a ticket — a declined member owes $0, so
+      // giving them a slice would show them in credit while the people attending looked short.
+      // (If everyone declined, it's shared across all of them as before.)
+      const sharers = members.some((m) => m.rsvp_status !== "declined") ? members.filter((m) => m.rsvp_status !== "declined") : members;
+      const isSharer = sharers.some((m) => m.invitee_id === row.invitee_id);
+      groupShareCents = mine + (isSharer ? Math.round(pool / sharers.length) : 0);
     }
     const paidCents = individualPaid + groupShareCents;
     return {
@@ -639,23 +660,23 @@ export async function getTicketingSummary(eventId: string, assemblyId?: string |
 
   // ---- Summary card ----
   const notDeclined = (r: (typeof rows)[number]) => r.rsvp_status !== "declined";
-  const priceOf = (r: (typeof rows)[number]) => priceForInvitee(r.custom_fields, fieldKey, config.tiers);
+  const priceOf = (r: (typeof rows)[number]) => owedFor(r, fieldKey, config.tiers);
   const groupIds = new Set(groupRows.map((g) => g.id));
   let expectedCents = 0, outstandingCents = 0, creditCents = 0;
   const party = (owed: number, paid: number) => {
     const bal = owed - paid;
     if (bal > 0) outstandingCents += bal; else creditCents += -bal;
   };
-  for (const r of rows) if (notDeclined(r)) expectedCents += priceOf(r);
+  for (const r of rows) expectedCents += priceOf(r);
   for (const g of groupRows) {
     const members = membersByGroup.get(g.id) || [];
-    const owed = members.filter(notDeclined).reduce((sum, m) => sum + priceOf(m), 0);
+    const owed = members.reduce((sum, m) => sum + priceOf(m), 0);
     const paid = (paidByGroup[g.id] || 0) + members.reduce((sum, m) => sum + (paidByInvitee[m.invitee_id] || 0), 0);
     party(owed, paid);
   }
   for (const r of rows) {
     if (r.group_id && groupIds.has(r.group_id)) continue;
-    party(notDeclined(r) ? priceOf(r) : 0, paidByInvitee[r.invitee_id] || 0);
+    party(priceOf(r), paidByInvitee[r.invitee_id] || 0);
   }
   const collectedCents =
     rows.reduce((sum, r) => sum + (paidByInvitee[r.invitee_id] || 0), 0) +
