@@ -17,6 +17,7 @@ export async function PUT(req: Request, { params }: { params: { id: string; paym
     return NextResponse.json({ error: "Group payment not found." }, { status: 404 });
   }
   if (payment.voided_at) return NextResponse.json({ error: "A voided payment can't be split." }, { status: 400 });
+  if (payment.kind === "refund") return NextResponse.json({ error: "A refund can't be split." }, { status: 400 });
 
   let body: any = {};
   try { body = await req.json(); } catch {}
@@ -37,8 +38,9 @@ export async function PUT(req: Request, { params }: { params: { id: string; paym
     if (a.amountCents > 0) allocations.push({ inviteeId: a.inviteeId, amountCents: a.amountCents });
   }
   const total = allocations.reduce((sum, a) => sum + a.amountCents, 0);
-  if (total > payment.amount_cents) {
-    return NextResponse.json({ error: "The split adds up to more than the payment." }, { status: 400 });
+  // Only the ticket portion is split; any donation portion stays in the donations bucket.
+  if (total > payment.amount_cents - payment.donation_cents) {
+    return NextResponse.json({ error: "The split adds up to more than the payment's ticket portion." }, { status: 400 });
   }
 
   await replaceAllocations(payment.id, allocations);

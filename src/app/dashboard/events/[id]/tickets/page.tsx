@@ -4,6 +4,7 @@ import { getTicketingSummary } from "@/lib/models/ticketing";
 import { getCurrentUser } from "@/lib/session";
 import { CloneFilter } from "@/components/responses/CloneFilter";
 import { TicketsManager } from "@/components/tickets/TicketsManager";
+import { TicketsSummaryCard } from "@/components/tickets/TicketsSummaryCard";
 
 export default async function TicketsPage({ params, searchParams }: { params: { id: string }; searchParams: { clone?: string } }) {
   const user = await getCurrentUser();
@@ -19,12 +20,17 @@ export default async function TicketsPage({ params, searchParams }: { params: { 
 
   return (
     <div className="p-4 sm:p-8">
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-        <div>
+      <div className="flex flex-col lg:flex-row lg:items-start justify-between gap-4">
+        <div className="shrink-0">
           <h2 className="font-serif text-xl text-ink">Tickets</h2>
           <p className="mt-1 text-sm text-ink-soft">Record and edit ticket payments.</p>
+          {clones.length > 0 && <div className="mt-3"><CloneFilter clones={clones} current={selectedClone || ""} /></div>}
         </div>
-        {clones.length > 0 && <CloneFilter clones={clones} current={selectedClone || ""} />}
+        {summary?.fieldLabel && (
+          <div className="w-full lg:max-w-2xl">
+            <TicketsSummaryCard eventId={params.id} clone={assemblyId} totals={summary.totals} donations={summary.donations} />
+          </div>
+        )}
       </div>
 
       {!event.ticketing_enabled ? (

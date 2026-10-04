@@ -40,7 +40,20 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
     await logAudit(params.id, access.user.email, "ticketing.updated", `enabled=${!!body.enabled}`);
   }
 
-  if (body.fieldId === undefined && body.enabled === undefined) {
+  // Donations/tips bucket. Turning it off never touches recorded donations — they stay in the ledger
+  // and keep showing in totals; it only stops new money being routed there.
+  if (body.donationsEnabled !== undefined || body.donationsLabel !== undefined) {
+    const patch: Record<string, unknown> = {};
+    if (body.donationsEnabled !== undefined) patch.donations_enabled = body.donationsEnabled ? 1 : 0;
+    if (body.donationsLabel !== undefined) {
+      const label = typeof body.donationsLabel === "string" ? body.donationsLabel.trim().slice(0, 40) : "";
+      patch.donations_label = label || null;
+    }
+    await updateEvent(params.id, patch as any);
+    await logAudit(params.id, access.user.email, "ticketing.donations_updated", JSON.stringify(patch));
+  }
+
+  if (body.fieldId === undefined && body.enabled === undefined && body.donationsEnabled === undefined && body.donationsLabel === undefined) {
     return NextResponse.json({ error: "Nothing to update." }, { status: 400 });
   }
 

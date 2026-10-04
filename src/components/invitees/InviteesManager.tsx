@@ -252,6 +252,24 @@ export function InviteesManager({ eventId, groupRsvpMode, nameFormat }: { eventI
     [groups, invitees]
   );
 
+  // What the Group view *shows*: with any search/status/clone filter active, only groups with at least
+  // one matching member, listing just those members (totalMembers keeps the real size for the count).
+  // Group-level actions (bulk edit, remove, copy link) still act on groupRows' full membership.
+  // A bulk action must never touch rows the planner can't currently see.
+  useEffect(() => {
+    setSelectedIds(new Set());
+    setSelectedGroupIds(new Set());
+  }, [query, statusFilter, assemblyFilter]);
+
+  const groupFilterActive = !!query || statusFilter !== "all" || assemblyFilter !== "all";
+  const visibleGroupRows = useMemo(() => {
+    if (!groupFilterActive) return groupRows.map((g) => ({ ...g, totalMembers: g.members.length }));
+    const matching = new Set(filtered.map((i) => i.id));
+    return groupRows
+      .map((g) => ({ ...g, totalMembers: g.members.length, members: g.members.filter((m) => matching.has(m.id)) }))
+      .filter((g) => g.members.length > 0 || (!!query && g.name.toLowerCase().includes(query.toLowerCase()) && statusFilter === "all"));
+  }, [groupRows, filtered, groupFilterActive, query, statusFilter]);
+
   function bulkEditGroup(groupId: string) {
     const members = groupRows.find((g) => g.id === groupId)?.members || [];
     setSelectedIds(new Set(members.map((m) => m.id)));
@@ -513,8 +531,8 @@ export function InviteesManager({ eventId, groupRsvpMode, nameFormat }: { eventI
           <div className="mt-6 card overflow-x-auto">
             {loading ? (
               <p className="p-8 text-sm text-ink-faint text-center">Loading groups…</p>
-            ) : groupRows.length === 0 ? (
-              <p className="p-10 text-sm text-ink-faint text-center">No groups yet.</p>
+            ) : visibleGroupRows.length === 0 ? (
+              <p className="p-10 text-sm text-ink-faint text-center">{groupRows.length === 0 ? "No groups yet." : "No groups match your filters."}</p>
             ) : (
               <table className="w-full min-w-[640px] text-sm">
                 <thead>
@@ -529,7 +547,7 @@ export function InviteesManager({ eventId, groupRsvpMode, nameFormat }: { eventI
                   </tr>
                 </thead>
                 <tbody>
-                  {groupRows.map((g) => {
+                  {visibleGroupRows.map((g) => {
                     const expanded = expandedGroupIds.has(g.id);
                     const groupColSpan = 4 + (assemblies.length > 0 ? 1 : 0);
                     return (
@@ -567,17 +585,19 @@ export function InviteesManager({ eventId, groupRsvpMode, nameFormat }: { eventI
                           {assemblies.find((a) => a.id === g.assembly_id)?.name || "—"}
                         </td>
                       )}
-                      <td className="px-5 py-3 text-ink-soft whitespace-nowrap">{g.members.length} member{g.members.length === 1 ? "" : "s"}</td>
+                      <td className="px-5 py-3 text-ink-soft whitespace-nowrap">
+                        {g.members.length !== g.totalMembers ? `${g.members.length} of ${g.totalMembers}` : g.totalMembers} member{g.totalMembers === 1 ? "" : "s"}
+                      </td>
                       <td className="px-5 py-3 text-right whitespace-nowrap">
-                        {g.members.length > 0 && g.rsvp_token && (
+                        {g.totalMembers > 0 && g.rsvp_token && (
                           <button onClick={() => copyGroupLink(g)} className="text-wine-500 hover:underline text-xs font-medium mr-3" title="One link for the whole group to RSVP together">
                             {copiedId === g.id ? "Copied!" : "Copy group link"}
                           </button>
                         )}
-                        <button onClick={() => bulkEditGroup(g.id)} disabled={g.members.length === 0} className="text-xs text-ink-faint hover:text-ink mr-3 disabled:opacity-40">Bulk edit</button>
-                        <button onClick={() => removeGroup(g.id)} disabled={g.members.length === 0} className="text-xs text-ink-faint hover:text-clay-600 mr-3 disabled:opacity-40">Remove</button>
+                        <button onClick={() => bulkEditGroup(g.id)} disabled={g.totalMembers === 0} className="text-xs text-ink-faint hover:text-ink mr-3 disabled:opacity-40">Bulk edit</button>
+                        <button onClick={() => removeGroup(g.id)} disabled={g.totalMembers === 0} className="text-xs text-ink-faint hover:text-clay-600 mr-3 disabled:opacity-40">Remove</button>
                         <button onClick={() => startRenameGroup(g)} className="text-xs text-ink-faint hover:text-ink mr-3">Rename</button>
-                        {g.members.length === 0 && (
+                        {g.totalMembers === 0 && (
                           <button onClick={() => deleteGroupRow(g.id)} disabled={groupBusyId === g.id} className="text-xs text-clay-600 hover:underline disabled:opacity-40">
                             {groupBusyId === g.id ? "Deleting…" : "Delete"}
                           </button>

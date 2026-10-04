@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { requireAssemblyScope } from "@/lib/session";
 import { canManageInvitee, canManageGroup } from "@/lib/models/invitees";
-import { createPayment, listPaymentsWithAllocations } from "@/lib/models/ticketing";
+import { createPayment, listPaymentsWithAllocations, getTicketingConfig, refundableFor } from "@/lib/models/ticketing";
 import { logAudit } from "@/lib/models/events";
 import { validatePaymentDetails } from "@/lib/payment-methods";
 
@@ -25,6 +25,27 @@ export async function POST(req: Request, { params }: { params: { id: string } })
     : await canManageGroup(targetId, params.id, access.assemblyId);
   if (!allowed) return NextResponse.json({ error: "You don't have permission to do this." }, { status: 403 });
 
+  // kind = "refund": money handed back from one bucket, capped at what this target has in it.
+  // kind = "payment" (default): donationCents of it (0..amount) goes to the donations bucket.
+  const kind = body.kind === "refund" ? "refund" : "payment";
+  let donationCents = 0;
+  const { donations } = await getTicketingConfig(params.id);
+  if (kind === "refund") {
+    if (body.bucket !== "ticket" && body.bucket !== "donation") return NextResponse.json({ error: "Choose what this refund comes out of." }, { status: 400 });
+    const available = await refundableFor(targetType === "invitee" ? { inviteeId: targetId } : { groupId: targetId });
+    const cap = body.bucket === "donation" ? available.donationCents : available.ticketCents;
+    if (amountCents > cap) {
+      return NextResponse.json({ error: `You can refund at most $${(cap / 100).toFixed(2)} from ${body.bucket === "donation" ? donations.label : "ticket payments"} here.` }, { status: 400 });
+    }
+    donationCents = body.bucket === "donation" ? amountCents : 0;
+  } else if (body.donationCents !== undefined && body.donationCents !== 0) {
+    if (!Number.isInteger(body.donationCents) || body.donationCents < 0 || body.donationCents > amountCents) {
+      return NextResponse.json({ error: "The donation portion must be between $0 and the payment amount." }, { status: 400 });
+    }
+    if (!donations.enabled) return NextResponse.json({ error: `${donations.label} isn't turned on for this event.` }, { status: 400 });
+    donationCents = body.donationCents;
+  }
+
   const payment = await createPayment({
     eventId: params.id,
     inviteeId: targetType === "invitee" ? targetId : undefined,
@@ -35,8 +56,13 @@ export async function POST(req: Request, { params }: { params: { id: string } })
     methodOther: typeof body.methodOther === "string" ? body.methodOther.trim() : undefined,
     note: typeof note === "string" && note.trim() ? note.trim() : undefined,
     recordedBy: access.user.email,
+    kind,
+    donationCents,
   });
-  await logAudit(params.id, access.user.email, "payments.recorded", `${amountCents} cents (${body.method}, ${body.paidOn}) recorded for ${targetType} ${targetId}`);
+  await logAudit(
+    params.id, access.user.email, kind === "refund" ? "payments.refunded" : "payments.recorded",
+    `${amountCents} cents${donationCents ? ` (${donationCents} to donations)` : ""} (${body.method}, ${body.paidOn}) ${kind === "refund" ? `refunded from ${body.bucket} to` : "recorded for"} ${targetType} ${targetId}`
+  );
 
   return NextResponse.json({ payment });
 }
@@ -54,8 +80,10 @@ export async function GET(req: Request, { params }: { params: { id: string } }) 
 
   if (inviteeId) {
     if (!(await canManageInvitee(inviteeId, params.id, access.assemblyId))) return NextResponse.json({ error: "You don't have permission to do this." }, { status: 403 });
-    return NextResponse.json({ payments: await listPaymentsWithAllocations({ inviteeId }, includeVoided) });
+    const [payments, refundable] = await Promise.all([listPaymentsWithAllocations({ inviteeId }, includeVoided), refundableFor({ inviteeId })]);
+    return NextResponse.json({ payments, refundable });
   }
   if (!(await canManageGroup(groupId!, params.id, access.assemblyId))) return NextResponse.json({ error: "You don't have permission to do this." }, { status: 403 });
-  return NextResponse.json({ payments: await listPaymentsWithAllocations({ groupId: groupId! }, includeVoided) });
+  const [payments, refundable] = await Promise.all([listPaymentsWithAllocations({ groupId: groupId! }, includeVoided), refundableFor({ groupId: groupId! })]);
+  return NextResponse.json({ payments, refundable });
 }

@@ -28,6 +28,7 @@ interface Data {
     owedCents: number;
     paidCents: number;
     balanceCents: number;
+    donation: { label: string; cents: number } | null;
   } | null;
   responder: { name: string; email: string; phone: string } | null;
   locked: boolean;
@@ -171,6 +172,11 @@ function TicketSummary({ tickets }: { tickets: NonNullable<Data["tickets"]> }) {
           <dd className={`tabular-nums ${balanceCents > 0 ? "text-wine-700" : "text-moss-600"}`}>{formatCurrency(Math.abs(balanceCents))}</dd>
         </div>
       </dl>
+      {tickets.donation && tickets.donation.cents > 0 && (
+        <p className="mt-3 rounded bg-moss-50 px-3 py-2 text-sm text-moss-600">
+          {tickets.donation.label}: <span className="font-medium tabular-nums">{formatCurrency(tickets.donation.cents)}</span> — thank you for your generosity!
+        </p>
+      )}
       <p className="mt-3 text-xs text-ink-faint">Payments are recorded by the organizer. Contact them with any questions about your balance.</p>
     </div>
   );

@@ -256,6 +256,27 @@ Overview's config sections; clone-scoped roles never see it).
   doesn't force a method onto it. Unlike `rsvp_responses`, entries are **editable in place**
   with a soft void (`voided_at`/`voided_by`), not append-only — a planner fixing a mis-entered
   amount is the common case here, not a rare correction.
+- **Donations/tips and refunds share the same ledger.** `ticket_payments.donation_cents` is the
+  part of a row's `amount_cents` that belongs to the planner-named donations bucket
+  (`events.donations_enabled`/`donations_label`, set on the Ticketing card): 0 for an ordinary
+  payment, the overpayment for "apply the extra to donations", all of it for a direct gift.
+  `kind = 'refund'` rows are money handed back, out of tickets (`donation_cents = 0`) or donations
+  (`donation_cents = amount_cents`), capped at what that invitee/group has in that bucket
+  (`refundableFor()`). **Every ticket sum must go through `ticketNet()`** in `ticketing.ts`
+  (`±(amount_cents - donation_cents)`) — a raw `SUM(amount_cents)` would count donations as
+  ticket money and refunds as payments. Voiding a payment, or editing its amount/donation portion,
+  is rejected if a refund already drew on that money (void/edit the refund first). Splits divide
+  only a payment's ticket portion.
+- **Tickets summary card** (`TicketsSummaryCard`, from `getTicketingSummary().totals`): Expected
+  counts every non-declined invitee's tier price; Outstanding/Credits are per *party* (a group as
+  one unit, an ungrouped invitee as another) with declined members' prices excluded — so they can
+  differ from the per-row Balance column, which still charges every member regardless of RSVP.
+  Donations are their own tile, linking to `GET .../donations` (`listDonations`).
+- **RSVP status for filtering comes from the latest response.** `listInvitees` returns
+  `COALESCE(latest rsvp_status, invitations.status)` and one (earliest) invitation per invitee; the
+  Invitees, Responses, and Tickets filters all key off that same source, never
+  `invitations.status` alone. Group views show a group when any member matches. Changing a
+  filter clears the current selection, so a bulk action can never hit hidden rows.
 - **Group payments can be custom-split** (`ticket_payment_allocations`): portions credited to
   specific current members instead of shared equally. The payment's own amount/group tag never
   change, so the group total doesn't either — only the per-member breakdown does. On the

@@ -1,6 +1,6 @@
 "use client";
 
-import { Fragment, useMemo, useState } from "react";
+import { Fragment, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { StatusBadge } from "@/components/StatusBadge";
 import { ViewToggle } from "@/components/ViewToggle";
@@ -19,8 +19,12 @@ const STATUS_ACTIVE_CLASSES: Record<Status, string> = {
   declined: "bg-clay-500/10 text-clay-600",
 };
 
+type StatusFilter = "all" | Status | "no_response";
+type SortKey = "name" | "recent" | "status" | "group";
+const STATUS_ORDER: Record<string, number> = { attending: 0, maybe: 1, declined: 2 };
+
 export function ResponsesManager({
-  eventId, rows, answersByResponseId, questions, cloneNameById, showCloneColumn, canMutate,
+  eventId, rows: allRows, answersByResponseId, questions, cloneNameById, showCloneColumn, canMutate,
 }: {
   eventId: string;
   rows: InviteeResponseRow[];
@@ -43,6 +47,31 @@ export function ResponsesManager({
   const [groupBulkNumAttending, setGroupBulkNumAttending] = useState("1");
   const [groupBulkBusy, setGroupBulkBusy] = useState(false);
   const [expandedGroupIds, setExpandedGroupIds] = useState<Set<string>>(new Set());
+  const [q, setQ] = useState("");
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
+  const [sort, setSort] = useState<SortKey>("name");
+
+  // Everything below (selection, select-all, the table) works off the filtered + sorted rows, so
+  // "Select all" only ever selects what's actually on screen.
+  const rows = useMemo(() => {
+    const needle = q.trim().toLowerCase();
+    const name = (r: InviteeResponseRow) => fullName(r.first_name, r.last_name);
+    return allRows
+      .filter((r) => !needle || `${name(r)} ${r.email || ""} ${r.group_name || ""}`.toLowerCase().includes(needle))
+      .filter((r) => statusFilter === "all" || (statusFilter === "no_response" ? !r.rsvp_status : r.rsvp_status === statusFilter))
+      .sort((a, b) => {
+        if (sort === "recent") return (b.responded_at || "").localeCompare(a.responded_at || "") || name(a).localeCompare(name(b));
+        if (sort === "status") return (STATUS_ORDER[a.rsvp_status || ""] ?? 3) - (STATUS_ORDER[b.rsvp_status || ""] ?? 3) || name(a).localeCompare(name(b));
+        if (sort === "group") return (a.group_name || "\uffff").localeCompare(b.group_name || "\uffff") || name(a).localeCompare(name(b));
+        return name(a).localeCompare(name(b));
+      });
+  }, [allRows, q, statusFilter, sort]);
+  const filtering = q.trim() !== "" || statusFilter !== "all";
+  // A bulk action must never touch rows the planner can't currently see.
+  useEffect(() => {
+    setSelectedIds(new Set());
+    setSelectedGroupIds(new Set());
+  }, [q, statusFilter]);
 
   function toggleGroupExpanded(groupId: string) {
     setExpandedGroupIds((prev) => {
@@ -112,7 +141,7 @@ export function ResponsesManager({
 
   const groupStatusRows = useMemo(() => {
     const map = new Map<string, { groupId: string; name: string; invitationIds: string[]; members: InviteeResponseRow[]; counts: Record<Status | "no_response", number> }>();
-    for (const r of rows) {
+    for (const r of allRows) {
       if (!r.group_id) continue;
       const entry = map.get(r.group_id) ?? {
         groupId: r.group_id,
@@ -128,7 +157,15 @@ export function ResponsesManager({
       map.set(r.group_id, entry);
     }
     return [...map.values()].sort((a, b) => a.name.localeCompare(b.name));
-  }, [rows]);
+  }, [allRows]);
+
+  // Group view: a group shows when any member matches the search/status filter; its counts and
+  // member list stay whole, so "Attending 2 · Declined 1" always describes the real household.
+  const visibleGroups = useMemo(() => {
+    if (!filtering) return groupStatusRows;
+    const matching = new Set(rows.map((r) => r.invitee_id));
+    return groupStatusRows.filter((g) => g.members.some((m) => matching.has(m.invitee_id)));
+  }, [groupStatusRows, rows, filtering]);
 
   async function setGroupStatus(group: { groupId: string; invitationIds: string[] }, status: Status) {
     setGroupBusyId(group.groupId);
@@ -150,9 +187,9 @@ export function ResponsesManager({
     });
   }
 
-  const allGroupsSelected = groupStatusRows.length > 0 && groupStatusRows.every((g) => selectedGroupIds.has(g.groupId));
+  const allGroupsSelected = visibleGroups.length > 0 && visibleGroups.every((g) => selectedGroupIds.has(g.groupId));
   function toggleSelectAllGroups() {
-    setSelectedGroupIds((prev) => (allGroupsSelected ? new Set() : new Set(groupStatusRows.map((g) => g.groupId))));
+    setSelectedGroupIds((prev) => (allGroupsSelected ? new Set() : new Set(visibleGroups.map((g) => g.groupId))));
   }
 
   async function applyGroupBulk() {
@@ -174,11 +211,42 @@ export function ResponsesManager({
 
   return (
     <div>
-      {(groupOptions.length > 0 || view === "group") && (
+      {(groupOptions.length > 0 || groupStatusRows.length > 0 || view === "group") && (
         <div className="mt-4">
           <ViewToggle value={view} onChange={setView} />
         </div>
       )}
+
+      <div className="mt-4 flex flex-wrap items-center gap-2">
+        <input
+          className="input flex-1 min-w-[180px] max-w-xs"
+          placeholder="Search name, email, or group…"
+          aria-label="Search"
+          value={q}
+          onChange={(e) => setQ(e.target.value)}
+        />
+        <select className="input w-auto" aria-label="RSVP status" value={statusFilter} onChange={(e) => setStatusFilter(e.target.value as StatusFilter)}>
+          <option value="all">All statuses</option>
+          <option value="attending">Attending</option>
+          <option value="maybe">Maybe</option>
+          <option value="declined">Declined</option>
+          <option value="no_response">No response</option>
+        </select>
+        {view === "individual" && (
+          <select className="input w-auto" aria-label="Sort by" value={sort} onChange={(e) => setSort(e.target.value as SortKey)}>
+            <option value="name">Sort: Name (A–Z)</option>
+            <option value="recent">Sort: Most recent response</option>
+            <option value="status">Sort: Status</option>
+            <option value="group">Sort: Group</option>
+          </select>
+        )}
+        {filtering && (
+          <span className="text-sm text-ink-soft">
+            Showing {view === "individual" ? rows.length : visibleGroups.length} of {view === "individual" ? allRows.length : groupStatusRows.length} ·{" "}
+            <button onClick={() => { setQ(""); setStatusFilter("all"); }} className="font-medium text-wine-500 hover:underline">Clear filters</button>
+          </span>
+        )}
+      </div>
 
       {view === "group" ? (
         <>
@@ -205,8 +273,8 @@ export function ResponsesManager({
           )}
 
           <div className="mt-6 card overflow-x-auto">
-          {groupStatusRows.length === 0 ? (
-            <p className="p-10 text-sm text-ink-faint text-center">No groups yet.</p>
+          {visibleGroups.length === 0 ? (
+            <p className="p-10 text-sm text-ink-faint text-center">{groupStatusRows.length === 0 ? "No groups yet." : "No groups match your filters."}</p>
           ) : (
             <table className="w-full min-w-[560px] text-sm">
               <thead>
@@ -222,7 +290,7 @@ export function ResponsesManager({
                 </tr>
               </thead>
               <tbody>
-                {groupStatusRows.map((g) => {
+                {visibleGroups.map((g) => {
                   const expanded = expandedGroupIds.has(g.groupId);
                   const groupColSpan = 2 + (canMutate ? 2 : 0);
                   return (
@@ -350,7 +418,7 @@ export function ResponsesManager({
 
       <div className="mt-6 card overflow-x-auto">
         {rows.length === 0 ? (
-          <p className="p-10 text-sm text-ink-faint text-center">No invitees yet.</p>
+          <p className="p-10 text-sm text-ink-faint text-center">{allRows.length === 0 ? "No invitees yet." : "No one matches your filters."}</p>
         ) : (
           <table className="w-full min-w-[720px] text-sm">
             <thead>

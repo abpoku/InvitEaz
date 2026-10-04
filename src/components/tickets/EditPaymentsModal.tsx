@@ -17,8 +17,12 @@ interface Payment {
   recorded_at: string;
   voided_at: string | null;
   voided_by: string | null;
+  kind: "payment" | "refund";
+  donation_cents: number;
   allocations: { invitee_id: string; amount_cents: number }[];
 }
+
+interface Donations { enabled: boolean; label: string }
 
 const errorBox = "rounded border border-clay-500/30 bg-clay-500/5 text-clay-600 text-sm px-3 py-2.5";
 
@@ -41,14 +45,16 @@ async function send(url: string, method: string, body?: unknown): Promise<string
 /** Edit previously recorded payments for one invitee or group: change date/amount/type/note, void,
  * and — for a group payment — split it among specific members instead of sharing it equally. */
 export function EditPaymentsModal({
-  eventId, target, members, onClose, onChanged, onReceive,
+  eventId, target, members, donations, onClose, onChanged, onReceive, onRefund,
 }: {
   eventId: string;
   target: PaymentTarget;
   members: { id: string; name: string }[]; // the group's current members (empty for an invitee)
+  donations: Donations;
   onClose: () => void;
   onChanged: () => void;
   onReceive: () => void;
+  onRefund: () => void;
 }) {
   const [payments, setPayments] = useState<Payment[] | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -82,7 +88,9 @@ export function EditPaymentsModal({
   }
 
   const active = (payments || []).filter((p) => !p.voided_at);
-  const total = active.reduce((sum, p) => sum + p.amount_cents, 0);
+  const sign = (p: Payment) => (p.kind === "refund" ? -1 : 1);
+  const ticketTotal = active.reduce((sum, p) => sum + sign(p) * (p.amount_cents - p.donation_cents), 0);
+  const donationTotal = active.reduce((sum, p) => sum + sign(p) * p.donation_cents, 0);
   const memberName = (id: string) => members.find((m) => m.id === id)?.name || "Former member";
 
   return (
@@ -106,7 +114,7 @@ export function EditPaymentsModal({
             {payments.map((p) => (
               <li key={p.id} className="py-3">
                 {mode?.id === p.id && mode.kind === "edit" ? (
-                  <EditForm payment={p} onCancel={() => setMode(null)} onSave={async (patch) => done(await send(`/api/events/${eventId}/payments/${p.id}`, "PATCH", patch))} />
+                  <EditForm payment={p} donations={donations} onCancel={() => setMode(null)} onSave={async (patch) => done(await send(`/api/events/${eventId}/payments/${p.id}`, "PATCH", patch))} />
                 ) : mode?.id === p.id && mode.kind === "split" ? (
                   <SplitForm
                     payment={p}
@@ -118,16 +126,30 @@ export function EditPaymentsModal({
                   <div className="flex flex-wrap items-start justify-between gap-3">
                     <div className={`min-w-0 ${p.voided_at ? "opacity-60" : ""}`}>
                       <p className="text-sm text-ink">
-                        <span className={`font-medium tabular-nums ${p.voided_at ? "line-through" : ""}`}>{formatCurrency(p.amount_cents)}</span>
+                        {p.kind === "refund" && <span className="mr-1.5 chip bg-brass-500/10 text-brass-600">Refund</span>}
+                        {p.kind === "payment" && p.donation_cents > 0 && p.donation_cents >= p.amount_cents && (
+                          <span className="mr-1.5 chip bg-moss-50 text-moss-600">{donations.label}</span>
+                        )}
+                        <span className={`font-medium tabular-nums ${p.voided_at ? "line-through" : ""}`}>
+                          {p.kind === "refund" ? "−" : ""}{formatCurrency(p.amount_cents)}
+                        </span>
                         <span className="text-ink-soft"> · {p.paid_on ? formatDateShort(p.paid_on) : "—"} · {paymentMethodLabel(p.method, p.method_other)}</span>
                         {p.voided_at && <span className="ml-2 chip bg-clay-500/10 text-clay-600">Voided</span>}
                       </p>
+                      {p.kind === "refund" && (
+                        <p className="text-xs text-ink-soft">Refunded from {p.donation_cents > 0 ? donations.label : "ticket payments"}</p>
+                      )}
+                      {p.kind === "payment" && p.donation_cents > 0 && p.donation_cents < p.amount_cents && (
+                        <p className="text-xs text-ink-soft">
+                          {formatCurrency(p.amount_cents - p.donation_cents)} to tickets · {formatCurrency(p.donation_cents)} to {donations.label}
+                        </p>
+                      )}
                       {p.note && <p className="text-sm text-ink-soft">{p.note}</p>}
                       {p.allocations.length > 0 && !p.voided_at && (
                         <p className="mt-1 text-xs text-ink-soft">
                           Split: {p.allocations.map((a) => `${memberName(a.invitee_id)} ${formatCurrency(a.amount_cents)}`).join(", ")}
                           {(() => {
-                            const rest = p.amount_cents - p.allocations.reduce((s, a) => s + a.amount_cents, 0);
+                            const rest = p.amount_cents - p.donation_cents - p.allocations.reduce((s, a) => s + a.amount_cents, 0);
                             return rest > 0 ? ` · ${formatCurrency(rest)} shared equally` : "";
                           })()}
                         </p>
@@ -147,7 +169,7 @@ export function EditPaymentsModal({
                       ) : (
                         <div className="flex items-center gap-3 text-xs shrink-0">
                           <button onClick={() => { setError(null); setMode({ kind: "edit", id: p.id }); }} className="text-ink-faint hover:text-ink">Edit</button>
-                          {target.type === "group" && members.length > 0 && (
+                          {target.type === "group" && members.length > 0 && p.kind === "payment" && p.amount_cents > p.donation_cents && (
                             <button onClick={() => { setError(null); setMode({ kind: "split", id: p.id }); }} className="text-ink-faint hover:text-ink">Split</button>
                           )}
                           <button onClick={() => { setError(null); setMode({ kind: "void", id: p.id }); }} className="text-ink-faint hover:text-clay-600">Void</button>
@@ -159,9 +181,17 @@ export function EditPaymentsModal({
               </li>
             ))}
           </ul>
-          <div className="mt-3 flex items-center justify-between gap-3">
-            <p className="text-sm text-ink font-medium">Total received: {formatCurrency(total)}</p>
-            <button onClick={onReceive} className="text-sm font-medium text-wine-500 hover:underline">+ Receive payment</button>
+          <div className="mt-3 flex flex-wrap items-start justify-between gap-3">
+            <div className="text-sm">
+              <p className="text-ink font-medium">Ticket payments: {formatCurrency(ticketTotal)}</p>
+              {(donations.enabled || donationTotal !== 0) && (
+                <p className="text-ink-soft">{donations.label}: {formatCurrency(donationTotal)}</p>
+              )}
+            </div>
+            <div className="flex items-center gap-4">
+              <button onClick={onRefund} className="text-sm font-medium text-ink-soft hover:text-ink">Record refund</button>
+              <button onClick={onReceive} className="text-sm font-medium text-wine-500 hover:underline">+ Receive payment</button>
+            </div>
           </div>
           <p className="mt-2 text-xs text-ink-faint">Voided payments are kept for the record but don&apos;t count toward any balance.</p>
         </>
@@ -170,7 +200,12 @@ export function EditPaymentsModal({
   );
 }
 
-function EditForm({ payment, onCancel, onSave }: { payment: Payment; onCancel: () => void; onSave: (patch: Record<string, unknown>) => void }) {
+function EditForm({ payment, donations, onCancel, onSave }: { payment: Payment; donations: Donations; onCancel: () => void; onSave: (patch: Record<string, unknown>) => void }) {
+  const isRefund = payment.kind === "refund";
+  // Only for ordinary payments: how much of it belongs to the donations bucket. Editable whenever the
+  // bucket is on, or this payment already has a donation part (so a mistaken one can be moved back).
+  const showDonation = !isRefund && (donations.enabled || payment.donation_cents > 0);
+  const [donation, setDonation] = useState((payment.donation_cents / 100).toFixed(2));
   const [paidOn, setPaidOn] = useState(payment.paid_on || localToday());
   const [amount, setAmount] = useState((payment.amount_cents / 100).toFixed(2));
   const [method, setMethod] = useState(payment.method || "");
@@ -187,8 +222,11 @@ function EditForm({ payment, onCancel, onSave }: { payment: Payment; onCancel: (
     // Payments recorded before payment types existed have none — editing them doesn't force one.
     if (!method && payment.method) return setError("Choose a payment type.");
     if (method === "other" && !methodOther.trim()) return setError("Describe the payment type for \"Other\".");
+    const donationCents = showDonation ? Math.max(0, dollarsToCents(donation)) : undefined;
+    if (donationCents !== undefined && donationCents > amountCents) return setError(`The ${donations.label} portion can't be more than the amount.`);
     onSave({
       paidOn, amountCents, note,
+      ...(donationCents !== undefined && donationCents !== payment.donation_cents ? { donationCents } : {}),
       ...(method ? { method, methodOther: method === "other" ? methodOther : null } : {}),
     });
   }
@@ -198,19 +236,19 @@ function EditForm({ payment, onCancel, onSave }: { payment: Payment; onCancel: (
       {error && <div className={errorBox}>{error}</div>}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
         <div>
-          <label className="label">Date received</label>
-          <input type="date" className="input" value={paidOn} max={localToday()} onChange={(e) => setPaidOn(e.target.value)} />
+          <label className="label" htmlFor={`ep-date-${payment.id}`}>Date received</label>
+          <input id={`ep-date-${payment.id}`} type="date" className="input" value={paidOn} max={localToday()} onChange={(e) => setPaidOn(e.target.value)} />
         </div>
         <div>
-          <label className="label">Amount</label>
+          <label className="label" htmlFor={`ep-amount-${payment.id}`}>Amount</label>
           <div className="flex items-center gap-1.5">
             <span className="text-ink-faint text-sm">$</span>
-            <input type="number" inputMode="decimal" min="0" step="0.01" className="input" value={amount} onChange={(e) => setAmount(e.target.value)} />
+            <input id={`ep-amount-${payment.id}`} type="number" inputMode="decimal" min="0" step="0.01" className="input" value={amount} onChange={(e) => setAmount(e.target.value)} />
           </div>
         </div>
         <div>
-          <label className="label">Payment type</label>
-          <select className="input" value={method} onChange={(e) => setMethod(e.target.value)}>
+          <label className="label" htmlFor={`ep-method-${payment.id}`}>Payment type</label>
+          <select id={`ep-method-${payment.id}`} className="input" value={method} onChange={(e) => setMethod(e.target.value)}>
             <option value="">{payment.method ? "Choose…" : "Not recorded"}</option>
             {PAYMENT_METHODS.map((m) => <option key={m.value} value={m.value}>{m.label}</option>)}
           </select>
@@ -221,6 +259,19 @@ function EditForm({ payment, onCancel, onSave }: { payment: Payment; onCancel: (
           <label className="label">Describe payment type</label>
           <input className="input" placeholder="e.g. Zelle, bank transfer" value={methodOther} onChange={(e) => setMethodOther(e.target.value)} />
         </div>
+      )}
+      {showDonation && (
+        <div>
+          <label className="label" htmlFor={`ep-donation-${payment.id}`}>Of this, to {donations.label}</label>
+          <div className="flex items-center gap-1.5 max-w-[12rem]">
+            <span className="text-ink-faint text-sm">$</span>
+            <input id={`ep-donation-${payment.id}`} type="number" inputMode="decimal" min="0" step="0.01" className="input" value={donation} onChange={(e) => setDonation(e.target.value)} />
+          </div>
+          <p className="mt-1 text-xs text-ink-faint">The rest counts toward tickets. Set to 0 to move it all back to tickets.</p>
+        </div>
+      )}
+      {isRefund && (
+        <p className="text-xs text-ink-faint">Refunded from {payment.donation_cents > 0 ? donations.label : "ticket payments"}.</p>
       )}
       <div>
         <label className="label">Note <span className="text-ink-faint font-normal">(optional)</span></label>
@@ -249,13 +300,14 @@ function SplitForm({
     }))
   );
   const assigned = members.reduce((sum, m) => sum + Math.max(0, dollarsToCents(values[m.id] || "")), 0);
-  const remaining = payment.amount_cents - assigned;
+  const ticketPortion = payment.amount_cents - payment.donation_cents;
+  const remaining = ticketPortion - assigned;
   const over = remaining < 0;
 
   return (
     <div className="space-y-3">
       <div>
-        <p className="text-sm text-ink font-medium">Split {formatCurrency(payment.amount_cents)} among members</p>
+        <p className="text-sm text-ink font-medium">Split {formatCurrency(ticketPortion)} among members</p>
         <p className="text-xs text-ink-faint">Anything you don&apos;t assign is shared equally across the group, as before.</p>
       </div>
       <div className="space-y-2">
@@ -277,7 +329,7 @@ function SplitForm({
         ))}
       </div>
       <p className={`text-sm ${over ? "text-clay-600" : "text-ink-soft"}`}>
-        Assigned {formatCurrency(assigned)} of {formatCurrency(payment.amount_cents)}
+        Assigned {formatCurrency(assigned)} of {formatCurrency(ticketPortion)}
         {over ? ` — ${formatCurrency(-remaining)} too much` : remaining > 0 ? ` · ${formatCurrency(remaining)} shared equally` : " · fully assigned"}
       </p>
       <div className="flex flex-wrap justify-end gap-2">

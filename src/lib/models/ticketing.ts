@@ -31,7 +31,18 @@ export interface TicketPaymentRow {
   paid_on: string | null;      // YYYY-MM-DD the money changed hands (backfilled from recorded_at)
   method: string | null;       // see src/lib/payment-methods.ts; NULL for payments that predate it
   method_other: string | null; // description when method = 'other'
+  kind: "payment" | "refund";
+  donation_cents: number;      // part of amount_cents belonging to the donations bucket (see schema.sql)
 }
+
+/** SQL for one ledger row's effect on *ticket* balances: refunds subtract, and any donation portion
+ * never counts toward tickets. Every ticket sum in this file goes through this, so donations can't
+ * leak into a balance. `a` is the ticket_payments table alias. */
+const ticketNet = (a: string) => `(CASE WHEN ${a}.kind = 'refund' THEN -1 ELSE 1 END) * (${a}.amount_cents - ${a}.donation_cents)`;
+/** Same, for the donations bucket. */
+const donationNet = (a: string) => `(CASE WHEN ${a}.kind = 'refund' THEN -1 ELSE 1 END) * ${a}.donation_cents`;
+
+export const DEFAULT_DONATIONS_LABEL = "Donations/Tips";
 
 export interface PaymentAllocation { invitee_id: string; amount_cents: number; }
 export type PaymentWithAllocations = TicketPaymentRow & { allocations: PaymentAllocation[] };
@@ -40,6 +51,7 @@ export interface TicketingConfig {
   enabled: boolean;
   field: InviteeFieldRow | null;
   tiers: TicketTierRow[];
+  donations: { enabled: boolean; label: string };
 }
 
 /** Tiers are authored here and pushed into the linked field's options_json (see createTier/
@@ -50,13 +62,14 @@ export async function getTicketingConfig(eventId: string): Promise<TicketingConf
   const event = await getEventById(eventId);
   const enabled = !!event?.ticketing_enabled;
   const field = event?.ticket_field_id ? (await getInviteeField(event.ticket_field_id)) || null : null;
+  const donations = { enabled: !!event?.donations_enabled, label: event?.donations_label || DEFAULT_DONATIONS_LABEL };
 
   if (!enabled || !field) {
-    return { enabled, field: null, tiers: [] };
+    return { enabled, field: null, tiers: [], donations };
   }
 
   const tiers = await listTicketTiersForField(field.id);
-  return { enabled, field, tiers };
+  return { enabled, field, tiers, donations };
 }
 
 export async function listTicketTiers(eventId: string): Promise<TicketTierRow[]> {
@@ -193,14 +206,17 @@ export async function createPayment(input: {
   methodOther?: string;
   note?: string;
   recordedBy: string;
+  kind?: "payment" | "refund";
+  donationCents?: number; // 0..amountCents — callers validate
 }): Promise<TicketPaymentRow> {
   if (!!input.inviteeId === !!input.groupId) throw new Error("Exactly one of inviteeId/groupId must be set.");
   const id = newId("pay");
   await exec(
-    `INSERT INTO ticket_payments (id, event_id, invitee_id, group_id, amount_cents, paid_on, method, method_other, note, recorded_by)
-     VALUES (?,?,?,?,?,?,?,?,?,?)`,
+    `INSERT INTO ticket_payments (id, event_id, invitee_id, group_id, amount_cents, paid_on, method, method_other, note, recorded_by, kind, donation_cents)
+     VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`,
     [id, input.eventId, input.inviteeId || null, input.groupId || null, input.amountCents, input.paidOn, input.method,
-      input.method === "other" ? input.methodOther || null : null, input.note || null, input.recordedBy]
+      input.method === "other" ? input.methodOther || null : null, input.note || null, input.recordedBy,
+      input.kind || "payment", input.donationCents || 0]
   );
   return (await queryOne<TicketPaymentRow>("SELECT * FROM ticket_payments WHERE id = ?", [id]))!;
 }
@@ -210,11 +226,12 @@ export async function getPayment(id: string): Promise<TicketPaymentRow | undefin
 }
 
 export async function updatePayment(id: string, patch: {
-  amountCents?: number; note?: string | null; paidOn?: string; method?: string; methodOther?: string | null;
+  amountCents?: number; note?: string | null; paidOn?: string; method?: string; methodOther?: string | null; donationCents?: number;
 }): Promise<void> {
   const fields: string[] = [];
   const values: any[] = [];
   if (patch.amountCents !== undefined) { fields.push("amount_cents = ?"); values.push(patch.amountCents); }
+  if (patch.donationCents !== undefined) { fields.push("donation_cents = ?"); values.push(patch.donationCents); }
   if (patch.note !== undefined) { fields.push("note = ?"); values.push(patch.note); }
   if (patch.paidOn !== undefined) { fields.push("paid_on = ?"); values.push(patch.paidOn); }
   if (patch.method !== undefined) {
@@ -276,6 +293,60 @@ export async function listPaymentsWithAllocations(
   }));
 }
 
+export interface DonationEntry {
+  paymentId: string;
+  paidOn: string | null;
+  who: string;
+  targetType: "invitee" | "group";
+  kind: "payment" | "refund";
+  source: "overpayment" | "direct" | "refund";
+  donationCents: number;   // positive; refunds are subtracted by the caller
+  totalCents: number;      // the whole transaction it was part of
+  method: string | null;
+  methodOther: string | null;
+  note: string | null;
+}
+
+/** Every non-voided transaction that touched the donations bucket, newest first — the list behind
+ * the summary card's Donations figure. */
+export async function listDonations(eventId: string, assemblyId?: string | null): Promise<DonationEntry[]> {
+  const rows = await query<TicketPaymentRow & { first_name: string | null; last_name: string | null; group_name: string | null }>(
+    `SELECT tp.*, iv.first_name, iv.last_name, g.name as group_name
+     FROM ticket_payments tp
+     LEFT JOIN invitees iv ON iv.id = tp.invitee_id
+     LEFT JOIN groups g ON g.id = tp.group_id
+     WHERE tp.event_id = ? AND tp.voided_at IS NULL AND tp.donation_cents > 0
+     ${assemblyId ? "AND COALESCE(iv.assembly_id, g.assembly_id) = ?" : ""}
+     ORDER BY tp.paid_on DESC, tp.recorded_at DESC`,
+    assemblyId ? [eventId, assemblyId] : [eventId]
+  );
+  return rows.map((r) => ({
+    paymentId: r.id,
+    paidOn: r.paid_on,
+    who: r.group_id ? r.group_name || "Group" : fullName(r.first_name || "", r.last_name || ""),
+    targetType: r.group_id ? "group" : "invitee",
+    kind: r.kind,
+    source: r.kind === "refund" ? "refund" : r.donation_cents >= r.amount_cents ? "direct" : "overpayment",
+    donationCents: r.donation_cents,
+    totalCents: r.amount_cents,
+    method: r.method,
+    methodOther: r.method_other,
+    note: r.note,
+  }));
+}
+
+/** What one invitee or group could be refunded from each bucket: the net of *their own* ledger rows
+ * (a group's figure is only payments tagged to the group itself, not its members' own payments). */
+export async function refundableFor(target: { inviteeId: string } | { groupId: string }): Promise<{ ticketCents: number; donationCents: number }> {
+  const [col, id] = "inviteeId" in target ? ["invitee_id", target.inviteeId] : ["group_id", target.groupId];
+  const row = await queryOne<{ t: string | null; d: string | null }>(
+    `SELECT SUM(${ticketNet("tp")}) as t, SUM(${donationNet("tp")}) as d FROM ticket_payments tp
+     WHERE tp.${col} = ? AND tp.voided_at IS NULL`,
+    [id]
+  );
+  return { ticketCents: Math.max(0, Number(row?.t || 0)), donationCents: Math.max(0, Number(row?.d || 0)) };
+}
+
 /** Sets each invitee's ticket tier — their value for the linked ticketing field. `tier` must be one
  * of the configured tier names, or "" to clear it. Merges into custom_fields (never trusting it to
  * be a JSON object — see CLAUDE.md), so every other custom field is preserved. */
@@ -313,7 +384,7 @@ export async function listPaymentsForGroup(groupId: string, includeVoided = fals
  * Responses page to compute every row's "Paid" total at once. */
 export async function sumPaymentsByInvitee(eventId: string, assemblyId?: string | null): Promise<Record<string, number>> {
   const rows = await query<{ invitee_id: string; total: string }>(
-    `SELECT tp.invitee_id, SUM(tp.amount_cents) as total
+    `SELECT tp.invitee_id, SUM(${ticketNet("tp")}) as total
      FROM ticket_payments tp
      ${assemblyId ? "JOIN invitees iv ON iv.id = tp.invitee_id" : ""}
      WHERE tp.event_id = ? AND tp.invitee_id IS NOT NULL AND tp.voided_at IS NULL
@@ -326,7 +397,7 @@ export async function sumPaymentsByInvitee(eventId: string, assemblyId?: string 
 
 export async function sumPaymentsByGroup(eventId: string, assemblyId?: string | null): Promise<Record<string, number>> {
   const rows = await query<{ group_id: string; total: string }>(
-    `SELECT tp.group_id, SUM(tp.amount_cents) as total
+    `SELECT tp.group_id, SUM(${ticketNet("tp")}) as total
      FROM ticket_payments tp
      ${assemblyId ? "JOIN groups g ON g.id = tp.group_id" : ""}
      WHERE tp.event_id = ? AND tp.group_id IS NOT NULL AND tp.voided_at IS NULL
@@ -347,6 +418,7 @@ export interface TicketingSummaryInvitee {
   paidCents: number;
   groupShareCents: number;
   balanceCents: number;
+  rsvpStatus: "attending" | "declined" | "maybe" | null; // latest response; null = no response yet
 }
 
 export interface TicketingSummaryGroup {
@@ -357,6 +429,19 @@ export interface TicketingSummaryGroup {
   owedCents: number;
   paidCents: number;
   balanceCents: number;
+  memberRsvpStatuses: ("attending" | "declined" | "maybe" | null)[];
+}
+
+/** The Tickets tab's summary card. Expected counts everyone except people who declined; Outstanding
+ * and Credits are per *party* (a group as one unit, an ungrouped invitee as another) so one family's
+ * overpayment never hides another's balance. Donations are tracked entirely separately. */
+export interface TicketingTotals {
+  expectedCents: number;
+  collectedCents: number;
+  outstandingCents: number;
+  creditCents: number;
+  donationsCents: number;
+  declinedExcluded: number;
 }
 
 export interface TicketingSummary {
@@ -364,6 +449,8 @@ export interface TicketingSummary {
   fieldLabel: string | null;
   fieldKey: string | null;
   tiers: { name: string; priceCents: number }[];
+  donations: { enabled: boolean; label: string };
+  totals: TicketingTotals;
   invitees: TicketingSummaryInvitee[];
   groups: TicketingSummaryGroup[];
   hasGroups: boolean;
@@ -401,6 +488,8 @@ export interface GroupTicketBalance {
   owedCents: number;
   paidCents: number;
   balanceCents: number;
+  // The group's net donations (shown to guests as a thank-you line); null when the bucket is off and empty.
+  donation: { label: string; cents: number } | null;
 }
 
 /** One group's ticket price, payments, and balance, for the public group RSVP link. Null when the
@@ -416,12 +505,13 @@ export async function getGroupTicketBalance(eventId: string, groupId: string): P
        WHERE group_id = ? AND active = 1 ORDER BY added_by_guest ASC, created_at ASC`,
       [groupId]
     ),
-    queryOne<{ total: string | null }>(
-      "SELECT SUM(amount_cents) as total FROM ticket_payments WHERE group_id = ? AND voided_at IS NULL",
+    queryOne<{ total: string | null; donated: string | null }>(
+      `SELECT SUM(${ticketNet("tp")}) as total, SUM(${donationNet("tp")}) as donated
+       FROM ticket_payments tp WHERE tp.group_id = ? AND tp.voided_at IS NULL`,
       [groupId]
     ),
-    query<{ invitee_id: string; total: string }>(
-      `SELECT tp.invitee_id, SUM(tp.amount_cents) as total FROM ticket_payments tp
+    query<{ invitee_id: string; total: string; donated: string }>(
+      `SELECT tp.invitee_id, SUM(${ticketNet("tp")}) as total, SUM(${donationNet("tp")}) as donated FROM ticket_payments tp
        JOIN invitees iv ON iv.id = tp.invitee_id
        WHERE iv.group_id = ? AND iv.active = 1 AND tp.voided_at IS NULL
        GROUP BY tp.invitee_id`,
@@ -430,6 +520,7 @@ export async function getGroupTicketBalance(eventId: string, groupId: string): P
   ]);
   const paidByInvitee = Object.fromEntries(memberPaid.map((r) => [r.invitee_id, Number(r.total)]));
   const { owedCents, paidCents } = groupTotals(members, Number(groupPaid?.total || 0), paidByInvitee, fieldKey, config.tiers);
+  const donatedCents = Number(groupPaid?.donated || 0) + memberPaid.reduce((sum, r) => sum + Number(r.donated || 0), 0);
   return {
     members: members.map((m) => ({
       inviteeId: m.invitee_id,
@@ -440,6 +531,7 @@ export async function getGroupTicketBalance(eventId: string, groupId: string): P
     owedCents,
     paidCents,
     balanceCents: owedCents - paidCents,
+    donation: config.donations.enabled || donatedCents > 0 ? { label: config.donations.label, cents: donatedCents } : null,
   };
 }
 
@@ -455,15 +547,27 @@ export async function getGroupTicketBalance(eventId: string, groupId: string): P
 export async function getTicketingSummary(eventId: string, assemblyId?: string | null): Promise<TicketingSummary> {
   const config = await getTicketingConfig(eventId);
   if (!config.enabled || !config.field) {
-    return { enabled: config.enabled, fieldLabel: null, fieldKey: null, tiers: [], invitees: [], groups: [], hasGroups: false };
+    return {
+      enabled: config.enabled, fieldLabel: null, fieldKey: null, tiers: [], donations: config.donations,
+      totals: { expectedCents: 0, collectedCents: 0, outstandingCents: 0, creditCents: 0, donationsCents: 0, declinedExcluded: 0 },
+      invitees: [], groups: [], hasGroups: false,
+    };
   }
   const fieldKey = config.field.key;
 
-  const [rows, groupRows, paidByInvitee, paidByGroup, allocations] = await Promise.all([
+  const [rows, groupRows, paidByInvitee, paidByGroup, donated, allocations] = await Promise.all([
     listInviteeResponseRows(eventId, assemblyId),
     listGroups(eventId, assemblyId),
     sumPaymentsByInvitee(eventId, assemblyId),
     sumPaymentsByGroup(eventId, assemblyId),
+    queryOne<{ total: string | null }>(
+      `SELECT SUM(${donationNet("tp")}) as total FROM ticket_payments tp
+       LEFT JOIN invitees iv ON iv.id = tp.invitee_id
+       LEFT JOIN groups g ON g.id = tp.group_id
+       WHERE tp.event_id = ? AND tp.voided_at IS NULL
+       ${assemblyId ? "AND COALESCE(iv.assembly_id, g.assembly_id) = ?" : ""}`,
+      assemblyId ? [eventId, assemblyId] : [eventId]
+    ),
     query<{ group_id: string; invitee_id: string; amount_cents: number }>(
       `SELECT p.group_id, a.invitee_id, a.amount_cents FROM ticket_payment_allocations a
        JOIN ticket_payments p ON p.id = a.payment_id
@@ -507,6 +611,7 @@ export async function getTicketingSummary(eventId: string, assemblyId?: string |
       paidCents,
       groupShareCents,
       balanceCents: owedCents - paidCents,
+      rsvpStatus: row.rsvp_status,
     };
   });
 
@@ -526,12 +631,45 @@ export async function getTicketingSummary(eventId: string, assemblyId?: string |
         return b.count - a.count || a.tier.localeCompare(b.tier);
       });
 
-    return { groupId: g.id, name: g.name, memberCount: members.length, tierBreakdown, owedCents, paidCents, balanceCents: owedCents - paidCents };
+    return {
+      groupId: g.id, name: g.name, memberCount: members.length, tierBreakdown, owedCents, paidCents, balanceCents: owedCents - paidCents,
+      memberRsvpStatuses: members.map((m) => m.rsvp_status),
+    };
   });
+
+  // ---- Summary card ----
+  const notDeclined = (r: (typeof rows)[number]) => r.rsvp_status !== "declined";
+  const priceOf = (r: (typeof rows)[number]) => priceForInvitee(r.custom_fields, fieldKey, config.tiers);
+  const groupIds = new Set(groupRows.map((g) => g.id));
+  let expectedCents = 0, outstandingCents = 0, creditCents = 0;
+  const party = (owed: number, paid: number) => {
+    const bal = owed - paid;
+    if (bal > 0) outstandingCents += bal; else creditCents += -bal;
+  };
+  for (const r of rows) if (notDeclined(r)) expectedCents += priceOf(r);
+  for (const g of groupRows) {
+    const members = membersByGroup.get(g.id) || [];
+    const owed = members.filter(notDeclined).reduce((sum, m) => sum + priceOf(m), 0);
+    const paid = (paidByGroup[g.id] || 0) + members.reduce((sum, m) => sum + (paidByInvitee[m.invitee_id] || 0), 0);
+    party(owed, paid);
+  }
+  for (const r of rows) {
+    if (r.group_id && groupIds.has(r.group_id)) continue;
+    party(notDeclined(r) ? priceOf(r) : 0, paidByInvitee[r.invitee_id] || 0);
+  }
+  const collectedCents =
+    rows.reduce((sum, r) => sum + (paidByInvitee[r.invitee_id] || 0), 0) +
+    groupRows.reduce((sum, g) => sum + (paidByGroup[g.id] || 0), 0);
 
   return {
     enabled: true, fieldLabel: config.field.label, fieldKey,
     tiers: config.tiers.map((t) => ({ name: t.option_value, priceCents: t.price_cents })),
+    donations: config.donations,
+    totals: {
+      expectedCents, collectedCents, outstandingCents, creditCents,
+      donationsCents: Number(donated?.total || 0),
+      declinedExcluded: rows.filter((r) => !notDeclined(r)).length,
+    },
     invitees, groups, hasGroups: groups.length > 0,
   };
 }

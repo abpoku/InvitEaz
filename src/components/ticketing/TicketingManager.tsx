@@ -10,6 +10,7 @@ interface TicketingConfig {
   enabled: boolean;
   field: TicketingField | null;
   tiers: TicketTier[];
+  donations: { enabled: boolean; label: string };
 }
 interface DropdownField { id: string; label: string; }
 
@@ -48,6 +49,25 @@ export function TicketingManager({
     if (!res.ok) { setError((await res.json().catch(() => ({}))).error || "Something went wrong."); return; }
     await load();
     router.refresh();
+  }
+
+  async function saveDonations(patch: { donationsEnabled?: boolean; donationsLabel?: string }) {
+    setBusy(true);
+    setError(null);
+    try {
+      const res = await fetch(`/api/events/${eventId}/ticketing`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(patch),
+      });
+      if (!res.ok) { setError((await res.json().catch(() => ({}))).error || "Something went wrong."); return; }
+      await load();
+      router.refresh();
+    } catch {
+      setError("We couldn't reach the server just now.");
+    } finally {
+      setBusy(false);
+    }
   }
 
   async function addTier(e: React.FormEvent) {
@@ -207,7 +227,61 @@ export function TicketingManager({
               )}
             </div>
           )}
+
+          <DonationsSettings
+            key={`${config.donations?.enabled}-${config.donations?.label}`}
+            donations={config.donations || { enabled: false, label: "Donations/Tips" }}
+            canManage={canManage}
+            busy={busy}
+            onSave={saveDonations}
+          />
         </div>
+      )}
+    </div>
+  );
+}
+
+/** The optional donations/tips bucket: overpayments the planner chooses to keep as a gift (and
+ * direct gifts) are tracked here instead of as ticket credit. The planner names it. */
+function DonationsSettings({
+  donations, canManage, busy, onSave,
+}: {
+  donations: { enabled: boolean; label: string };
+  canManage: boolean;
+  busy: boolean;
+  onSave: (patch: { donationsEnabled?: boolean; donationsLabel?: string }) => void;
+}) {
+  const [label, setLabel] = useState(donations.label);
+  return (
+    <div className="pt-4 border-t border-paper-line">
+      <label className="flex items-start gap-2.5 text-sm text-ink">
+        <input
+          type="checkbox"
+          className="mt-0.5"
+          checked={donations.enabled}
+          disabled={!canManage || busy}
+          onChange={() => onSave({ donationsEnabled: !donations.enabled })}
+        />
+        <span>
+          Accept donations / tips
+          <span className="block text-xs text-ink-faint">
+            Keep overpayments (or direct gifts) in a separate bucket instead of as ticket credit. Donations never change anyone&apos;s ticket balance.
+          </span>
+        </span>
+      </label>
+      {donations.enabled && (
+        <form
+          onSubmit={(e) => { e.preventDefault(); if (label.trim() !== donations.label) onSave({ donationsLabel: label }); }}
+          className="mt-3 flex items-end gap-2 max-w-sm"
+        >
+          <div className="flex-1">
+            <label className="label" htmlFor="donations-label">Name shown to planners and guests</label>
+            <input id="donations-label" className="input" maxLength={40} value={label} disabled={!canManage} onChange={(e) => setLabel(e.target.value)} placeholder="Donations/Tips" />
+          </div>
+          {canManage && (
+            <button type="submit" disabled={busy || label.trim() === donations.label} className="btn-secondary shrink-0">Save</button>
+          )}
+        </form>
       )}
     </div>
   );

@@ -31,6 +31,8 @@ export function ReceivePaymentModal({
   const [method, setMethod] = useState("");
   const [methodOther, setMethodOther] = useState("");
   const [note, setNote] = useState("");
+  const [applyTo, setApplyTo] = useState<"ticket" | "donation">("ticket");
+  const [extraToDonations, setExtraToDonations] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -40,13 +42,20 @@ export function ReceivePaymentModal({
       : summary.groups.find((g) => g.groupId === target.id)?.balanceCents
     : undefined;
 
+  const donations = summary.donations;
+  const amountCents = dollarsToCents(amount);
+  // Anything beyond what's still owed. With no balance left (or a credit), the whole amount is extra.
+  const excessCents = applyTo === "ticket" && balanceCents !== undefined && amountCents > 0
+    ? Math.max(0, amountCents - Math.max(0, balanceCents))
+    : 0;
+  const donationCents = applyTo === "donation" ? amountCents : excessCents > 0 && extraToDonations && donations.enabled ? excessCents : 0;
+
   async function submit(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
     if (!target) return setError("Choose who this payment is for.");
     if (!paidOn) return setError("Choose the date this payment was received.");
     if (paidOn > localToday()) return setError("The payment date can't be in the future.");
-    const amountCents = dollarsToCents(amount);
     if (amountCents <= 0) return setError("Enter an amount greater than $0.");
     if (!method) return setError("Choose a payment type.");
     if (method === "other" && !methodOther.trim()) return setError("Describe the payment type for \"Other\".");
@@ -57,7 +66,7 @@ export function ReceivePaymentModal({
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          targetType: target.type, targetId: target.id, amountCents, paidOn, method,
+          targetType: target.type, targetId: target.id, amountCents, paidOn, method, donationCents,
           methodOther: method === "other" ? methodOther : undefined, note: note || undefined,
         }),
       });
@@ -120,6 +129,37 @@ export function ReceivePaymentModal({
                 </div>
               </div>
             </div>
+            {donations.enabled && (
+              <fieldset>
+                <legend className="label">Apply to</legend>
+                <div className="grid grid-cols-2 gap-2">
+                  {([["ticket", "Tickets"], ["donation", donations.label]] as const).map(([v, l]) => (
+                    <label key={v} className={`flex items-center gap-2 rounded border px-3 py-2 text-sm cursor-pointer ${applyTo === v ? "border-wine-500 bg-wine-50 text-wine-700" : "border-paper-line text-ink-soft"}`}>
+                      <input type="radio" name="rp-apply" value={v} checked={applyTo === v} onChange={() => setApplyTo(v)} />
+                      {l}
+                    </label>
+                  ))}
+                </div>
+              </fieldset>
+            )}
+            {excessCents > 0 && (
+              <div className="rounded border border-brass-200 bg-brass-50 px-3 py-2.5 text-sm text-brass-600" role="status">
+                <p>
+                  {balanceCents !== undefined && balanceCents > 0
+                    ? <>This is <strong>{formatCurrency(excessCents)}</strong> more than the {formatCurrency(balanceCents)} balance.</>
+                    : <>Nothing is owed right now, so all <strong>{formatCurrency(excessCents)}</strong> is extra.</>}{" "}
+                  {donations.enabled && extraToDonations
+                    ? `The extra will go to ${donations.label}.`
+                    : "The extra will be kept as ticket credit."}
+                </p>
+                {donations.enabled && (
+                  <label className="mt-2 flex items-center gap-2 text-ink">
+                    <input type="checkbox" checked={extraToDonations} onChange={(e) => setExtraToDonations(e.target.checked)} />
+                    Apply the extra {formatCurrency(excessCents)} to {donations.label}
+                  </label>
+                )}
+              </div>
+            )}
             <div>
               <label className="label" htmlFor="rp-method">Payment type</label>
               <select id="rp-method" className="input" value={method} onChange={(e) => setMethod(e.target.value)}>

@@ -155,6 +155,9 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_invitee_fields_event_key ON invitee_fields
 -- must already exist.
 ALTER TABLE events ADD COLUMN IF NOT EXISTS ticketing_enabled INTEGER NOT NULL DEFAULT 0;
 ALTER TABLE events ADD COLUMN IF NOT EXISTS ticket_field_id TEXT REFERENCES invitee_fields(id) ON DELETE SET NULL;
+-- Optional donations/tips bucket, turned on from the Ticketing card. donations_label NULL = "Donations/Tips".
+ALTER TABLE events ADD COLUMN IF NOT EXISTS donations_enabled INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE events ADD COLUMN IF NOT EXISTS donations_label TEXT;
 
 CREATE TABLE IF NOT EXISTS invitations (
   id TEXT PRIMARY KEY,
@@ -311,6 +314,15 @@ ALTER TABLE ticket_payments ADD COLUMN IF NOT EXISTS paid_on TEXT;
 ALTER TABLE ticket_payments ADD COLUMN IF NOT EXISTS method TEXT;        -- cash | card | cashapp_venmo | check | other
 ALTER TABLE ticket_payments ADD COLUMN IF NOT EXISTS method_other TEXT;  -- required description when method = 'other'
 UPDATE ticket_payments SET paid_on = substr(recorded_at, 1, 10) WHERE paid_on IS NULL;
+-- Donations/tips and refunds share this one ledger. Every row's amount_cents is money that actually
+-- moved; donation_cents is the part of it that belongs to the donations bucket (0 for an ordinary
+-- ticket payment, the overpayment for "apply the extra to donations", all of it for a direct gift).
+-- kind = 'refund' rows are money handed back, taken from tickets (donation_cents = 0) or from
+-- donations (donation_cents = amount_cents). Ticket math everywhere uses
+--   (refund ? -1 : 1) * (amount_cents - donation_cents)   — see TICKET_NET in models/ticketing.ts
+-- so donations never touch a ticket balance. Defaults make every existing row an ordinary payment.
+ALTER TABLE ticket_payments ADD COLUMN IF NOT EXISTS kind TEXT NOT NULL DEFAULT 'payment' CHECK (kind IN ('payment', 'refund'));
+ALTER TABLE ticket_payments ADD COLUMN IF NOT EXISTS donation_cents INTEGER NOT NULL DEFAULT 0 CHECK (donation_cents >= 0);
 
 -- Custom split of a group payment: portions of it credited to specific members instead of being
 -- shared equally. The payment's own amount and group tag never change, so the group's total is

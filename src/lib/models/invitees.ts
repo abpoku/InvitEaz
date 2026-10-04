@@ -124,12 +124,22 @@ export async function createInvitationFor(eventId: string, inviteeId: string): P
 }
 
 export async function listInvitees(eventId: string, assemblyId?: string | null): Promise<(InviteeRow & { token: string; status: string; group_name: string | null; assembly_name: string | null })[]> {
+  // `status` is the invitee's *latest response* when they have one — the same source every stat and
+  // the Responses tab read (see CLAUDE.md, "RSVP status & manual entry") — falling back to the
+  // invitation's delivery status (invited/opened/…) only when there's no response yet. One invitation
+  // per invitee (the earliest), so a second invitation row can never duplicate someone in this list.
   return query(
-    `SELECT iv.*, g.name as group_name, a.name as assembly_name, i.token, i.status
+    `SELECT iv.*, g.name as group_name, a.name as assembly_name, i.token,
+       COALESCE(
+         (SELECT r.rsvp_status FROM rsvp_responses r WHERE r.invitation_id = i.id ORDER BY r.responded_at DESC LIMIT 1),
+         i.status
+       ) as status
      FROM invitees iv
      LEFT JOIN groups g ON g.id = iv.group_id
      LEFT JOIN assemblies a ON a.id = iv.assembly_id
-     LEFT JOIN invitations i ON i.invitee_id = iv.id
+     LEFT JOIN invitations i ON i.id = (
+       SELECT i2.id FROM invitations i2 WHERE i2.invitee_id = iv.id ORDER BY i2.created_at ASC LIMIT 1
+     )
      WHERE iv.event_id = ? AND iv.active = 1
      ${assemblyId ? "AND iv.assembly_id = ?" : ""}
      ORDER BY iv.created_at ASC`,
