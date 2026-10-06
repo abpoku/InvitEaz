@@ -10,10 +10,14 @@ import { BulkEditModal } from "@/components/invitees/BulkEditModal";
 import { MergeGroupsModal } from "@/components/invitees/MergeGroupsModal";
 import { ViewToggle } from "@/components/ViewToggle";
 import { fullName } from "@/lib/utils";
+import { toE164, personalize, smsHref, isAppleDevice } from "@/lib/phone-text";
+
+// "Text from my phone" quick action: opens the planner's own Messages app with this ready to send.
+const QUICK_TEXT = "Hi {first_name}, here's your RSVP link for {event}: {link}";
 import { groupCounts } from "@/lib/bulk-select";
 import type { InviteeFieldType } from "@/lib/models/invitee-fields";
 
-interface GroupRow { id: string; name: string; assembly_id: string | null; rsvp_token: string; }
+interface GroupRow { id: string; name: string; assembly_id: string | null; rsvp_token: string; leader_invitee_id: string | null; }
 
 export interface InviteeField {
   id: string;
@@ -64,7 +68,7 @@ function fieldValue(field: InviteeField, i: InviteeRow): string {
   }
 }
 
-export function InviteesManager({ eventId, groupRsvpMode, nameFormat }: { eventId: string; groupRsvpMode: string; nameFormat: "first_last" | "full" }) {
+export function InviteesManager({ eventId, groupRsvpMode, nameFormat, eventName = "our event" }: { eventId: string; groupRsvpMode: string; nameFormat: "first_last" | "full"; eventName?: string }) {
   const router = useRouter();
   const [invitees, setInvitees] = useState<InviteeRow[]>([]);
   const [fields, setFields] = useState<InviteeField[]>([]);
@@ -187,6 +191,26 @@ export function InviteesManager({ eventId, groupRsvpMode, nameFormat }: { eventI
     navigator.clipboard.writeText(`${window.location.origin}/g/${group.rsvp_token}`);
     setCopiedId(group.id);
     setTimeout(() => setCopiedId(null), 1600);
+  }
+
+  const [appleDevice, setAppleDevice] = useState(false);
+  useEffect(() => { setAppleDevice(isAppleDevice(navigator.userAgent)); }, []);
+
+  /** sms: link for one person (their own RSVP link), or null when they have no usable phone. */
+  function textHref(person: InviteeRow, path: string, household?: string): string | null {
+    const phone = person.phone ? toE164(person.phone) : null;
+    if (!phone) return null;
+    const body = personalize(QUICK_TEXT, {
+      firstName: person.first_name, name: household || fullName(person.first_name, person.last_name),
+      event: eventName, link: `${window.location.origin}${path}`,
+    });
+    return smsHref(phone, body, appleDevice);
+  }
+
+  /** A household's group link goes to its leader if they have a phone, else the first member who does. */
+  function groupTextTarget(g: GroupRow & { members: InviteeRow[] }): InviteeRow | undefined {
+    const withPhone = g.members.filter((m) => m.phone && toE164(m.phone));
+    return withPhone.find((m) => m.id === g.leader_invitee_id) || withPhone[0];
   }
 
   function copyLink(invitee: InviteeRow) {
@@ -494,6 +518,12 @@ export function InviteesManager({ eventId, groupRsvpMode, nameFormat }: { eventI
                         <button onClick={() => copyLink(i)} className="text-wine-500 hover:underline text-xs font-medium">
                           {copiedId === i.id ? "Copied!" : "Copy link"}
                         </button>
+                        {(() => {
+                          const href = typeof window !== "undefined" ? textHref(i, `/r/${i.token}`) : null;
+                          return href ? (
+                            <a href={href} className="ml-3 text-wine-500 hover:underline text-xs font-medium" title="Opens your phone's Messages app with their RSVP link">Text</a>
+                          ) : null;
+                        })()}
                       </td>
                       <td className="px-5 py-3 text-right whitespace-nowrap">
                         <button onClick={() => setEditing(i)} className="text-xs text-ink-faint hover:text-ink mr-3">Edit</button>
@@ -595,9 +625,20 @@ export function InviteesManager({ eventId, groupRsvpMode, nameFormat }: { eventI
                       </td>
                       <td className="px-5 py-3 text-right whitespace-nowrap">
                         {g.totalMembers > 0 && g.rsvp_token && (
+                          <>
+                          {(() => {
+                            const to = groupTextTarget(g);
+                            const href = to && typeof window !== "undefined" ? textHref(to, `/g/${g.rsvp_token}`, g.name) : null;
+                            return href ? (
+                              <a href={href} className="text-wine-500 hover:underline text-xs font-medium mr-3" title={`Text the group link to ${fullName(to!.first_name, to!.last_name)} from your phone`}>
+                                Text group link
+                              </a>
+                            ) : null;
+                          })()}
                           <button onClick={() => copyGroupLink(g)} className="text-wine-500 hover:underline text-xs font-medium mr-3" title="One link for the whole group to RSVP together">
                             {copiedId === g.id ? "Copied!" : "Copy group link"}
                           </button>
+                          </>
                         )}
                         <button onClick={() => bulkEditGroup(g.id)} disabled={g.totalMembers === 0} className="text-xs text-ink-faint hover:text-ink mr-3 disabled:opacity-40">Bulk edit</button>
                         <button onClick={() => removeGroup(g.id)} disabled={g.totalMembers === 0} className="text-xs text-ink-faint hover:text-clay-600 mr-3 disabled:opacity-40">Remove</button>
@@ -624,6 +665,10 @@ export function InviteesManager({ eventId, groupRsvpMode, nameFormat }: { eventI
                                   <button onClick={() => copyLink(m)} className="text-wine-500 hover:underline text-xs font-medium">
                                     {copiedId === m.id ? "Copied!" : "Copy link"}
                                   </button>
+                                  {(() => {
+                                    const href = typeof window !== "undefined" ? textHref(m, `/r/${m.token}`) : null;
+                                    return href ? <a href={href} className="text-wine-500 hover:underline text-xs font-medium">Text</a> : null;
+                                  })()}
                                   <button onClick={() => setEditing(m)} className="text-xs text-ink-faint hover:text-ink">Edit</button>
                                   <button onClick={() => removeInvitee(m.id)} className="text-xs text-ink-faint hover:text-clay-600">Remove</button>
                                 </div>

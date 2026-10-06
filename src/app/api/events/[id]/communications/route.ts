@@ -1,9 +1,9 @@
 import { NextResponse } from "next/server";
 import { requireAssemblyScope } from "@/lib/session";
 import { listCommunications, logCommunication } from "@/lib/models/comms";
-import { listInvitees } from "@/lib/models/invitees";
 import { getEventById } from "@/lib/models/events";
-import { getAssembly } from "@/lib/models/assemblies";
+import { resolveAudience, phoneTextRecipients, AudienceError } from "@/lib/models/messaging";
+import { twilioConfigured } from "@/lib/sms";
 import { sendInvitationEmail, sendReminderEmail, sendCustomEmail, sendInvitationSms, sendReminderSms, sendCustomSms } from "@/lib/notify";
 
 export async function GET(_req: Request, { params }: { params: { id: string } }) {
@@ -12,6 +12,13 @@ export async function GET(_req: Request, { params }: { params: { id: string } })
   return NextResponse.json({ communications: await listCommunications(params.id, access.assemblyId) });
 }
 
+/** One endpoint, four actions (body.action):
+ *  - "preview": how many people a send would reach, and how many lack an email/phone — shown as a
+ *    confirmation before anything goes out.
+ *  - "send" (default): email, or automated SMS when Twilio is configured. Failures are counted
+ *    separately, never reported as sent.
+ *  - "phone_prepare": the checklist for "Text from my phone" (nothing is sent by InvitEaz).
+ *  - "phone_log": records how many of those texts the planner opened on their phone. */
 export async function POST(req: Request, { params }: { params: { id: string } }) {
   const access = await requireAssemblyScope(params.id);
   if (!access.ok) return NextResponse.json({ error: access.message }, { status: access.status });
@@ -20,73 +27,77 @@ export async function POST(req: Request, { params }: { params: { id: string } })
   const event = await getEventById(params.id);
   if (!event) return NextResponse.json({ error: "Event not found." }, { status: 404 });
 
-  const body = await req.json();
-  const { type, subject, message, audience, groupId, inviteeIds } = body;
+  let body: any = {};
+  try { body = await req.json(); } catch {}
+  const action: string = body.action || "send";
+  const { type, subject, message } = body;
+
+  let resolved;
+  try {
+    resolved = await resolveAudience(params.id, access.assemblyId, body);
+  } catch (err) {
+    if (err instanceof AudienceError) return NextResponse.json({ error: err.message }, { status: err.status });
+    throw err;
+  }
+  const { invitees, assemblyId, audience } = resolved;
+
+  if (action === "phone_prepare") {
+    return NextResponse.json(await phoneTextRecipients(params.id, invitees, !!body.perHousehold));
+  }
+
+  if (action === "phone_log") {
+    const opened = Math.max(0, Math.floor(Number(body.opened) || 0));
+    if (opened === 0) return NextResponse.json({ ok: true, logged: false });
+    await logCommunication({
+      eventId: params.id, assemblyId, type: type || "custom", channel: "phone",
+      subject: body.perHousehold ? "Text from my phone (households)" : "Text from my phone",
+      body: String(message || ""), recipientsFilter: audience, recipientCount: opened, sentBy: access.user.email,
+    });
+    return NextResponse.json({ ok: true, logged: true });
+  }
+
   const channel: "email" | "sms" = body.channel === "sms" ? "sms" : "email";
+  if (channel === "sms" && !twilioConfigured()) {
+    return NextResponse.json({ error: "Automated texting isn't set up — use Text from my phone instead." }, { status: 400 });
+  }
+  const reachable = invitees.filter((i) => (channel === "sms" ? i.phone : i.email));
+
+  if (action === "preview") {
+    return NextResponse.json({ count: reachable.length, withoutContact: invitees.length - reachable.length });
+  }
+
   if (!message || (channel === "email" && !subject)) {
     return NextResponse.json({ error: channel === "email" ? "Subject and message are required." : "Message is required." }, { status: 400 });
   }
 
-  // A lead planner's messages are always confined to their own assembly. A full-scope planner
-  // may optionally target one specific assembly via the "assembly" audience option.
-  let targetAssemblyId: string | null = access.assemblyId;
-  if (!targetAssemblyId && audience === "assembly") {
-    if (!body.assemblyId) return NextResponse.json({ error: "Choose a clone to message." }, { status: 400 });
-    const assembly = await getAssembly(body.assemblyId);
-    if (!assembly || assembly.event_id !== params.id) return NextResponse.json({ error: "Clone not found." }, { status: 404 });
-    targetAssemblyId = assembly.id;
-  }
-  let invitees = (await listInvitees(params.id, targetAssemblyId)).filter((i) => (channel === "sms" ? i.phone : i.email));
-
-  if (audience === "attending") invitees = invitees.filter((i) => i.status === "attending");
-  else if (audience === "declined") invitees = invitees.filter((i) => i.status === "declined");
-  else if (audience === "no_response") invitees = invitees.filter((i) => !["attending", "declined"].includes(i.status));
-  else if (audience === "group" && groupId) invitees = invitees.filter((i) => i.group_id === groupId);
-  else if (audience === "selected" && Array.isArray(inviteeIds)) invitees = invitees.filter((i) => inviteeIds.includes(i.id));
-  else if (audience === "adults") invitees = invitees.filter((i) => i.is_adult);
-  else if (audience === "children") invitees = invitees.filter((i) => !i.is_adult);
-
   let sent = 0;
-  for (const inv of invitees) {
-    if (channel === "sms") {
-      const fn =
-        type === "invitation" ? sendInvitationSms
-        : type === "reminder" ? (e: any, to: string, name: string, tok: string) => sendReminderSms(e, to, name, tok, false)
-        : type === "final_reminder" ? (e: any, to: string, name: string, tok: string) => sendReminderSms(e, to, name, tok, true)
-        : null;
-
-      if (fn) {
-        await fn(event, inv.phone!, inv.first_name, inv.token).catch(() => {});
-      } else {
-        await sendCustomSms(event, inv.phone!, inv.first_name, inv.token, subject || "Text message", message).catch(() => {});
-      }
-    } else {
-      const fn =
-        type === "invitation" ? sendInvitationEmail
-        : type === "reminder" ? (e: any, to: string, name: string, tok: string) => sendReminderEmail(e, to, name, tok, false)
-        : type === "final_reminder" ? (e: any, to: string, name: string, tok: string) => sendReminderEmail(e, to, name, tok, true)
-        : null;
-
-      if (fn) {
-        await fn(event, inv.email!, inv.first_name, inv.token).catch(() => {});
-      } else {
-        await sendCustomEmail(event, inv.email!, inv.first_name, inv.token, subject, message).catch(() => {});
+  let failed = 0;
+  try {
+    for (const inv of reachable) {
+      try {
+        if (channel === "sms") {
+          if (type === "invitation") await sendInvitationSms(event, inv.phone!, inv.first_name, inv.token);
+          else if (type === "reminder" || type === "final_reminder") await sendReminderSms(event, inv.phone!, inv.first_name, inv.token, type === "final_reminder");
+          else await sendCustomSms(event, inv.phone!, inv.first_name, inv.token, subject || "Text message", message);
+        } else {
+          if (type === "invitation") await sendInvitationEmail(event, inv.email!, inv.first_name, inv.token);
+          else if (type === "reminder" || type === "final_reminder") await sendReminderEmail(event, inv.email!, inv.first_name, inv.token, type === "final_reminder");
+          else await sendCustomEmail(event, inv.email!, inv.first_name, inv.token, subject, message);
+        }
+        sent += 1;
+      } catch (err) {
+        failed += 1;
+        console.error(`[messages] ${channel} to invitee ${inv.id} failed:`, (err as Error)?.message);
       }
     }
-    sent += 1;
+  } finally {
+    // Logged even if the request dies partway, so the history never hides a half-finished send.
+    await logCommunication({
+      eventId: params.id, assemblyId, type: type || "custom", channel,
+      subject: subject || (channel === "sms" ? "Text message" : ""), body: message,
+      recipientsFilter: audience, recipientCount: sent, failedCount: failed, sentBy: access.user.email,
+    }).catch((e) => console.error("[messages] could not log communication:", e));
   }
 
-  await logCommunication({
-    eventId: params.id,
-    assemblyId: targetAssemblyId || null,
-    type: type || "custom",
-    channel,
-    subject: subject || (channel === "sms" ? "Text message" : ""),
-    body: message,
-    recipientsFilter: audience || "everyone",
-    recipientCount: sent,
-    sentBy: access.user.email,
-  });
-
-  return NextResponse.json({ sent });
+  return NextResponse.json({ sent, failed });
 }

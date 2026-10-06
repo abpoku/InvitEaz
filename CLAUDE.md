@@ -326,6 +326,26 @@ Overview's config sections; clone-scoped roles never see it).
   row (not the request body) before checking `canManageInvitee`/`canManageGroup` — so a
   lead/co-planner can't spoof scope by naming a payment ID that belongs to someone else's clone.
 
+### Messages tab
+
+`src/components/messages/CommunicationsCenter.tsx` → `POST /api/events/[id]/communications` with
+`action`: `preview` (count shown in a confirm step before any email goes out), `send` (email, or
+automated SMS only when Twilio env vars exist — `twilioConfigured()`), `phone_prepare`, `phone_log`.
+Who a send reaches is decided in exactly one place, `resolveAudience()` in `models/messaging.ts`,
+which **never broadens**: "Specific group"/"Specific clone" with nothing chosen is a 400, not
+"everyone" (it used to silently fall through to everyone). "No response" excludes Maybe (Maybe is
+its own audience). Each email's failure is caught and counted (`communications.failed_count`) —
+`recipient_count` is successes only — and the log row is written in a `finally`, so a send cut off
+mid-way still shows in history.
+
+**Text from my phone** (`channel = 'phone'`): InvitEaz never sends these. `phone_prepare` returns a
+checklist (per person, or one per household with the group's `/g/` link sent to the leader or first
+member with a usable phone); `PhoneTextSender` turns each into an `sms:` link (`smsHref` in
+`src/lib/phone-text.ts` — Apple needs `&body=`, Android `?body=`) that opens the planner's own
+Messages app, so texts come from their number and replies go to their phone. InvitEaz can't see
+whether Send was pressed, so history records texts *opened*, never *sent*. The Invitees tab has the
+same quick action per person ("Text") and per group ("Text group link").
+
 ### Schema changes (read before editing schema.sql)
 
 `ensureSchema()` in `db.ts` runs the entire `schema.sql` as one implicit transaction, and

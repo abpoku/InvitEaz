@@ -7,18 +7,19 @@ export async function logCommunication(input: {
   eventId: string;
   assemblyId?: string | null;
   type: CommType;
-  channel?: "email" | "sms";
+  channel?: "email" | "sms" | "phone";
   subject: string;
   body: string;
   recipientsFilter: string;
   recipientCount: number;
+  failedCount?: number;
   sentBy: string;
 }) {
   const id = newId("com");
   await exec(
-    `INSERT INTO communications (id, event_id, assembly_id, type, channel, subject, body, recipients_filter, recipient_count, sent_by)
-     VALUES (?,?,?,?,?,?,?,?,?,?)`,
-    [id, input.eventId, input.assemblyId || null, input.type, input.channel || "email", input.subject, input.body, input.recipientsFilter, input.recipientCount, input.sentBy]
+    `INSERT INTO communications (id, event_id, assembly_id, type, channel, subject, body, recipients_filter, recipient_count, failed_count, sent_by)
+     VALUES (?,?,?,?,?,?,?,?,?,?,?)`,
+    [id, input.eventId, input.assemblyId || null, input.type, input.channel || "email", input.subject, input.body, input.recipientsFilter, input.recipientCount, input.failedCount || 0, input.sentBy]
   );
   return id;
 }

@@ -1,17 +1,6 @@
-/** Normalizes a raw, unformatted phone number (however a planner or guest typed it, e.g.
- * "555-0100") into E.164 for Twilio. Returns null rather than throwing when the input is too
- * short/garbled to confidently normalize — callers should skip that recipient. */
-export function toE164(raw: string, defaultCountry = "1"): string | null {
-  const trimmed = raw.trim();
-  if (trimmed.startsWith("+")) {
-    const digits = trimmed.slice(1).replace(/\D/g, "");
-    return digits.length >= 8 ? `+${digits}` : null;
-  }
-  const digits = trimmed.replace(/\D/g, "");
-  if (digits.length === 10) return `+${defaultCountry}${digits}`;
-  if (digits.length === 11 && digits.startsWith(defaultCountry)) return `+${digits}`;
-  return null;
-}
+import { toE164 } from "@/lib/phone-text";
+
+export { toE164 };
 
 function getTwilioCreds() {
   const sid = process.env.TWILIO_ACCOUNT_SID;
@@ -49,4 +38,10 @@ export async function sendSms(input: { to: string; body: string }) {
     throw new Error(`Twilio send failed (${res.status}): ${text}`);
   }
   return { delivered: true, logged: false };
+}
+
+/** Whether automated server-side texting (Twilio) is set up — without it, the Messages tab only
+ * offers "Text from my phone". */
+export function twilioConfigured(): boolean {
+  return getTwilioCreds() !== null;
 }

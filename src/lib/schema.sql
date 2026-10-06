@@ -254,7 +254,9 @@ CREATE TABLE IF NOT EXISTS communications (
 );
 CREATE INDEX IF NOT EXISTS idx_comms_event ON communications(event_id);
 ALTER TABLE communications ADD COLUMN IF NOT EXISTS assembly_id TEXT REFERENCES assemblies(id) ON DELETE SET NULL;
-ALTER TABLE communications ADD COLUMN IF NOT EXISTS channel TEXT NOT NULL DEFAULT 'email'; -- email | sms
+ALTER TABLE communications ADD COLUMN IF NOT EXISTS channel TEXT NOT NULL DEFAULT 'email'; -- email | sms | phone (opened in the planner's own Messages app)
+-- Sends that were attempted but failed (e.g. an email the mail server rejected); recipient_count is successes only.
+ALTER TABLE communications ADD COLUMN IF NOT EXISTS failed_count INTEGER NOT NULL DEFAULT 0;
 
 CREATE TABLE IF NOT EXISTS audit_logs (
   id TEXT PRIMARY KEY,
