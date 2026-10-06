@@ -4,6 +4,7 @@ import { getEventById, computeEffectiveStatus } from "@/lib/models/events";
 import { listQuestions, submitResponse, getLatestResponse, getAnswersForResponse } from "@/lib/models/rsvp";
 import { sendConfirmationEmail } from "@/lib/notify";
 import { isPastDeadline, fullName } from "@/lib/utils";
+import { donationNoteFor } from "@/lib/donation-note";
 
 export async function GET(_req: Request, { params }: { params: { token: string } }) {
   const invitation = await getInvitationByToken(params.token);
@@ -28,6 +29,7 @@ export async function GET(_req: Request, { params }: { params: { token: string }
     invitee: invitation.invitee,
     questions,
     groupMembers: members,
+    donationNote: donationNoteFor(event),
     existingResponse: latest ? { ...latest, answers } : null,
     locked,
   });

@@ -158,6 +158,10 @@ ALTER TABLE events ADD COLUMN IF NOT EXISTS ticket_field_id TEXT REFERENCES invi
 -- Optional donations/tips bucket, turned on from the Ticketing card. donations_label NULL = "Donations/Tips".
 ALTER TABLE events ADD COLUMN IF NOT EXISTS donations_enabled INTEGER NOT NULL DEFAULT 0;
 ALTER TABLE events ADD COLUMN IF NOT EXISTS donations_label TEXT;
+-- Optional note shown to guests on their RSVP pages (src/lib/donation-note.ts). NULL/blank message =
+-- the default text; nothing is shown unless donations_message_enabled is on.
+ALTER TABLE events ADD COLUMN IF NOT EXISTS donations_message_enabled INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE events ADD COLUMN IF NOT EXISTS donations_message TEXT;
 
 CREATE TABLE IF NOT EXISTS invitations (
   id TEXT PRIMARY KEY,

@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { formatCurrency, dollarsToCents } from "@/lib/utils";
+import { DEFAULT_DONATION_MESSAGE, MAX_DONATION_MESSAGE } from "@/lib/donation-note";
 
 interface TicketTier { id: string; option_value: string; price_cents: number; }
 interface TicketingField { id: string; label: string; }
@@ -10,7 +11,7 @@ interface TicketingConfig {
   enabled: boolean;
   field: TicketingField | null;
   tiers: TicketTier[];
-  donations: { enabled: boolean; label: string };
+  donations: { enabled: boolean; label: string; messageEnabled?: boolean; message?: string };
 }
 interface DropdownField { id: string; label: string; }
 
@@ -51,7 +52,7 @@ export function TicketingManager({
     router.refresh();
   }
 
-  async function saveDonations(patch: { donationsEnabled?: boolean; donationsLabel?: string }) {
+  async function saveDonations(patch: DonationsPatch) {
     setBusy(true);
     setError(null);
     try {
@@ -229,7 +230,7 @@ export function TicketingManager({
           )}
 
           <DonationsSettings
-            key={`${config.donations?.enabled}-${config.donations?.label}`}
+            key={`${config.donations?.enabled}-${config.donations?.label}-${config.donations?.messageEnabled}-${config.donations?.message}`}
             donations={config.donations || { enabled: false, label: "Donations/Tips" }}
             canManage={canManage}
             busy={busy}
@@ -241,17 +242,23 @@ export function TicketingManager({
   );
 }
 
+type DonationsPatch = { donationsEnabled?: boolean; donationsLabel?: string; donationsMessageEnabled?: boolean; donationsMessage?: string };
+
 /** The optional donations/tips bucket: overpayments the planner chooses to keep as a gift (and
- * direct gifts) are tracked here instead of as ticket credit. The planner names it. */
+ * direct gifts) are tracked here instead of as ticket credit. The planner names it, and can
+ * optionally show guests a note about it on their RSVP pages. */
 function DonationsSettings({
   donations, canManage, busy, onSave,
 }: {
-  donations: { enabled: boolean; label: string };
+  donations: { enabled: boolean; label: string; messageEnabled?: boolean; message?: string };
   canManage: boolean;
   busy: boolean;
-  onSave: (patch: { donationsEnabled?: boolean; donationsLabel?: string }) => void;
+  onSave: (patch: DonationsPatch) => void;
 }) {
   const [label, setLabel] = useState(donations.label);
+  const savedMessage = donations.message || DEFAULT_DONATION_MESSAGE;
+  const [message, setMessage] = useState(savedMessage);
+  const messageChanged = message.trim() !== savedMessage && !(message.trim() === "" && savedMessage === DEFAULT_DONATION_MESSAGE);
   return (
     <div className="pt-4 border-t border-paper-line">
       <label className="flex items-start gap-2.5 text-sm text-ink">
@@ -282,6 +289,55 @@ function DonationsSettings({
             <button type="submit" disabled={busy || label.trim() === donations.label} className="btn-secondary shrink-0">Save</button>
           )}
         </form>
+      )}
+      {donations.enabled && (
+        <div className="mt-4">
+          <label className="flex items-start gap-2.5 text-sm text-ink">
+            <input
+              type="checkbox"
+              className="mt-0.5"
+              checked={!!donations.messageEnabled}
+              disabled={!canManage || busy}
+              onChange={() => onSave({ donationsMessageEnabled: !donations.messageEnabled })}
+            />
+            <span>
+              Show a message to guests
+              <span className="block text-xs text-ink-faint">
+                Optional. Appears on each guest&apos;s RSVP page and group invitation, under the event details.
+              </span>
+            </span>
+          </label>
+          {donations.messageEnabled && (
+            <form
+              onSubmit={(e) => { e.preventDefault(); if (messageChanged) onSave({ donationsMessage: message }); }}
+              className="mt-3 max-w-lg space-y-2"
+            >
+              <label className="label" htmlFor="donations-message">Message</label>
+              <textarea
+                id="donations-message"
+                className="input min-h-[84px]"
+                maxLength={MAX_DONATION_MESSAGE}
+                value={message}
+                disabled={!canManage}
+                placeholder={DEFAULT_DONATION_MESSAGE}
+                onChange={(e) => setMessage(e.target.value)}
+              />
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <p className="text-xs text-ink-faint">Leave it blank to use the default message.</p>
+                {canManage && (
+                  <div className="flex items-center gap-2">
+                    {savedMessage !== DEFAULT_DONATION_MESSAGE && (
+                      <button type="button" disabled={busy} onClick={() => { setMessage(DEFAULT_DONATION_MESSAGE); onSave({ donationsMessage: "" }); }} className="btn-ghost">
+                        Reset to default
+                      </button>
+                    )}
+                    <button type="submit" disabled={busy || !messageChanged} className="btn-secondary">Save message</button>
+                  </div>
+                )}
+              </div>
+            </form>
+          )}
+        </div>
       )}
     </div>
   );

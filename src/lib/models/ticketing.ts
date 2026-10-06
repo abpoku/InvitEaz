@@ -1,4 +1,5 @@
 import { query, queryOne, exec } from "@/lib/db";
+import { DEFAULT_DONATIONS_LABEL, DEFAULT_DONATION_MESSAGE } from "@/lib/donation-note";
 import { newId, fullName } from "@/lib/utils";
 import { getEventById, updateEvent } from "@/lib/models/events";
 import { getInviteeField, createInviteeField, updateInviteeField, type InviteeFieldRow } from "@/lib/models/invitee-fields";
@@ -43,7 +44,7 @@ const ticketNet = (a: string) => `(CASE WHEN ${a}.kind = 'refund' THEN -1 ELSE 1
 /** Same, for the donations bucket. */
 const donationNet = (a: string) => `(CASE WHEN ${a}.kind = 'refund' THEN -1 ELSE 1 END) * ${a}.donation_cents`;
 
-export const DEFAULT_DONATIONS_LABEL = "Donations/Tips";
+export { DEFAULT_DONATIONS_LABEL } from "@/lib/donation-note";
 
 export interface PaymentAllocation { invitee_id: string; amount_cents: number; }
 export type PaymentWithAllocations = TicketPaymentRow & { allocations: PaymentAllocation[] };
@@ -52,7 +53,7 @@ export interface TicketingConfig {
   enabled: boolean;
   field: InviteeFieldRow | null;
   tiers: TicketTierRow[];
-  donations: { enabled: boolean; label: string };
+  donations: { enabled: boolean; label: string; messageEnabled: boolean; message: string };
 }
 
 /** Tiers are authored here and pushed into the linked field's options_json (see createTier/
@@ -63,7 +64,12 @@ export async function getTicketingConfig(eventId: string): Promise<TicketingConf
   const event = await getEventById(eventId);
   const enabled = !!event?.ticketing_enabled;
   const field = event?.ticket_field_id ? (await getInviteeField(event.ticket_field_id)) || null : null;
-  const donations = { enabled: !!event?.donations_enabled, label: event?.donations_label || DEFAULT_DONATIONS_LABEL };
+  const donations = {
+    enabled: !!event?.donations_enabled,
+    label: event?.donations_label || DEFAULT_DONATIONS_LABEL,
+    messageEnabled: !!event?.donations_message_enabled,
+    message: event?.donations_message?.trim() || DEFAULT_DONATION_MESSAGE,
+  };
 
   if (!enabled || !field) {
     return { enabled, field: null, tiers: [], donations };

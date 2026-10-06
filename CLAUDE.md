@@ -286,6 +286,11 @@ Overview's config sections; clone-scoped roles never see it).
   until everyone's covered, then any extra in proportion to ticket price. A member who owes nothing
   (declined, no ticket type, or a $0 tier) never receives any — and if nobody in the group owes
   anything, nothing is attributed to individuals; it only shows on the group row.
+- **Donations note for guests** (optional): `events.donations_message_enabled` + `donations_message`
+  (NULL/blank = default text), set under the Ticketing card's donations section. `donationNoteFor()`
+  in `src/lib/donation-note.ts` is the single on/off rule — shown only while ticketing, donations, and
+  the message are all on — and both guest APIs (`/api/rsvp/[token]`, `/api/g/[token]`) return its
+  result as `donationNote`, rendered by `DonationNote` under the event details.
 - **Tickets summary card** (`TicketsSummaryCard`, from `getTicketingSummary().totals`): Expected
   is the sum of everyone's `owedFor`; Outstanding/Credits are per *party* (a group as one unit, an
   ungrouped invitee as another), so one family's credit never hides another's balance. Donations

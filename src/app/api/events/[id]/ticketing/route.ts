@@ -3,6 +3,7 @@ import { requireEventRole } from "@/lib/session";
 import { getTicketingConfig, adoptFieldAsTicketing, unlinkField } from "@/lib/models/ticketing";
 import { getInviteeField } from "@/lib/models/invitee-fields";
 import { updateEvent, logAudit } from "@/lib/models/events";
+import { DEFAULT_DONATION_MESSAGE, MAX_DONATION_MESSAGE } from "@/lib/donation-note";
 
 export async function GET(_req: Request, { params }: { params: { id: string } }) {
   const access = await requireEventRole(params.id, "viewer");
@@ -42,8 +43,15 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
 
   // Donations/tips bucket. Turning it off never touches recorded donations — they stay in the ledger
   // and keep showing in totals; it only stops new money being routed there.
-  if (body.donationsEnabled !== undefined || body.donationsLabel !== undefined) {
+  if (body.donationsEnabled !== undefined || body.donationsLabel !== undefined
+    || body.donationsMessageEnabled !== undefined || body.donationsMessage !== undefined) {
     const patch: Record<string, unknown> = {};
+    if (body.donationsMessageEnabled !== undefined) patch.donations_message_enabled = body.donationsMessageEnabled ? 1 : 0;
+    if (body.donationsMessage !== undefined) {
+      // Optional: blank (or the untouched default) is stored as NULL and shows the default text.
+      const msg = typeof body.donationsMessage === "string" ? body.donationsMessage.trim().slice(0, MAX_DONATION_MESSAGE) : "";
+      patch.donations_message = msg && msg !== DEFAULT_DONATION_MESSAGE ? msg : null;
+    }
     if (body.donationsEnabled !== undefined) patch.donations_enabled = body.donationsEnabled ? 1 : 0;
     if (body.donationsLabel !== undefined) {
       const label = typeof body.donationsLabel === "string" ? body.donationsLabel.trim().slice(0, 40) : "";
@@ -53,7 +61,8 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
     await logAudit(params.id, access.user.email, "ticketing.donations_updated", JSON.stringify(patch));
   }
 
-  if (body.fieldId === undefined && body.enabled === undefined && body.donationsEnabled === undefined && body.donationsLabel === undefined) {
+  if (body.fieldId === undefined && body.enabled === undefined && body.donationsEnabled === undefined && body.donationsLabel === undefined
+    && body.donationsMessageEnabled === undefined && body.donationsMessage === undefined) {
     return NextResponse.json({ error: "Nothing to update." }, { status: 400 });
   }
 

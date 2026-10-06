@@ -17,6 +17,7 @@ interface Data {
   groupMembers: GroupMember[];
   existingResponse: any | null;
   locked: boolean;
+  donationNote: { label: string; message: string } | null;
 }
 
 export function RsvpExperience({ token }: { token: string }) {
@@ -93,6 +94,17 @@ export function MessageScreen({ title, body, eventName, loading }: { title: stri
   );
 }
 
+/** The planner's optional donations/tips note (Ticketing card → "Show a message to guests"). */
+export function DonationNote({ note }: { note: { label: string; message: string } | null | undefined }) {
+  if (!note) return null;
+  return (
+    <div className="card mt-4 border-moss-100 bg-moss-50/60 px-5 py-4">
+      <p className="text-xs font-medium uppercase tracking-wide text-moss-600">{note.label}</p>
+      <p className="mt-1 text-sm text-ink-soft leading-relaxed whitespace-pre-line">{note.message}</p>
+    </div>
+  );
+}
+
 export function EventHeader({ event }: { event: any }) {
   const where =
     event.location_type === "virtual"
@@ -120,6 +132,7 @@ function Confirmation({ data, onEdit }: { data: Data; onEdit: () => void }) {
   return (
     <Shell>
       <EventHeader event={event} />
+      <DonationNote note={data.donationNote} />
       <div className="card p-6 mt-4 text-center">
         <p className="font-serif text-xl text-ink">{attending ? "You're confirmed!" : "Thanks for letting us know"}</p>
         <div className="mt-4 flex items-center justify-center gap-2">
@@ -242,6 +255,7 @@ function RsvpForm({ data, token, onSubmitted }: { data: Data; token: string; onS
   return (
     <Shell>
       <EventHeader event={event} />
+      <DonationNote note={data.donationNote} />
 
       <form onSubmit={submit} className="card p-6 mt-4 space-y-5">
         {error && <div className="rounded border border-clay-500/30 bg-clay-500/5 text-clay-600 text-sm px-3 py-2.5">{error}</div>}

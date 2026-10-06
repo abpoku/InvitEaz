@@ -9,6 +9,7 @@ import { listInviteeFields, type InviteeFieldRow } from "@/lib/models/invitee-fi
 import { getUserById, PLAN_LIMITS } from "@/lib/models/users";
 import { getGroupTicketBalance } from "@/lib/models/ticketing";
 import { groupExtraGuests } from "@/lib/guest-allowance";
+import { donationNoteFor } from "@/lib/donation-note";
 import { isPastDeadline, fullName } from "@/lib/utils";
 
 /** The household-level RSVP link (/g/[token]) — one link per group that lets whoever opens it
@@ -140,6 +141,7 @@ export async function loadGroupInvitation(token: string) {
       ? { name: latest.responder_name || "", email: latest.responder_email || "", phone: latest.responder_phone || "" }
       : null,
     tickets,
+    donationNote: donationNoteFor(event),
     locked: isLocked(event),
   };
 }

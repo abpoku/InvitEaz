@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { Shell, MessageScreen, EventHeader, QuestionField, type Question } from "@/components/rsvp/RsvpExperience";
+import { Shell, MessageScreen, EventHeader, QuestionField, DonationNote, type Question } from "@/components/rsvp/RsvpExperience";
 import { InviteeFieldInput } from "@/components/invitees/InviteeFieldInput";
 import type { InviteeField } from "@/components/invitees/InviteesManager";
 import { formatCurrency } from "@/lib/utils";
@@ -32,6 +32,7 @@ interface Data {
   } | null;
   responder: { name: string; email: string; phone: string } | null;
   locked: boolean;
+  donationNote: { label: string; message: string } | null;
 }
 
 export function GroupRsvpExperience({ token }: { token: string }) {
@@ -112,6 +113,7 @@ function GroupConfirmation({ data, onEdit }: { data: Data; onEdit: () => void })
     <Shell>
       <GroupBanner name={data.group.name} />
       <EventHeader event={event} />
+      <DonationNote note={data.donationNote} />
       <div className="card p-6 mt-4">
         <p className="font-serif text-xl text-ink text-center">
           {attending > 0 ? "Your group's RSVP is in!" : "Thanks for letting us know"}
@@ -316,6 +318,7 @@ function GroupRsvpForm({ data, token, onSubmitted }: { data: Data; token: string
     <Shell>
       <GroupBanner name={data.group.name} />
       <EventHeader event={event} />
+      <DonationNote note={data.donationNote} />
       {data.tickets && <TicketSummary tickets={data.tickets} />}
 
       <form onSubmit={submit} className="mt-4 space-y-4">
