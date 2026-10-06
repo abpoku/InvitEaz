@@ -317,6 +317,48 @@ export interface DonationEntry {
   note: string | null;
 }
 
+export interface CollectedEntry {
+  paymentId: string;
+  paidOn: string | null;
+  who: string;
+  targetType: "invitee" | "group";
+  kind: "payment" | "refund";
+  ticketCents: number; // this transaction's effect on tickets: negative for a refund
+  method: string | null;
+  methodOther: string | null;
+  note: string | null;
+}
+
+/** Every non-voided transaction that moved *ticket* money, newest first — the list behind the summary
+ * card's Collected figure. Uses the same rules as that figure (getTicketingSummary): only the ticket
+ * portion (ticketNet), only active invitees and existing groups, scoped to the clone the same way —
+ * so the list always adds up to exactly the number on the card. Direct gifts (no ticket portion)
+ * don't appear; they're under Donations. */
+export async function listCollected(eventId: string, assemblyId?: string | null): Promise<CollectedEntry[]> {
+  const rows = await query<TicketPaymentRow & { first_name: string | null; last_name: string | null; group_name: string | null; ticket: string }>(
+    `SELECT tp.*, iv.first_name, iv.last_name, g.name as group_name, ${ticketNet("tp")} as ticket
+     FROM ticket_payments tp
+     LEFT JOIN invitees iv ON iv.id = tp.invitee_id
+     LEFT JOIN groups g ON g.id = tp.group_id
+     WHERE tp.event_id = ? AND tp.voided_at IS NULL AND tp.amount_cents > tp.donation_cents
+       AND ((tp.invitee_id IS NOT NULL AND iv.active = 1 ${assemblyId ? "AND iv.assembly_id = ?" : ""})
+         OR (tp.group_id IS NOT NULL AND g.id IS NOT NULL ${assemblyId ? "AND g.assembly_id = ?" : ""}))
+     ORDER BY tp.paid_on DESC, tp.recorded_at DESC`,
+    assemblyId ? [eventId, assemblyId, assemblyId] : [eventId]
+  );
+  return rows.map((r) => ({
+    paymentId: r.id,
+    paidOn: r.paid_on,
+    who: r.group_id ? r.group_name || "Group" : fullName(r.first_name || "", r.last_name || ""),
+    targetType: r.group_id ? "group" : "invitee",
+    kind: r.kind,
+    ticketCents: Number(r.ticket),
+    method: r.method,
+    methodOther: r.method_other,
+    note: r.note,
+  }));
+}
+
 /** Every non-voided transaction that touched the donations bucket, newest first — the list behind
  * the summary card's Donations figure. */
 export async function listDonations(eventId: string, assemblyId?: string | null): Promise<DonationEntry[]> {

@@ -289,7 +289,11 @@ Overview's config sections; clone-scoped roles never see it).
 - **Tickets summary card** (`TicketsSummaryCard`, from `getTicketingSummary().totals`): Expected
   is the sum of everyone's `owedFor`; Outstanding/Credits are per *party* (a group as one unit, an
   ungrouped invitee as another), so one family's credit never hides another's balance. Donations
-  are their own tile, linking to `GET .../donations` (`listDonations`).
+  are their own tile, linking to `GET .../donations` (`listDonations`). Collected links to
+  `GET .../collected` (`listCollected` — must use the same filters as the Collected sum: ticket
+  portion only, active invitees + existing groups, same clone scoping, or the list stops adding up);
+  Outstanding's list is built client-side from the summary's groups + ungrouped invitees, the same
+  parties the card sums.
 - **RSVP status for filtering comes from the latest response.** `listInvitees` returns
   `COALESCE(latest rsvp_status, invitations.status)` and one (earliest) invitation per invitee; the
   Invitees, Responses, and Tickets filters all key off that same source, never

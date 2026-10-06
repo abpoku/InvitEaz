@@ -28,7 +28,7 @@ export default async function TicketsPage({ params, searchParams }: { params: { 
         </div>
         {summary?.fieldLabel && (
           <div className="w-full lg:max-w-2xl">
-            <TicketsSummaryCard eventId={params.id} clone={assemblyId} totals={summary.totals} donations={summary.donations} />
+            <TicketsSummaryCard eventId={params.id} clone={assemblyId} summary={summary} />
           </div>
         )}
       </div>
