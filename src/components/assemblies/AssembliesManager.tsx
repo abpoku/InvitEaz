@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { ClonePlanners } from "@/components/assemblies/ClonePlanners";
+import { formatNumber } from "@/lib/utils";
 
 interface AssemblyStats { invited: number; attending: number; declined: number; noResponse: number; responseRate: number; }
 interface Assembly { id: string; name: string; stats?: AssemblyStats; }
@@ -168,7 +169,7 @@ function AssemblyCard({
           )}
           {assembly.stats && (
             <p className="mt-1 text-xs text-ink-faint">
-              {assembly.stats.invited} invited · {assembly.stats.attending} attending · {assembly.stats.responseRate}% responded
+              {formatNumber(assembly.stats.invited)} invited · {formatNumber(assembly.stats.attending)} attending · {assembly.stats.responseRate}% responded
             </p>
           )}
         </div>

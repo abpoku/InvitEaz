@@ -31,18 +31,18 @@ export function TicketsSummaryCard({
       <div className={`grid grid-cols-2 ${showDonationTile ? "sm:grid-cols-4" : "sm:grid-cols-3"} gap-px bg-paper-line`}>
         <div className={tile}>
           <p className={caption}>Expected</p>
-          <p className={value}>{formatCurrency(totals.expectedCents)}</p>
+          <p className={`${value} text-wine-700`}>{formatCurrency(totals.expectedCents)}</p>
           <p className={caption}>{totals.declinedExcluded > 0 ? `Excludes ${totals.declinedExcluded} declined` : "From ticket types"}</p>
         </div>
         <button type="button" onClick={() => setOpen("collected")} className={linkTile}>
           <p className={caption}>Collected</p>
-          <p className={value}>{formatCurrency(totals.collectedCents)}</p>
+          <p className={`${value} text-moss-600`}>{formatCurrency(totals.collectedCents)}</p>
           <p className={caption}>Ticket payments, net of refunds</p>
           {viewAll}
         </button>
         <button type="button" onClick={() => setOpen("outstanding")} className={linkTile}>
           <p className={caption}>Outstanding</p>
-          <p className={`${value} ${totals.outstandingCents > 0 ? "text-wine-700" : ""}`}>{formatCurrency(totals.outstandingCents)}</p>
+          <p className={value}>{formatCurrency(totals.outstandingCents)}</p>
           <p className={caption}>{totals.creditCents > 0 ? `${formatCurrency(totals.creditCents)} in credits` : "Still owed"}</p>
           {viewAll}
         </button>
@@ -114,7 +114,7 @@ function CollectedModal({ eventId, clone, total, onClose }: { eventId: string; c
                       {r.note && <span className="block text-xs text-ink-faint">{r.note}</span>}
                     </td>
                     <td className="py-2 pr-3 text-ink-soft">{paymentMethodLabel(r.method, r.methodOther)}</td>
-                    <td className={`py-2 text-right tabular-nums whitespace-nowrap ${r.ticketCents < 0 ? "text-clay-600" : "text-ink"}`}>
+                    <td className={`py-2 text-right tabular-nums whitespace-nowrap ${r.ticketCents < 0 ? "text-clay-600" : "text-moss-600"}`}>
                       {r.ticketCents < 0 ? "−" : ""}{formatCurrency(Math.abs(r.ticketCents))}
                     </td>
                   </tr>
@@ -166,9 +166,9 @@ function OutstandingModal({ summary, onClose }: { summary: TicketingSummary; onC
                 {p.name}
                 <span className="block text-xs text-ink-faint">{p.sub}</span>
               </td>
-              <td className="py-2 pr-3 text-right tabular-nums text-ink-soft">{formatCurrency(p.owed)}</td>
-              <td className="py-2 pr-3 text-right tabular-nums text-ink-soft">{formatCurrency(p.paid)}</td>
-              <td className={`py-2 text-right tabular-nums font-medium ${kind === "due" ? "text-wine-700" : "text-moss-600"}`}>{formatCurrency(Math.abs(p.balance))}</td>
+              <td className="py-2 pr-3 text-right tabular-nums text-wine-700">{formatCurrency(p.owed)}</td>
+              <td className="py-2 pr-3 text-right tabular-nums text-moss-600">{formatCurrency(p.paid)}</td>
+              <td className="py-2 text-right tabular-nums font-medium text-ink">{formatCurrency(Math.abs(p.balance))}</td>
             </tr>
           ))}
         </tbody>

@@ -100,9 +100,15 @@ export function csvEscape(v: any): string {
 /** Formats integer cents as this app's single fixed-currency display string, e.g. 4250 -> "$42.50".
  * New as of the ticketing feature — every monetary value in this app is stored as integer cents
  * (no floats, no per-event currency setting). */
+/** Whole numbers with thousands separators: 3330 → "3,330". */
+export function formatNumber(n: number): string {
+  return n.toLocaleString("en-US", { maximumFractionDigits: 0 });
+}
+
+/** Cents → "$3,330.00" (thousands separators, always two decimals). */
 export function formatCurrency(cents: number): string {
   const sign = cents < 0 ? "-" : "";
-  return `${sign}$${(Math.abs(cents) / 100).toFixed(2)}`;
+  return `${sign}$${(Math.abs(cents) / 100).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
 
 /** Inverse of formatCurrency for form inputs — parses a planner-typed dollar string ("42.5",

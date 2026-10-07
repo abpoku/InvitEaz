@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { formatCurrency } from "@/lib/utils";
+import { formatCurrency, formatNumber } from "@/lib/utils";
 import { KebabMenu } from "@/components/KebabMenu";
 import { ReceivePaymentModal, type PaymentTarget } from "@/components/tickets/ReceivePaymentModal";
 import { EditPaymentsModal } from "@/components/tickets/EditPaymentsModal";
@@ -113,7 +113,10 @@ export function TicketsManager({
 
   const shown = view === "individual" ? invitees.length : groups.length;
   const total = view === "individual" ? summary.invitees.length : summary.groups.length;
-  const balanceClass = (c: number) => (c > 0 ? "text-ink" : c < 0 ? "text-moss-600" : "text-ink-soft");
+  // Colour key used across the Tickets page: Owed in wine, Paid in green, Balance in plain black.
+  const OWED = "text-wine-700";
+  const PAID = "text-moss-600";
+  const BALANCE = "text-ink";
 
   return (
     <div>
@@ -158,7 +161,7 @@ export function TicketsManager({
         </select>
         {filtering && (
           <span className="text-sm text-ink-soft">
-            Showing {shown} of {total} ·{" "}
+            Showing {formatNumber(shown)} of {formatNumber(total)} ·{" "}
             <button onClick={clearFilters} className="font-medium text-wine-500 hover:underline">Clear filters</button>
           </span>
         )}
@@ -189,17 +192,17 @@ export function TicketsManager({
                     <td className="px-5 py-3 text-ink whitespace-nowrap">{inv.name}</td>
                     <td className="px-5 py-3 text-ink-soft whitespace-nowrap">{inv.groupName || "—"}</td>
                     <td className="px-5 py-3 text-ink-soft whitespace-nowrap">{inv.tier || "—"}</td>
-                    <td className="px-5 py-3 text-ink-soft whitespace-nowrap">
+                    <td className={`px-5 py-3 whitespace-nowrap ${OWED}`}>
                       {formatCurrency(inv.owedCents)}
                       {inv.rsvpStatus === "declined" && <span className="block text-xs text-ink-faint">Declined — no ticket</span>}
                     </td>
-                    <td className="px-5 py-3 text-ink-soft whitespace-nowrap">
+                    <td className={`px-5 py-3 whitespace-nowrap ${PAID}`}>
                       {formatCurrency(inv.paidCents)}
                       {inv.groupShareCents !== 0 && (
                         <span className="block text-xs text-ink-faint">incl. {formatCurrency(inv.groupShareCents)} from group</span>
                       )}
                     </td>
-                    <td className={`px-5 py-3 whitespace-nowrap ${balanceClass(inv.balanceCents)}`}>
+                    <td className={`px-5 py-3 whitespace-nowrap ${BALANCE}`}>
                       {inv.balanceCents < 0 ? `${formatCurrency(-inv.balanceCents)} credit` : formatCurrency(inv.balanceCents)}
                     </td>
                     {canMutate && (
@@ -237,9 +240,9 @@ export function TicketsManager({
                   <td className="px-5 py-3 text-ink-soft whitespace-nowrap">
                     {g.tierBreakdown.map((t) => `${t.tier || "No tier"} x${t.count}`).join(", ") || "—"}
                   </td>
-                  <td className="px-5 py-3 text-ink-soft whitespace-nowrap">{formatCurrency(g.owedCents)}</td>
-                  <td className="px-5 py-3 text-ink-soft whitespace-nowrap">{formatCurrency(g.paidCents)}</td>
-                  <td className={`px-5 py-3 whitespace-nowrap ${balanceClass(g.balanceCents)}`}>
+                  <td className={`px-5 py-3 whitespace-nowrap ${OWED}`}>{formatCurrency(g.owedCents)}</td>
+                  <td className={`px-5 py-3 whitespace-nowrap ${PAID}`}>{formatCurrency(g.paidCents)}</td>
+                  <td className={`px-5 py-3 whitespace-nowrap ${BALANCE}`}>
                     {g.balanceCents < 0 ? `${formatCurrency(-g.balanceCents)} credit` : formatCurrency(g.balanceCents)}
                   </td>
                   {canMutate && (

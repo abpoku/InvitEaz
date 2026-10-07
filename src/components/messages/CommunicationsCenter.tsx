@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { PhoneTextSender, type PhoneRecipient } from "@/components/messages/PhoneTextSender";
 import { PHONE_TEMPLATES, personalize } from "@/lib/phone-text";
+import { formatNumber } from "@/lib/utils";
 
 interface Group { id: string; name: string; }
 interface Assembly { id: string; name: string; }
@@ -286,7 +287,7 @@ export function CommunicationsCenter({
             {confirm ? (
               <div className="rounded border border-wine-200 bg-wine-50 px-4 py-3 text-sm">
                 <p className="text-wine-700">
-                  This will {channel === "email" ? "email" : "text"} <strong>{confirm.count}</strong> {confirm.count === 1 ? "person" : "people"}.
+                  This will {channel === "email" ? "email" : "text"} <strong>{formatNumber(confirm.count)}</strong> {confirm.count === 1 ? "person" : "people"}.
                   {confirm.withoutContact > 0 && ` ${confirm.withoutContact} in this audience ${confirm.withoutContact === 1 ? "has" : "have"} no ${channel === "email" ? "email address" : "phone number"} and will be skipped.`}
                 </p>
                 <div className="mt-3 flex gap-2 justify-end">

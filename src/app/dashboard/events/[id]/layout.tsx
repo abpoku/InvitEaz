@@ -4,7 +4,7 @@ import { getCurrentUser } from "@/lib/session";
 import { getEventById, getMembership, computeEffectiveStatus, getEventStats, isCloneScopedRole } from "@/lib/models/events";
 import { getAssembly, getAssemblyStats } from "@/lib/models/assemblies";
 import { StatusBadge } from "@/components/StatusBadge";
-import { formatDateShort, formatTime } from "@/lib/utils";
+import { formatDateShort, formatTime, formatNumber } from "@/lib/utils";
 import { EventActions } from "@/components/EventActions";
 import { EventTabs } from "@/components/EventTabs";
 
@@ -46,9 +46,9 @@ export default async function EventLayout({ children, params }: { children: Reac
 
         <div className="mt-6 flex flex-wrap items-center gap-x-6 gap-y-2 text-sm">
           <MiniStat label="Invited" value={stats.invited} />
-          <MiniStat label="Attending" value={stats.attending} />
+          <MiniStat label="Attending" value={stats.attending} tone="text-moss-600" />
           <MiniStat label="Maybe" value={stats.maybe} />
-          <MiniStat label="Declined" value={stats.declined} />
+          <MiniStat label="Declined" value={stats.declined} tone="text-wine-700" />
           <MiniStat label="No response" value={stats.noResponse} />
           <MiniStat label="Response rate" value={`${stats.responseRate}%`} />
         </div>
@@ -62,10 +62,10 @@ export default async function EventLayout({ children, params }: { children: Reac
   );
 }
 
-function MiniStat({ label, value }: { label: string; value: string | number }) {
+function MiniStat({ label, value, tone = "text-ink" }: { label: string; value: string | number; tone?: string }) {
   return (
     <div>
-      <span className="font-serif text-lg text-ink">{value}</span>
+      <span className={`font-serif text-lg ${tone}`}>{typeof value === "number" ? formatNumber(value) : value}</span>
       <span className="ml-1.5 text-ink-faint">{label}</span>
     </div>
   );

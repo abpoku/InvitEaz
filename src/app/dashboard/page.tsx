@@ -2,7 +2,7 @@ import Link from "next/link";
 import { getCurrentUser } from "@/lib/session";
 import { listEventsForUser, getEventStats, computeEffectiveStatus, isCloneScopedRole } from "@/lib/models/events";
 import { getAssemblyStats, getAssembly } from "@/lib/models/assemblies";
-import { formatDateShort } from "@/lib/utils";
+import { formatDateShort, formatNumber } from "@/lib/utils";
 import { StatusBadge } from "@/components/StatusBadge";
 import { PLAN_LIMITS } from "@/lib/models/users";
 import { EnvelopeMark } from "@/components/EnvelopeMark";
@@ -95,7 +95,7 @@ function SummaryCard({ label, value }: { label: string; value: number }) {
   return (
     <div className="card p-5">
       <p className="text-sm text-ink-faint">{label}</p>
-      <p className="mt-1.5 font-serif text-3xl text-ink">{value}</p>
+      <p className="mt-1.5 font-serif text-3xl text-ink">{formatNumber(value)}</p>
     </div>
   );
 }
@@ -103,7 +103,7 @@ function SummaryCard({ label, value }: { label: string; value: number }) {
 function Stat({ label, value }: { label: string; value: number }) {
   return (
     <div>
-      <p className="font-serif text-lg text-ink leading-none">{value}</p>
+      <p className="font-serif text-lg text-ink leading-none">{formatNumber(value)}</p>
       <p className="text-xs text-ink-faint mt-1">{label}</p>
     </div>
   );

@@ -3,6 +3,7 @@ import { getAssemblyStats, listAssemblies } from "@/lib/models/assemblies";
 import { listQuestions, questionReport } from "@/lib/models/rsvp";
 import { listInvitees } from "@/lib/models/invitees";
 import { getCurrentUser } from "@/lib/session";
+import { formatNumber } from "@/lib/utils";
 
 export default async function ReportsPage({ params }: { params: { id: string } }) {
   const user = await getCurrentUser();
@@ -79,7 +80,7 @@ export default async function ReportsPage({ params }: { params: { id: string } }
                         <div key={r.value}>
                           <div className="flex items-center justify-between text-xs text-ink-soft mb-1">
                             <span>{r.value}</span>
-                            <span>{r.count}</span>
+                            <span>{formatNumber(r.count)}</span>
                           </div>
                           <div className="h-1.5 rounded-full bg-paper-soft overflow-hidden">
                             <div className="h-full bg-wine-400 rounded-full" style={{ width: `${(r.count / max) * 100}%` }} />
@@ -123,7 +124,7 @@ function Row({ label, value }: { label: string; value: string | number }) {
   return (
     <div className="flex items-center justify-between">
       <dt className="text-ink-soft">{label}</dt>
-      <dd className="text-ink font-medium">{value}</dd>
+      <dd className="text-ink font-medium">{typeof value === "number" ? formatNumber(value) : value}</dd>
     </div>
   );
 }

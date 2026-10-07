@@ -4,7 +4,7 @@ import { Fragment, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { StatusBadge } from "@/components/StatusBadge";
 import { ViewToggle } from "@/components/ViewToggle";
-import { fullName, formatDateTime, cn } from "@/lib/utils";
+import { fullName, formatDateTime, cn, formatNumber } from "@/lib/utils";
 import { groupCounts } from "@/lib/bulk-select";
 import type { InviteeResponseRow } from "@/lib/models/rsvp";
 
@@ -242,7 +242,7 @@ export function ResponsesManager({
         )}
         {filtering && (
           <span className="text-sm text-ink-soft">
-            Showing {view === "individual" ? rows.length : visibleGroups.length} of {view === "individual" ? allRows.length : groupStatusRows.length} ·{" "}
+            Showing {formatNumber(view === "individual" ? rows.length : visibleGroups.length)} of {formatNumber(view === "individual" ? allRows.length : groupStatusRows.length)} ·{" "}
             <button onClick={() => { setQ(""); setStatusFilter("all"); }} className="font-medium text-wine-500 hover:underline">Clear filters</button>
           </span>
         )}
@@ -314,7 +314,7 @@ export function ResponsesManager({
                       </div>
                     </td>
                     <td className="px-5 py-3 text-ink-soft whitespace-nowrap">
-                      {g.counts.attending} attending · {g.counts.maybe} maybe · {g.counts.declined} declined · {g.counts.no_response} no response
+                      <span className="text-moss-600">{formatNumber(g.counts.attending)} attending</span> · {formatNumber(g.counts.maybe)} maybe · <span className="text-wine-700">{formatNumber(g.counts.declined)} declined</span> · {formatNumber(g.counts.no_response)} no response
                     </td>
                     {canMutate && (
                       <td className="px-5 py-3">
