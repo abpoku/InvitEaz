@@ -1,9 +1,11 @@
-import { getEventStats, getMembership, isCloneScopedRole } from "@/lib/models/events";
+import { getEventById, getEventStats, getMembership, isCloneScopedRole } from "@/lib/models/events";
 import { getAssemblyStats, listAssemblies } from "@/lib/models/assemblies";
 import { listQuestions, questionReport } from "@/lib/models/rsvp";
 import { listInvitees } from "@/lib/models/invitees";
+import { getTicketingSummary, listCollected, listDonations } from "@/lib/models/ticketing";
 import { getCurrentUser } from "@/lib/session";
-import { formatNumber } from "@/lib/utils";
+import { TicketPaymentCards } from "@/components/reports/TicketPaymentCards";
+import { formatCurrency, formatNumber } from "@/lib/utils";
 
 export default async function ReportsPage({ params }: { params: { id: string } }) {
   const user = await getCurrentUser();
@@ -26,6 +28,18 @@ export default async function ReportsPage({ params }: { params: { id: string } }
 
   const clones = isCloneScoped ? [] : await listAssemblies(params.id);
   const cloneStats = clones.length > 0 ? await Promise.all(clones.map((c) => getAssemblyStats(params.id, c.id))) : [];
+
+  // Ticket payments, scoped exactly like the Tickets tab: a lead/co-planner sees only their clone.
+  const event = (await getEventById(params.id))!;
+  const ticketing = event.ticketing_enabled
+    ? await Promise.all([
+        getTicketingSummary(params.id, assemblyId),
+        listCollected(params.id, assemblyId),
+        listDonations(params.id, assemblyId),
+      ])
+    : null;
+  const tickets = ticketing && ticketing[0].fieldLabel ? { summary: ticketing[0], collected: ticketing[1], donations: ticketing[2] } : null;
+  const cloneTickets = tickets && clones.length > 0 ? await Promise.all(clones.map((c) => getTicketingSummary(params.id, c.id))) : [];
 
   return (
     <div className="p-4 sm:p-8 max-w-4xl space-y-8">
@@ -62,6 +76,8 @@ export default async function ReportsPage({ params }: { params: { id: string } }
           </dl>
         </div>
       </div>
+
+      {tickets && <TicketPaymentCards eventId={params.id} {...tickets} />}
 
       {questions.length > 0 && (
         <div>
@@ -109,6 +125,12 @@ export default async function ReportsPage({ params }: { params: { id: string } }
                     <Row label="Invited" value={s.invited} />
                     <Row label="Attending" value={s.attending} />
                     <Row label="Response rate" value={`${s.responseRate}%`} />
+                    {cloneTickets[idx] && (
+                      <>
+                        <Row label="Collected" value={formatCurrency(cloneTickets[idx].totals.collectedCents)} />
+                        <Row label="Outstanding" value={formatCurrency(cloneTickets[idx].totals.outstandingCents)} />
+                      </>
+                    )}
                   </dl>
                 </div>
               );
