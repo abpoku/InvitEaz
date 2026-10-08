@@ -1,11 +1,9 @@
-import { getEventById, getEventStats, getMembership, isCloneScopedRole } from "@/lib/models/events";
-import { getAssemblyStats, listAssemblies } from "@/lib/models/assemblies";
-import { listQuestions, questionReport } from "@/lib/models/rsvp";
-import { listInvitees } from "@/lib/models/invitees";
-import { getTicketingSummary, listCollected, listDonations } from "@/lib/models/ticketing";
+import { getMembership, isCloneScopedRole } from "@/lib/models/events";
 import { getCurrentUser } from "@/lib/session";
+import { getReportData } from "@/lib/report-data";
 import { TicketPaymentCards } from "@/components/reports/TicketPaymentCards";
-import { formatCurrency, formatNumber } from "@/lib/utils";
+import { ReportExportMenu, GeneratedStamp } from "@/components/reports/ReportExportMenu";
+import { formatCurrency, formatDateShort, formatNumber } from "@/lib/utils";
 
 export default async function ReportsPage({ params }: { params: { id: string } }) {
   const user = await getCurrentUser();
@@ -13,39 +11,24 @@ export default async function ReportsPage({ params }: { params: { id: string } }
   const isCloneScoped = !!membership && isCloneScopedRole(membership.role);
   const assemblyId = isCloneScoped ? membership.assembly_id : null;
 
-  const stats = isCloneScoped ? await getAssemblyStats(params.id, assemblyId) : await getEventStats(params.id);
-  const questions = await listQuestions(params.id);
-  const invitees = await listInvitees(params.id, assemblyId);
-  const adults = invitees.filter((i) => i.is_adult && i.status === "attending").length;
-  const children = invitees.filter((i) => !i.is_adult && i.status === "attending").length;
-
-  const questionReports = await Promise.all(
-    questions.map(async (q) => ({
-      question: q,
-      rows: (await questionReport(params.id, q.id, assemblyId)).filter((r) => r.value),
-    }))
-  );
-
-  const clones = isCloneScoped ? [] : await listAssemblies(params.id);
-  const cloneStats = clones.length > 0 ? await Promise.all(clones.map((c) => getAssemblyStats(params.id, c.id))) : [];
-
-  // Ticket payments, scoped exactly like the Tickets tab: a lead/co-planner sees only their clone.
-  const event = (await getEventById(params.id))!;
-  const ticketing = event.ticketing_enabled
-    ? await Promise.all([
-        getTicketingSummary(params.id, assemblyId),
-        listCollected(params.id, assemblyId),
-        listDonations(params.id, assemblyId),
-      ])
-    : null;
-  const tickets = ticketing && ticketing[0].fieldLabel ? { summary: ticketing[0], collected: ticketing[1], donations: ticketing[2] } : null;
-  const cloneTickets = tickets && clones.length > 0 ? await Promise.all(clones.map((c) => getTicketingSummary(params.id, c.id))) : [];
+  const { event, cloneName, stats, adults, children, questionReports, tickets, clones } = await getReportData(params.id, assemblyId);
+  const questions = questionReports.map((r) => r.question);
 
   return (
-    <div className="p-4 sm:p-8 max-w-4xl space-y-8">
-      <div>
-        <h2 className="font-serif text-xl text-ink">Reports</h2>
-        <p className="mt-1 text-sm text-ink-soft">A live snapshot of your headcount and RSVP answers.</p>
+    // #report-content is what the image export captures and what printing (PDF) keeps — see
+    // ReportExportMenu and the print rules in globals.css.
+    <div id="report-content" className="p-4 sm:p-8 max-w-4xl space-y-8 bg-paper">
+      <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
+        <div>
+          {/* Only shown in exports (image/PDF), where the event header above the tabs isn't. */}
+          <p className="report-export-only text-sm text-ink-faint">
+            {event.name}{cloneName ? ` · ${cloneName}` : ""} · {formatDateShort(event.event_date)}
+          </p>
+          <h2 className="font-serif text-xl text-ink">Reports</h2>
+          <p className="mt-1 text-sm text-ink-soft">A live snapshot of your headcount and RSVP answers.</p>
+          <GeneratedStamp />
+        </div>
+        <ReportExportMenu eventId={params.id} fileBase={event.name} />
       </div>
 
       <div className="grid sm:grid-cols-3 gap-4">
@@ -116,8 +99,7 @@ export default async function ReportsPage({ params }: { params: { id: string } }
         <div>
           <h3 className="font-serif text-lg text-ink">By clone</h3>
           <div className="mt-4 grid sm:grid-cols-2 md:grid-cols-3 gap-4">
-            {clones.map((c, idx) => {
-              const s = cloneStats[idx];
+            {clones.map(({ clone: c, stats: s, tickets: t }) => {
               return (
                 <div key={c.id} className="card p-5">
                   <p className="text-sm text-ink">{c.name}</p>
@@ -125,10 +107,10 @@ export default async function ReportsPage({ params }: { params: { id: string } }
                     <Row label="Invited" value={s.invited} />
                     <Row label="Attending" value={s.attending} />
                     <Row label="Response rate" value={`${s.responseRate}%`} />
-                    {cloneTickets[idx] && (
+                    {t && (
                       <>
-                        <Row label="Collected" value={formatCurrency(cloneTickets[idx].totals.collectedCents)} />
-                        <Row label="Outstanding" value={formatCurrency(cloneTickets[idx].totals.outstandingCents)} />
+                        <Row label="Collected" value={formatCurrency(t.collectedCents)} />
+                        <Row label="Outstanding" value={formatCurrency(t.outstandingCents)} />
                       </>
                     )}
                   </dl>

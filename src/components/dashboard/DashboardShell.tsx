@@ -21,7 +21,7 @@ export function DashboardShell({
   return (
     <div className="min-h-screen bg-paper md:flex">
       {/* Mobile top bar */}
-      <div className="md:hidden flex items-center justify-between h-14 px-4 border-b border-paper-line">
+      <div data-print-hide className="md:hidden flex items-center justify-between h-14 px-4 border-b border-paper-line">
         <Link href="/dashboard" className="flex items-center gap-2">
           <EnvelopeMark className="w-6 h-4" />
           <span className="font-serif text-lg text-ink">InvitEaz</span>
@@ -65,7 +65,7 @@ export function DashboardShell({
       )}
 
       {/* Desktop sidebar */}
-      <aside className="hidden md:flex w-60 shrink-0 border-r border-paper-line flex-col">
+      <aside data-print-hide className="hidden md:flex w-60 shrink-0 border-r border-paper-line flex-col">
         <div className="h-16 flex items-center px-5 border-b border-paper-line">
           <Link href="/dashboard" className="flex items-center gap-2">
             <EnvelopeMark className="w-6 h-4" />

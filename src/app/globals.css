@@ -56,3 +56,20 @@
   font-family: "Iowan Old Style", "Palatino Linotype", Georgia, serif;
   font-style: italic;
 }
+
+/* Reports export (ReportExportMenu). .report-export-only lines (event name, generated date) appear
+ * only in the image and the PDF; data-print-hide chrome (sidebar, event header, tabs, the menu) is
+ * dropped when printing the Reports page — scoped with :has() so printing other pages is unchanged. */
+.report-export-only { display: none; }
+.report-exporting .report-export-only { display: block; }
+
+@media print {
+  @page { margin: 12mm; }
+  body:has(#report-content) [data-print-hide] { display: none !important; }
+  body:has(#report-content) { background: #fff; }
+  #report-content { max-width: none; padding: 0; background: #fff; }
+  #report-content .report-export-only { display: block; }
+  #report-content .card { break-inside: avoid; box-shadow: none; }
+  #report-content h3 { break-after: avoid; }
+  #report-content * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+}

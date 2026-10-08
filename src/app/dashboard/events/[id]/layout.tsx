@@ -27,7 +27,7 @@ export default async function EventLayout({ children, params }: { children: Reac
 
   return (
     <div>
-      <div className="border-b border-paper-line px-4 sm:px-8 py-5 sm:py-6">
+      <div data-print-hide className="border-b border-paper-line px-4 sm:px-8 py-5 sm:py-6">
         <Link href="/dashboard" className="text-sm text-ink-faint hover:text-ink-soft">← All events</Link>
         <div className="mt-2 flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
           <div className="min-w-0">
