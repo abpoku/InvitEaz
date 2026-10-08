@@ -24,7 +24,7 @@ export async function PATCH(req: Request, { params }: { params: { id: string; pa
   try { body = await req.json(); } catch {}
   const existing = (await getPayment(params.paymentId))!;
   if (existing.voided_at) return NextResponse.json({ error: "A voided payment can't be edited." }, { status: 400 });
-  const invalid = validatePaymentDetails(body, true);
+  const invalid = validatePaymentDetails(body, true, existing.method);
   if (invalid) return NextResponse.json({ error: invalid }, { status: 400 });
 
   const patch: Parameters<typeof updatePayment>[1] = {};

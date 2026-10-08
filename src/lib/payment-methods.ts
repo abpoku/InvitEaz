@@ -1,11 +1,21 @@
 // Pure, client-safe: shared by the Receive/Edit payment modals and the payments API.
 
+/** The types a planner can pick, in dropdown order. */
 export const PAYMENT_METHODS = [
   { value: "cash", label: "Cash" },
   { value: "card", label: "Card" },
-  { value: "cashapp_venmo", label: "CashApp/Venmo" },
+  { value: "cashapp", label: "CashApp" },
+  { value: "venmo", label: "Venmo" },
+  { value: "zelle", label: "Zelle" },
   { value: "check", label: "Check" },
   { value: "other", label: "Other" },
+] as const;
+
+/** Types that can no longer be chosen but are still stored on older payments. They keep their label
+ * everywhere, and Edit offers them only on a payment that already has one, so the planner can switch
+ * it to a current type (e.g. "CashApp/Venmo" → CashApp or Venmo). */
+export const LEGACY_PAYMENT_METHODS = [
+  { value: "cashapp_venmo", label: "CashApp/Venmo" },
 ] as const;
 
 export type PaymentMethod = (typeof PAYMENT_METHODS)[number]["value"];
@@ -14,11 +24,15 @@ export function isPaymentMethod(v: unknown): v is PaymentMethod {
   return PAYMENT_METHODS.some((m) => m.value === v);
 }
 
+export function isLegacyPaymentMethod(v: unknown): boolean {
+  return LEGACY_PAYMENT_METHODS.some((m) => m.value === v);
+}
+
 /** "Other" always shows the planner's own description (required when recording one). */
 export function paymentMethodLabel(method: string | null, other?: string | null): string {
   if (!method) return "—";
   if (method === "other") return other ? `Other — ${other}` : "Other";
-  return PAYMENT_METHODS.find((m) => m.value === method)?.label || method;
+  return [...PAYMENT_METHODS, ...LEGACY_PAYMENT_METHODS].find((m) => m.value === method)?.label || method;
 }
 
 /** Today as YYYY-MM-DD in the *viewer's* timezone — what "today" means to the planner typing it,
@@ -44,14 +58,17 @@ export function isFutureDate(v: string): boolean {
 }
 
 /** Shared by the payments API's POST and PATCH: validates the date/type fields when present
- * (`partial`) or requires them (create). Returns an error message, or null when valid. */
-export function validatePaymentDetails(body: any, partial: boolean): string | null {
+ * (`partial`) or requires them (create). Returns an error message, or null when valid. `currentMethod`
+ * (edits only) is the payment's stored type: re-saving an unchanged legacy type is allowed, so editing
+ * just the amount or date of an old payment doesn't force a new type on it. */
+export function validatePaymentDetails(body: any, partial: boolean, currentMethod?: string | null): string | null {
   if (!partial || body.paidOn !== undefined) {
     if (!isIsoDate(body.paidOn)) return "Choose the date this payment was received.";
     if (isFutureDate(body.paidOn)) return "The payment date can't be in the future.";
   }
   if (!partial || body.method !== undefined) {
-    if (!isPaymentMethod(body.method)) return "Choose a payment type.";
+    const unchangedLegacy = partial && isLegacyPaymentMethod(body.method) && body.method === currentMethod;
+    if (!isPaymentMethod(body.method) && !unchangedLegacy) return "Choose a payment type.";
     if (body.method === "other" && !(typeof body.methodOther === "string" && body.methodOther.trim())) {
       return "Describe the payment type for \"Other\".";
     }

@@ -170,7 +170,7 @@ export function ReceivePaymentModal({
             {method === "other" && (
               <div>
                 <label className="label" htmlFor="rp-other">Describe payment type</label>
-                <input id="rp-other" className="input" placeholder="e.g. Zelle, bank transfer" value={methodOther} onChange={(e) => setMethodOther(e.target.value)} />
+                <input id="rp-other" className="input" placeholder="e.g. bank transfer, PayPal" value={methodOther} onChange={(e) => setMethodOther(e.target.value)} />
               </div>
             )}
             <div>

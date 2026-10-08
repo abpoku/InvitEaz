@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { Modal } from "@/components/Modal";
 import { formatCurrency, dollarsToCents, formatDateShort, formatDateTime } from "@/lib/utils";
-import { PAYMENT_METHODS, paymentMethodLabel, localToday } from "@/lib/payment-methods";
+import { PAYMENT_METHODS, LEGACY_PAYMENT_METHODS, paymentMethodLabel, localToday } from "@/lib/payment-methods";
 import type { PaymentTarget } from "@/components/tickets/ReceivePaymentModal";
 
 interface Payment {
@@ -251,13 +251,21 @@ function EditForm({ payment, donations, onCancel, onSave }: { payment: Payment; 
           <select id={`ep-method-${payment.id}`} className="input" value={method} onChange={(e) => setMethod(e.target.value)}>
             <option value="">{payment.method ? "Choose…" : "Not recorded"}</option>
             {PAYMENT_METHODS.map((m) => <option key={m.value} value={m.value}>{m.label}</option>)}
+            {/* A retired type stays selectable only on a payment that already has it, so it still shows
+                as the current value — the planner can switch it to one of the types above. */}
+            {LEGACY_PAYMENT_METHODS.filter((m) => m.value === payment.method).map((m) => (
+              <option key={m.value} value={m.value}>{m.label} (old)</option>
+            ))}
           </select>
+          {LEGACY_PAYMENT_METHODS.some((m) => m.value === method) && (
+            <p className="mt-1 text-xs text-ink-faint">No longer offered — choose CashApp or Venmo.</p>
+          )}
         </div>
       </div>
       {method === "other" && (
         <div>
           <label className="label">Describe payment type</label>
-          <input className="input" placeholder="e.g. Zelle, bank transfer" value={methodOther} onChange={(e) => setMethodOther(e.target.value)} />
+          <input className="input" placeholder="e.g. bank transfer, PayPal" value={methodOther} onChange={(e) => setMethodOther(e.target.value)} />
         </div>
       )}
       {showDonation && (

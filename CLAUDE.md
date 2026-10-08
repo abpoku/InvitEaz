@@ -260,8 +260,10 @@ Overview's config sections; clone-scoped roles never see it).
   planner can record either "$50 from Alex" or "$150 from the Johnson family" as a single
   entry. Each carries `paid_on` (YYYY-MM-DD the money changed hands — planner-chosen, defaults
   to the planner's *local* today, backdatable, never future; distinct from `recorded_at`) and
-  `method` (`cash | card | cashapp_venmo | check | other`, with a required `method_other`
-  description for `other`; list + validation in `src/lib/payment-methods.ts`). Payments that
+  `method` (`cash | card | cashapp | venmo | zelle | check | other`, with a required `method_other`
+  description for `other`; list + validation in `src/lib/payment-methods.ts`). `cashapp_venmo` (the old combined type) is in `LEGACY_PAYMENT_METHODS`: still stored on older
+  payments and labelled everywhere, never offered for new ones; Edit shows it only on a payment that
+  already has it, so the planner can switch it to CashApp or Venmo (an unchanged legacy type re-saves fine). Payments that
   predate these have `paid_on` backfilled from `recorded_at` and `method` NULL — editing one
   doesn't force a method onto it. Unlike `rsvp_responses`, entries are **editable in place**
   with a soft void (`voided_at`/`voided_by`), not append-only — a planner fixing a mis-entered

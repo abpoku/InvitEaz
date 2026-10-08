@@ -1,7 +1,7 @@
 // Pure, client-safe: the Reports tab's ticket breakdowns, shared by the on-screen cards
 // (TicketPaymentCards) and the Excel/CSV export (export/report route), so they can't disagree.
 
-import { PAYMENT_METHODS, paymentMethodLabel } from "@/lib/payment-methods";
+import { PAYMENT_METHODS, LEGACY_PAYMENT_METHODS, paymentMethodLabel } from "@/lib/payment-methods";
 import type { TicketingSummary, CollectedEntry, DonationEntry } from "@/lib/models/ticketing";
 
 export interface TicketBreakdown {
@@ -56,8 +56,9 @@ export function ticketBreakdown(summary: TicketingSummary, collected: CollectedE
   for (const c of collected) add(c.paymentId, c.method, c.methodOther, c.ticketCents);
   for (const d of donations) add(d.paymentId, d.method, d.methodOther, d.kind === "refund" ? -d.donationCents : d.donationCents);
   const methodOrder = (key: string) => {
-    const i = PAYMENT_METHODS.findIndex((m) => key === m.value || key.startsWith(`${m.value}:`));
-    return i === -1 ? PAYMENT_METHODS.length : i;
+    const order = [...PAYMENT_METHODS, ...LEGACY_PAYMENT_METHODS];
+    const i = order.findIndex((m) => key === m.value || key.startsWith(`${m.value}:`));
+    return i === -1 ? order.length : i;
   };
   const methods = [...byMethod.entries()]
     .sort(([a], [b]) => methodOrder(a) - methodOrder(b) || a.localeCompare(b))

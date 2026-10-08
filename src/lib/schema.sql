@@ -320,7 +320,7 @@ CREATE INDEX IF NOT EXISTS idx_ticket_payments_group ON ticket_payments(group_id
 -- zone). Backfilled once from recorded_at for payments that predate this; the WHERE makes later
 -- runs a no-op.
 ALTER TABLE ticket_payments ADD COLUMN IF NOT EXISTS paid_on TEXT;
-ALTER TABLE ticket_payments ADD COLUMN IF NOT EXISTS method TEXT;        -- cash | card | cashapp_venmo | check | other
+ALTER TABLE ticket_payments ADD COLUMN IF NOT EXISTS method TEXT;        -- cash | card | cashapp | venmo | zelle | check | other (+ legacy cashapp_venmo; src/lib/payment-methods.ts)
 ALTER TABLE ticket_payments ADD COLUMN IF NOT EXISTS method_other TEXT;  -- required description when method = 'other'
 UPDATE ticket_payments SET paid_on = substr(recorded_at, 1, 10) WHERE paid_on IS NULL;
 -- Donations/tips and refunds share this one ledger. Every row's amount_cents is money that actually
