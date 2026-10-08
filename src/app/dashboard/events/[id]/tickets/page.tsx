@@ -28,7 +28,8 @@ export default async function TicketsPage({ params, searchParams }: { params: { 
         </div>
         {summary?.fieldLabel && (
           <div className="w-full lg:max-w-2xl">
-            <TicketsSummaryCard eventId={params.id} clone={assemblyId} summary={summary} />
+            <TicketsSummaryCard eventId={params.id} clone={assemblyId} summary={summary}
+              exportContext={[event.name, ...(assemblyId ? [clones.find((c) => c.id === assemblyId)?.name || ""] : [])].filter(Boolean)} />
           </div>
         )}
       </div>

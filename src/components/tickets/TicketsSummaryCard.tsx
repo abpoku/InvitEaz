@@ -5,15 +5,19 @@ import { Modal } from "@/components/Modal";
 import { formatCurrency, formatDateShort } from "@/lib/utils";
 import { paymentMethodLabel } from "@/lib/payment-methods";
 import type { TicketingSummary, DonationEntry, CollectedEntry } from "@/lib/models/ticketing";
+import { TableExportMenu } from "@/components/TableExportMenu";
+import type { ExportDoc } from "@/lib/table-export";
 
 /** Funds at a glance for the Tickets tab. Ticket figures and donations are separate buckets — a
  * donation never shows up in Collected or reduces Outstanding. */
 export function TicketsSummaryCard({
-  eventId, clone, summary,
+  eventId, clone, summary, exportContext = [],
 }: {
   eventId: string;
   clone: string | null;
   summary: TicketingSummary;
+  /** Event name (and clone, when filtered) — the heading on exported files. */
+  exportContext?: string[];
 }) {
   const { totals, donations } = summary;
   const [open, setOpen] = useState<"collected" | "outstanding" | "donations" | null>(null);
@@ -54,17 +58,17 @@ export function TicketsSummaryCard({
           </button>
         )}
       </div>
-      {open === "collected" && <CollectedModal eventId={eventId} clone={clone} total={totals.collectedCents} onClose={() => setOpen(null)} />}
-      {open === "outstanding" && <OutstandingModal summary={summary} onClose={() => setOpen(null)} />}
+      {open === "collected" && <CollectedModal eventId={eventId} clone={clone} total={totals.collectedCents} context={exportContext} onClose={() => setOpen(null)} />}
+      {open === "outstanding" && <OutstandingModal summary={summary} context={exportContext} onClose={() => setOpen(null)} />}
       {open === "donations" && (
-        <DonationsModal eventId={eventId} clone={clone} label={donations.label} onClose={() => setOpen(null)} />
+        <DonationsModal eventId={eventId} clone={clone} label={donations.label} context={exportContext} onClose={() => setOpen(null)} />
       )}
     </div>
   );
 }
 
 /** Every ticket payment and refund behind Collected — its total is the card's figure exactly. */
-function CollectedModal({ eventId, clone, total, onClose }: { eventId: string; clone: string | null; total: number; onClose: () => void }) {
+function CollectedModal({ eventId, clone, total, context, onClose }: { eventId: string; clone: string | null; total: number; context: string[]; onClose: () => void }) {
   const [rows, setRows] = useState<CollectedEntry[] | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -92,7 +96,22 @@ function CollectedModal({ eventId, clone, total, onClose }: { eventId: string; c
         <p className="text-sm text-ink-faint">No ticket payments recorded yet.</p>
       ) : (
         <>
-          <p className="mb-3 text-sm text-ink-soft">{rows.length} payment{rows.length === 1 ? "" : "s"}, newest first.</p>
+          <div className="mb-3 flex items-center justify-between gap-3">
+            <p className="text-sm text-ink-soft">{rows.length} payment{rows.length === 1 ? "" : "s"}, newest first.</p>
+            <TableExportMenu doc={{
+              title: "Collected", context, fileBase: `${context[0] || "event"}-collected`,
+              note: "Ticket portion of each payment only; refunds are negative. Donations are listed separately.",
+              tables: [{
+                name: "Collected",
+                columns: [{ label: "Date" }, { label: "From" }, { label: "Group/Individual" }, { label: "Payment/Refund" }, { label: "Type" }, { label: "Note" }, { label: "Amount", align: "right" }],
+                rows: rows.map((r) => [
+                  { date: r.paidOn || "" }, r.who, r.targetType === "group" ? "Group" : "Individual", r.kind === "refund" ? "Refund" : "Payment",
+                  paymentMethodLabel(r.method, r.methodOther), r.note || "", { cents: r.ticketCents },
+                ]),
+                total: { label: "Total", cents: total },
+              }],
+            } satisfies ExportDoc} />
+          </div>
           <div className="overflow-x-auto">
             <table className="w-full min-w-[520px] text-sm">
               <thead>
@@ -133,7 +152,7 @@ function CollectedModal({ eventId, clone, total, onClose }: { eventId: string; c
 /** Who still owes, and who's in credit — one line per party (a group as one household, an ungrouped
  * invitee on their own), exactly the way the card adds up Outstanding and credits. Built from the
  * summary the page already has, so no extra request. */
-function OutstandingModal({ summary, onClose }: { summary: TicketingSummary; onClose: () => void }) {
+function OutstandingModal({ summary, context, onClose }: { summary: TicketingSummary; context: string[]; onClose: () => void }) {
   const groupIds = new Set(summary.groups.map((g) => g.groupId));
   const parties = [
     ...summary.groups.map((g) => ({
@@ -176,8 +195,21 @@ function OutstandingModal({ summary, onClose }: { summary: TicketingSummary; onC
     </div>
   );
 
+  const exportRows = (list: typeof parties) =>
+    list.map((p) => [p.name, p.sub, { cents: p.owed }, { cents: p.paid }, { cents: Math.abs(p.balance) }]);
+  const exportCols = (last: string) => [{ label: "Name" }, { label: "Details" }, { label: "Owed", align: "right" as const }, { label: "Paid", align: "right" as const }, { label: last, align: "right" as const }];
+  const doc: ExportDoc = {
+    title: "Outstanding", context, fileBase: `${context[0] || "event"}-outstanding`,
+    note: "One line per household (a group) or per person not in a group.",
+    tables: [
+      ...(due.length ? [{ name: "Still owed", columns: exportCols("Balance"), rows: exportRows(due), total: { label: "Total outstanding", cents: sum(due) } }] : []),
+      ...(credit.length ? [{ name: "In credit", columns: exportCols("Credit"), rows: exportRows(credit), total: { label: "Total credits", cents: sum(credit) } }] : []),
+    ],
+  };
+
   return (
     <Modal title="Outstanding" onClose={onClose} wide>
+      {doc.tables.length > 0 && <div className="mb-3 flex justify-end"><TableExportMenu doc={doc} /></div>}
       {due.length === 0 ? (
         <p className="text-sm text-ink-soft">Nobody owes anything right now — everyone is paid up.</p>
       ) : (
@@ -199,7 +231,7 @@ function OutstandingModal({ summary, onClose }: { summary: TicketingSummary; onC
   );
 }
 
-function DonationsModal({ eventId, clone, label, onClose }: { eventId: string; clone: string | null; label: string; onClose: () => void }) {
+function DonationsModal({ eventId, clone, label, context, onClose }: { eventId: string; clone: string | null; label: string; context: string[]; onClose: () => void }) {
   const [rows, setRows] = useState<DonationEntry[] | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -231,6 +263,22 @@ function DonationsModal({ eventId, clone, label, onClose }: { eventId: string; c
         <p className="text-sm text-ink-faint">Nothing recorded to {label} yet.</p>
       ) : (
         <>
+          <div className="mb-3 flex items-center justify-between gap-3">
+            <p className="text-sm text-ink-soft">{rows.length} entr{rows.length === 1 ? "y" : "ies"}, newest first.</p>
+            <TableExportMenu doc={{
+              title: label, context, fileBase: `${context[0] || "event"}-${label}`,
+              note: "Kept apart from ticket payments; refunds are negative.",
+              tables: [{
+                name: label,
+                columns: [{ label: "Date" }, { label: "From" }, { label: "Group/Individual" }, { label: "Source" }, { label: "Type" }, { label: "Note" }, { label: "Amount", align: "right" }],
+                rows: rows.map((r) => [
+                  { date: r.paidOn || "" }, r.who, r.targetType === "group" ? "Group" : "Individual", sourceLabel(r),
+                  paymentMethodLabel(r.method, r.methodOther), r.note || "", { cents: r.kind === "refund" ? -r.donationCents : r.donationCents },
+                ]),
+                total: { label: "Total", cents: net },
+              }],
+            } satisfies ExportDoc} />
+          </div>
           <div className="overflow-x-auto">
             <table className="w-full min-w-[520px] text-sm">
               <thead>
