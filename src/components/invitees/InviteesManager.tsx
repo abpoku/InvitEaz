@@ -17,7 +17,7 @@ const QUICK_TEXT = "Hi {first_name}, here's your RSVP link for {event}: {link}";
 import { groupCounts } from "@/lib/bulk-select";
 import type { InviteeFieldType } from "@/lib/models/invitee-fields";
 
-interface GroupRow { id: string; name: string; assembly_id: string | null; rsvp_token: string; leader_invitee_id: string | null; }
+export interface GroupRow { id: string; name: string; assembly_id: string | null; rsvp_token: string; leader_invitee_id: string | null; }
 
 export interface InviteeField {
   id: string;
@@ -53,6 +53,19 @@ export interface InviteeRow {
   added_by_guest: number;
 }
 
+/** What the server page loads up front (see invitees/page.tsx) — the same data load() fetches. */
+export interface InviteesInitialData {
+  invitees: InviteeRow[];
+  fields: InviteeField[];
+  assemblies: Assembly[];
+  ticketFieldId: string | null;
+  groups: GroupRow[];
+}
+
+function visibleFields(fields: InviteeField[]): InviteeField[] {
+  return fields.filter((f) => f.active).sort((a, b) => a.order_index - b.order_index);
+}
+
 function fieldValue(field: InviteeField, i: InviteeRow): string {
   switch (field.key) {
     case "email": return i.email || "—";
@@ -68,13 +81,13 @@ function fieldValue(field: InviteeField, i: InviteeRow): string {
   }
 }
 
-export function InviteesManager({ eventId, groupRsvpMode, nameFormat, eventName = "our event" }: { eventId: string; groupRsvpMode: string; nameFormat: "first_last" | "full"; eventName?: string }) {
+export function InviteesManager({ eventId, groupRsvpMode, nameFormat, eventName = "our event", initialData }: { eventId: string; groupRsvpMode: string; nameFormat: "first_last" | "full"; eventName?: string; initialData?: InviteesInitialData }) {
   const router = useRouter();
-  const [invitees, setInvitees] = useState<InviteeRow[]>([]);
-  const [fields, setFields] = useState<InviteeField[]>([]);
-  const [assemblies, setAssemblies] = useState<Assembly[]>([]);
-  const [groups, setGroups] = useState<GroupRow[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [invitees, setInvitees] = useState<InviteeRow[]>(initialData?.invitees ?? []);
+  const [fields, setFields] = useState<InviteeField[]>(visibleFields(initialData?.fields ?? []));
+  const [assemblies, setAssemblies] = useState<Assembly[]>(initialData?.assemblies ?? []);
+  const [groups, setGroups] = useState<GroupRow[]>(initialData?.groups ?? []);
+  const [loading, setLoading] = useState(!initialData);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [query, setQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
@@ -86,7 +99,7 @@ export function InviteesManager({ eventId, groupRsvpMode, nameFormat, eventName 
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [showBulkEdit, setShowBulkEdit] = useState(false);
-  const [ticketFieldId, setTicketFieldId] = useState<string | null>(null);
+  const [ticketFieldId, setTicketFieldId] = useState<string | null>(initialData?.ticketFieldId ?? null);
   const [tierBusyId, setTierBusyId] = useState<string | null>(null);
   const [view, setView] = useState<"individual" | "group">("individual");
   const [renamingGroupId, setRenamingGroupId] = useState<string | null>(null);
@@ -130,7 +143,7 @@ export function InviteesManager({ eventId, groupRsvpMode, nameFormat, eventName 
       const inviteesData = await json(inviteesRes);
       const fieldsData = await json(fieldsRes);
       setInvitees(inviteesData.invitees || []);
-      setFields((fieldsData.fields || []).filter((f: InviteeField) => f.active).sort((a: InviteeField, b: InviteeField) => a.order_index - b.order_index));
+      setFields(visibleFields(fieldsData.fields || []));
       // 403 for a lead planner (or a network hiccup) just means no assembly filter/picker — not fatal.
       setAssemblies(assembliesRes.ok ? (await json(assembliesRes)).assemblies || [] : []);
       // Same tolerance for ticketing — a lead planner can't reach requireEventRole's "viewer" gate
@@ -158,8 +171,9 @@ export function InviteesManager({ eventId, groupRsvpMode, nameFormat, eventName 
     router.refresh();
   }
 
+  // The server page normally hands over the first load already done; fetch only if it couldn't.
   useEffect(() => {
-    load();
+    if (!initialData) load();
   }, [eventId]);
 
   const filtered = useMemo(() => {

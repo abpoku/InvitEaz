@@ -174,6 +174,9 @@ CREATE TABLE IF NOT EXISTS invitations (
   created_at TEXT NOT NULL DEFAULT to_char(now() AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')
 );
 CREATE INDEX IF NOT EXISTS idx_invitations_event ON invitations(event_id);
+-- listInvitees (and anything else finding "this invitee's invitation") looks invitations up by
+-- invitee_id once per invitee; without this, each lookup scanned the whole table.
+CREATE INDEX IF NOT EXISTS idx_invitations_invitee ON invitations(invitee_id);
 CREATE UNIQUE INDEX IF NOT EXISTS idx_invitations_token ON invitations(token);
 
 CREATE TABLE IF NOT EXISTS rsvp_questions (
