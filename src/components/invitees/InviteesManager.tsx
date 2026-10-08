@@ -9,6 +9,8 @@ import { FieldsManagerModal } from "@/components/invitees/FieldsManagerModal";
 import { BulkEditModal } from "@/components/invitees/BulkEditModal";
 import { MergeGroupsModal } from "@/components/invitees/MergeGroupsModal";
 import { ViewToggle } from "@/components/ViewToggle";
+import { SortTh, useTableSort } from "@/components/SortableHeader";
+import { sortRows, statusRank, numericOrText, type SortValue } from "@/lib/table-sort";
 import { fullName } from "@/lib/utils";
 import { toE164, personalize, smsHref, isAppleDevice } from "@/lib/phone-text";
 
@@ -77,6 +79,28 @@ function fieldValue(field: InviteeField, i: InviteeRow): string {
     default: {
       const custom = i.custom_fields ? JSON.parse(i.custom_fields) : {};
       return custom[field.key] || "—";
+    }
+  }
+}
+
+/** What a field column sorts by: the raw value (empty sorts last), numerically for number fields and
+ * any value that reads as a number, as plain text otherwise. */
+function fieldSortValue(field: InviteeField, i: InviteeRow): SortValue {
+  switch (field.key) {
+    case "email": return i.email;
+    case "phone": return i.phone;
+    case "group": return i.group_name;
+    case "is_adult": return i.is_adult ? "Adult" : "Child";
+    case "plus_one_policy": return i.plus_one_policy;
+    case "notes": return i.notes;
+    default: {
+      let custom: Record<string, unknown> = {};
+      try {
+        const parsed = i.custom_fields ? JSON.parse(i.custom_fields) : {};
+        if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) custom = parsed;
+      } catch {}
+      const v = custom[field.key];
+      return typeof v === "string" ? numericOrText(v) : typeof v === "number" ? v : null;
     }
   }
 }
@@ -176,8 +200,23 @@ export function InviteesManager({ eventId, groupRsvpMode, nameFormat, eventName 
     if (!initialData) load();
   }, [eventId]);
 
+  const [sort, onSort] = useTableSort(
+    "inviteaz.sort.invitees",
+    { key: "name", dir: "asc" },
+    ["name", "clone", "status", ...fields.map((f) => `f:${f.key}`)]
+  );
+  const [groupSort, onGroupSort] = useTableSort("inviteaz.sort.invitees.groups", { key: "name", dir: "asc" }, ["name", "clone", "members"]);
+
+  // Filtered *and* sorted (the header arrows) — everything downstream, including select-all, works off this.
   const filtered = useMemo(() => {
-    return invitees.filter((i) => {
+    const name = (i: InviteeRow) => fullName(i.first_name, i.last_name);
+    const sortField = sort.key.startsWith("f:") ? fields.find((f) => f.key === sort.key.slice(2)) : undefined;
+    const value = (i: InviteeRow): SortValue =>
+      sortField ? fieldSortValue(sortField, i)
+        : sort.key === "clone" ? i.assembly_name
+          : sort.key === "status" ? statusRank(i.status)
+            : name(i);
+    const matches = invitees.filter((i) => {
       if (statusFilter !== "all") {
         if (statusFilter === "no_response" && ["attending", "declined", "maybe"].includes(i.status)) return false;
         if (statusFilter !== "no_response" && i.status !== statusFilter) return false;
@@ -192,7 +231,8 @@ export function InviteesManager({ eventId, groupRsvpMode, nameFormat, eventName 
         (i.group_name || "").toLowerCase().includes(q)
       );
     });
-  }, [invitees, query, statusFilter, assemblyFilter]);
+    return sortRows(matches, value, sort.dir, name);
+  }, [invitees, query, statusFilter, assemblyFilter, sort, fields]);
 
   async function removeInvitee(id: string) {
     if (!confirm("Remove this invitee? Their RSVP history will be preserved for your records.")) return;
@@ -303,12 +343,20 @@ export function InviteesManager({ eventId, groupRsvpMode, nameFormat, eventName 
 
   const groupFilterActive = !!query || statusFilter !== "all" || assemblyFilter !== "all";
   const visibleGroupRows = useMemo(() => {
-    if (!groupFilterActive) return groupRows.map((g) => ({ ...g, totalMembers: g.members.length }));
     const matching = new Set(filtered.map((i) => i.id));
-    return groupRows
-      .map((g) => ({ ...g, totalMembers: g.members.length, members: g.members.filter((m) => matching.has(m.id)) }))
-      .filter((g) => g.members.length > 0 || (!!query && g.name.toLowerCase().includes(query.toLowerCase()) && statusFilter === "all"));
-  }, [groupRows, filtered, groupFilterActive, query, statusFilter]);
+    const shown = !groupFilterActive
+      ? groupRows.map((g) => ({ ...g, totalMembers: g.members.length }))
+      : groupRows
+        .map((g) => ({ ...g, totalMembers: g.members.length, members: g.members.filter((m) => matching.has(m.id)) }))
+        .filter((g) => g.members.length > 0 || (!!query && g.name.toLowerCase().includes(query.toLowerCase()) && statusFilter === "all"));
+    const cloneName = (id: string | null) => assemblies.find((a) => a.id === id)?.name;
+    return sortRows(
+      shown,
+      (g) => (groupSort.key === "clone" ? cloneName(g.assembly_id) : groupSort.key === "members" ? g.totalMembers : g.name),
+      groupSort.dir,
+      (g) => g.name
+    );
+  }, [groupRows, filtered, groupFilterActive, query, statusFilter, groupSort, assemblies]);
 
   function bulkEditGroup(groupId: string) {
     const members = groupRows.find((g) => g.id === groupId)?.members || [];
@@ -488,12 +536,12 @@ export function InviteesManager({ eventId, groupRsvpMode, nameFormat, eventName 
                     <th className="px-5 py-3 w-8">
                       <input type="checkbox" checked={allFilteredSelected} onChange={toggleSelectAll} aria-label="Select all" />
                     </th>
-                    <th className="px-5 py-3 font-medium">Name</th>
-                    {assemblies.length > 0 && <th className="px-5 py-3 font-medium whitespace-nowrap">Clone</th>}
+                    <SortTh label="Name" column="name" sort={sort} onSort={onSort} />
+                    {assemblies.length > 0 && <SortTh label="Clone" column="clone" sort={sort} onSort={onSort} />}
                     {fields.map((f) => (
-                      <th key={f.id} className="px-5 py-3 font-medium whitespace-nowrap">{f.label}</th>
+                      <SortTh key={f.id} label={f.label} column={`f:${f.key}`} sort={sort} onSort={onSort} firstDir={f.field_type === "number" ? "desc" : "asc"} />
                     ))}
-                    <th className="px-5 py-3 font-medium">Status</th>
+                    <SortTh label="Status" column="status" sort={sort} onSort={onSort} />
                     <th className="px-5 py-3 font-medium">RSVP link</th>
                     <th className="px-5 py-3"></th>
                   </tr>
@@ -504,7 +552,7 @@ export function InviteesManager({ eventId, groupRsvpMode, nameFormat, eventName 
                       <td className="px-5 py-3">
                         <input type="checkbox" checked={selectedIds.has(i.id)} onChange={() => toggleSelected(i.id)} aria-label={`Select ${fullName(i.first_name, i.last_name)}`} />
                       </td>
-                      <td className="px-5 py-3">
+                      <td className="px-5 py-3 whitespace-nowrap">
                         <p className="text-ink">{fullName(i.first_name, i.last_name)}</p>
                       </td>
                       {assemblies.length > 0 && (
@@ -589,9 +637,9 @@ export function InviteesManager({ eventId, groupRsvpMode, nameFormat, eventName 
                     <th className="px-5 py-3 w-8">
                       <input type="checkbox" checked={allGroupsSelected} onChange={toggleSelectAllGroups} aria-label="Select all groups" />
                     </th>
-                    <th className="px-5 py-3 font-medium">Name</th>
-                    {assemblies.length > 0 && <th className="px-5 py-3 font-medium whitespace-nowrap">Clone</th>}
-                    <th className="px-5 py-3 font-medium whitespace-nowrap">Members</th>
+                    <SortTh label="Name" column="name" sort={groupSort} onSort={onGroupSort} />
+                    {assemblies.length > 0 && <SortTh label="Clone" column="clone" sort={groupSort} onSort={onGroupSort} />}
+                    <SortTh label="Members" column="members" sort={groupSort} onSort={onGroupSort} firstDir="desc" />
                     <th className="px-5 py-3"></th>
                   </tr>
                 </thead>

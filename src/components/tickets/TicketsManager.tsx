@@ -9,6 +9,8 @@ import { EditPaymentsModal } from "@/components/tickets/EditPaymentsModal";
 import { ChangeTicketTypeModal } from "@/components/tickets/ChangeTicketTypeModal";
 import { RefundModal } from "@/components/tickets/RefundModal";
 import { ViewToggle } from "@/components/ViewToggle";
+import { SortTh, useTableSort } from "@/components/SortableHeader";
+import { sortRows, type SortValue } from "@/lib/table-sort";
 import type { TicketingSummary } from "@/lib/models/ticketing";
 
 type View = "individual" | "group";
@@ -20,7 +22,6 @@ type Dialog =
 
 type RsvpFilter = "all" | "attending" | "maybe" | "declined" | "no_response";
 type PayFilter = "all" | "due" | "paid" | "credit" | "none";
-type SortKey = "name" | "balance" | "paid";
 
 const NO_TIER = "__none__";
 
@@ -53,7 +54,7 @@ export function TicketsManager({
   const [rsvp, setRsvp] = useState<RsvpFilter>("all");
   const [pay, setPay] = useState<PayFilter>("all");
   const [tier, setTier] = useState("all");
-  const [sort, setSort] = useState<SortKey>("name");
+  const [sort, onSort] = useTableSort("inviteaz.sort.tickets", { key: "name", dir: "asc" }, ["name", "group", "tier", "members", "owed", "paid", "balance"]);
 
   const groupMembers = (groupId: string) =>
     summary.invitees.filter((i) => i.groupId === groupId).map((i) => ({ id: i.inviteeId, name: i.name, tier: i.tier, declined: i.rsvpStatus === "declined", owedCents: i.owedCents }));
@@ -61,10 +62,21 @@ export function TicketsManager({
   const filtering = q.trim() !== "" || rsvp !== "all" || pay !== "all" || tier !== "all";
   function clearFilters() { setQ(""); setRsvp("all"); setPay("all"); setTier("all"); }
 
-  const sorter = <T extends { name: string; balanceCents: number; paidCents: number }>(a: T, b: T) =>
-    sort === "balance" ? b.balanceCents - a.balanceCents || a.name.localeCompare(b.name)
-      : sort === "paid" ? b.paidCents - a.paidCents || a.name.localeCompare(b.name)
-        : a.name.localeCompare(b.name);
+  // Column sort (the header arrows). The money columns and the name are shared by both views; the
+  // rest only exist in one. A key that doesn't apply to the current view sorts by name.
+  type Row = { name: string; owedCents: number; paidCents: number; balanceCents: number; groupName?: string | null; tier?: string; memberCount?: number };
+  const sortValue = (row: Row): SortValue => {
+    switch (sort.key) {
+      case "group": return row.groupName;
+      case "tier": return row.tier;
+      case "members": return row.memberCount;
+      case "owed": return row.owedCents;
+      case "paid": return row.paidCents;
+      case "balance": return row.balanceCents;
+      default: return row.name;
+    }
+  };
+  const sorted = <T extends Row>(rows: T[]) => sortRows(rows, sortValue, sort.dir, (r) => r.name);
 
   const invitees = useMemo(() => {
     const needle = q.trim().toLowerCase();
@@ -72,10 +84,12 @@ export function TicketsManager({
       .filter((i) => !needle || `${i.name} ${i.groupName || ""}`.toLowerCase().includes(needle))
       .filter((i) => rsvpMatches(i.rsvpStatus, rsvp))
       .filter((i) => payMatches(i.owedCents, i.balanceCents, pay))
-      .filter((i) => tier === "all" || (tier === NO_TIER ? !i.tier : i.tier === tier))
-      .sort(sorter);
+      .filter((i) => tier === "all" || (tier === NO_TIER ? !i.tier : i.tier === tier));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [summary, q, rsvp, pay, tier, sort]);
+  }, [summary, q, rsvp, pay, tier]);
+  const sortedInvitees = useMemo(() => sorted(invitees),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [invitees, sort]);
 
   // A group matches the RSVP / ticket-type filters when any member does; payment status is the group's own.
   const groups = useMemo(() => {
@@ -84,10 +98,12 @@ export function TicketsManager({
       .filter((g) => !needle || g.name.toLowerCase().includes(needle) || groupMembers(g.groupId).some((m) => m.name.toLowerCase().includes(needle)))
       .filter((g) => rsvp === "all" || g.memberRsvpStatuses.some((s) => rsvpMatches(s, rsvp)))
       .filter((g) => payMatches(g.owedCents, g.balanceCents, pay))
-      .filter((g) => tier === "all" || g.tierBreakdown.some((t) => (tier === NO_TIER ? !t.tier : t.tier === tier)))
-      .sort(sorter);
+      .filter((g) => tier === "all" || g.tierBreakdown.some((t) => (tier === NO_TIER ? !t.tier : t.tier === tier)));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [summary, q, rsvp, pay, tier, sort]);
+  }, [summary, q, rsvp, pay, tier]);
+  const sortedGroups = useMemo(() => sorted(groups),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [groups, sort]);
 
   function rowActions(target: PaymentTarget) {
     return (
@@ -154,11 +170,6 @@ export function TicketsManager({
           {summary.tiers.map((t) => <option key={t.name} value={t.name}>{t.name}</option>)}
           <option value={NO_TIER}>No {summary.fieldLabel.toLowerCase()}</option>
         </select>
-        <select className="input w-auto" aria-label="Sort by" value={sort} onChange={(e) => setSort(e.target.value as SortKey)}>
-          <option value="name">Sort: Name (A–Z)</option>
-          <option value="balance">Sort: Balance (highest first)</option>
-          <option value="paid">Sort: Paid (highest first)</option>
-        </select>
         {filtering && (
           <span className="text-sm text-ink-soft">
             Showing {formatNumber(shown)} of {formatNumber(total)} ·{" "}
@@ -177,17 +188,17 @@ export function TicketsManager({
             <table className="w-full min-w-[720px] text-sm">
               <thead>
                 <tr className="border-b border-paper-line text-left text-ink-faint">
-                  <th className="px-5 py-3 font-medium whitespace-nowrap">Name</th>
-                  <th className="px-5 py-3 font-medium whitespace-nowrap">Group/Household</th>
-                  <th className="px-5 py-3 font-medium whitespace-nowrap">{summary.fieldLabel}</th>
-                  <th className="px-5 py-3 font-medium whitespace-nowrap">Owed</th>
-                  <th className="px-5 py-3 font-medium whitespace-nowrap">Paid</th>
-                  <th className="px-5 py-3 font-medium whitespace-nowrap">Balance</th>
+                  <SortTh label="Name" column="name" sort={sort} onSort={onSort} />
+                  <SortTh label="Group/Household" column="group" sort={sort} onSort={onSort} />
+                  <SortTh label={summary.fieldLabel} column="tier" sort={sort} onSort={onSort} />
+                  <SortTh label="Owed" column="owed" sort={sort} onSort={onSort} firstDir="desc" />
+                  <SortTh label="Paid" column="paid" sort={sort} onSort={onSort} firstDir="desc" />
+                  <SortTh label="Balance" column="balance" sort={sort} onSort={onSort} firstDir="desc" />
                   {canMutate && <th className="px-3 py-3"><span className="sr-only">Actions</span></th>}
                 </tr>
               </thead>
               <tbody>
-                {invitees.map((inv) => (
+                {sortedInvitees.map((inv) => (
                   <tr key={inv.inviteeId} className="border-b border-paper-line last:border-0 hover:bg-paper-soft/40">
                     <td className="px-5 py-3 text-ink whitespace-nowrap">{inv.name}</td>
                     <td className="px-5 py-3 text-ink-soft whitespace-nowrap">{inv.groupName || "—"}</td>
@@ -223,17 +234,18 @@ export function TicketsManager({
           <table className="w-full min-w-[720px] text-sm">
             <thead>
               <tr className="border-b border-paper-line text-left text-ink-faint">
-                <th className="px-5 py-3 font-medium whitespace-nowrap">Name</th>
-                <th className="px-5 py-3 font-medium whitespace-nowrap">Group/Household</th>
+                <SortTh label="Name" column="name" sort={sort} onSort={onSort} />
+                <SortTh label="Members" column="members" sort={sort} onSort={onSort} firstDir="desc" />
+                {/* A per-type breakdown list — nothing meaningful to order by. */}
                 <th className="px-5 py-3 font-medium whitespace-nowrap">{summary.fieldLabel}</th>
-                <th className="px-5 py-3 font-medium whitespace-nowrap">Owed</th>
-                <th className="px-5 py-3 font-medium whitespace-nowrap">Paid</th>
-                <th className="px-5 py-3 font-medium whitespace-nowrap">Balance</th>
+                <SortTh label="Owed" column="owed" sort={sort} onSort={onSort} firstDir="desc" />
+                <SortTh label="Paid" column="paid" sort={sort} onSort={onSort} firstDir="desc" />
+                <SortTh label="Balance" column="balance" sort={sort} onSort={onSort} firstDir="desc" />
                 {canMutate && <th className="px-3 py-3"><span className="sr-only">Actions</span></th>}
               </tr>
             </thead>
             <tbody>
-              {groups.map((g) => (
+              {sortedGroups.map((g) => (
                 <tr key={g.groupId} className="border-b border-paper-line last:border-0 hover:bg-paper-soft/40">
                   <td className="px-5 py-3 text-ink whitespace-nowrap">{g.name}</td>
                   <td className="px-5 py-3 text-ink-soft whitespace-nowrap">{g.memberCount} member{g.memberCount === 1 ? "" : "s"}</td>

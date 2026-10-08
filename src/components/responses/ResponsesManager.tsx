@@ -6,6 +6,8 @@ import { StatusBadge } from "@/components/StatusBadge";
 import { ViewToggle } from "@/components/ViewToggle";
 import { fullName, formatDateTime, cn, formatNumber } from "@/lib/utils";
 import { groupCounts } from "@/lib/bulk-select";
+import { SortTh, useTableSort } from "@/components/SortableHeader";
+import { sortRows, statusRank, numericOrText, type SortValue } from "@/lib/table-sort";
 import type { InviteeResponseRow } from "@/lib/models/rsvp";
 
 interface Question { id: string; label: string; }
@@ -20,8 +22,6 @@ const STATUS_ACTIVE_CLASSES: Record<Status, string> = {
 };
 
 type StatusFilter = "all" | Status | "no_response";
-type SortKey = "name" | "recent" | "status" | "group";
-const STATUS_ORDER: Record<string, number> = { attending: 0, maybe: 1, declined: 2 };
 
 export function ResponsesManager({
   eventId, rows: allRows, answersByResponseId, questions, cloneNameById, showCloneColumn, canMutate,
@@ -49,23 +49,35 @@ export function ResponsesManager({
   const [expandedGroupIds, setExpandedGroupIds] = useState<Set<string>>(new Set());
   const [q, setQ] = useState("");
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
-  const [sort, setSort] = useState<SortKey>("name");
+  const [sort, onSort] = useTableSort(
+    "inviteaz.sort.responses",
+    { key: "name", dir: "asc" },
+    ["name", "clone", "status", "attending", "responded", ...questions.map((qq) => `q:${qq.id}`)]
+  );
+  const [groupSort, onGroupSort] = useTableSort("inviteaz.sort.responses.groups", { key: "name", dir: "asc" }, ["name", "breakdown"]);
 
   // Everything below (selection, select-all, the table) works off the filtered + sorted rows, so
   // "Select all" only ever selects what's actually on screen.
   const rows = useMemo(() => {
     const needle = q.trim().toLowerCase();
     const name = (r: InviteeResponseRow) => fullName(r.first_name, r.last_name);
-    return allRows
+    const filtered = allRows
       .filter((r) => !needle || `${name(r)} ${r.email || ""} ${r.group_name || ""}`.toLowerCase().includes(needle))
-      .filter((r) => statusFilter === "all" || (statusFilter === "no_response" ? !r.rsvp_status : r.rsvp_status === statusFilter))
-      .sort((a, b) => {
-        if (sort === "recent") return (b.responded_at || "").localeCompare(a.responded_at || "") || name(a).localeCompare(name(b));
-        if (sort === "status") return (STATUS_ORDER[a.rsvp_status || ""] ?? 3) - (STATUS_ORDER[b.rsvp_status || ""] ?? 3) || name(a).localeCompare(name(b));
-        if (sort === "group") return (a.group_name || "\uffff").localeCompare(b.group_name || "\uffff") || name(a).localeCompare(name(b));
-        return name(a).localeCompare(name(b));
-      });
-  }, [allRows, q, statusFilter, sort]);
+      .filter((r) => statusFilter === "all" || (statusFilter === "no_response" ? !r.rsvp_status : r.rsvp_status === statusFilter));
+    const answer = (r: InviteeResponseRow, questionId: string) =>
+      (r.response_id ? answersByResponseId[r.response_id] : undefined)?.find((a) => a.question_id === questionId)?.value;
+    const value = (r: InviteeResponseRow): SortValue => {
+      if (sort.key.startsWith("q:")) return numericOrText(answer(r, sort.key.slice(2)));
+      switch (sort.key) {
+        case "clone": return r.assembly_id ? cloneNameById[r.assembly_id] : null;
+        case "status": return statusRank(r.rsvp_status);
+        case "attending": return r.rsvp_status === "attending" ? r.num_attending ?? 1 : null;
+        case "responded": return r.responded_at;
+        default: return name(r);
+      }
+    };
+    return sortRows(filtered, value, sort.dir, name);
+  }, [allRows, q, statusFilter, sort, answersByResponseId, cloneNameById]);
   const filtering = q.trim() !== "" || statusFilter !== "all";
   // A bulk action must never touch rows the planner can't currently see.
   useEffect(() => {
@@ -162,10 +174,11 @@ export function ResponsesManager({
   // Group view: a group shows when any member matches the search/status filter; its counts and
   // member list stay whole, so "Attending 2 · Declined 1" always describes the real household.
   const visibleGroups = useMemo(() => {
-    if (!filtering) return groupStatusRows;
     const matching = new Set(rows.map((r) => r.invitee_id));
-    return groupStatusRows.filter((g) => g.members.some((m) => matching.has(m.invitee_id)));
-  }, [groupStatusRows, rows, filtering]);
+    const shown = filtering ? groupStatusRows.filter((g) => g.members.some((m) => matching.has(m.invitee_id))) : groupStatusRows;
+    // "RSVP breakdown" sorts by how many are attending.
+    return sortRows(shown, (g) => (groupSort.key === "breakdown" ? g.counts.attending : g.name), groupSort.dir, (g) => g.name);
+  }, [groupStatusRows, rows, filtering, groupSort]);
 
   async function setGroupStatus(group: { groupId: string; invitationIds: string[] }, status: Status) {
     setGroupBusyId(group.groupId);
@@ -232,14 +245,6 @@ export function ResponsesManager({
           <option value="declined">Declined</option>
           <option value="no_response">No response</option>
         </select>
-        {view === "individual" && (
-          <select className="input w-auto" aria-label="Sort by" value={sort} onChange={(e) => setSort(e.target.value as SortKey)}>
-            <option value="name">Sort: Name (A–Z)</option>
-            <option value="recent">Sort: Most recent response</option>
-            <option value="status">Sort: Status</option>
-            <option value="group">Sort: Group</option>
-          </select>
-        )}
         {filtering && (
           <span className="text-sm text-ink-soft">
             Showing {formatNumber(view === "individual" ? rows.length : visibleGroups.length)} of {formatNumber(view === "individual" ? allRows.length : groupStatusRows.length)} ·{" "}
@@ -284,8 +289,8 @@ export function ResponsesManager({
                       <input type="checkbox" checked={allGroupsSelected} onChange={toggleSelectAllGroups} aria-label="Select all groups" />
                     </th>
                   )}
-                  <th className="px-5 py-3 font-medium whitespace-nowrap">Name</th>
-                  <th className="px-5 py-3 font-medium whitespace-nowrap">RSVP breakdown</th>
+                  <SortTh label="Name" column="name" sort={groupSort} onSort={onGroupSort} />
+                  <SortTh label="RSVP breakdown" column="breakdown" sort={groupSort} onSort={onGroupSort} firstDir="desc" />
                   {canMutate && <th className="px-5 py-3 font-medium whitespace-nowrap">Set status for group</th>}
                 </tr>
               </thead>
@@ -428,14 +433,14 @@ export function ResponsesManager({
                     <input type="checkbox" checked={allSelected} onChange={toggleSelectAll} aria-label="Select all" />
                   </th>
                 )}
-                <th className="px-5 py-3 font-medium whitespace-nowrap">Name</th>
-                {showCloneColumn && <th className="px-5 py-3 font-medium whitespace-nowrap">Clone</th>}
-                <th className="px-5 py-3 font-medium whitespace-nowrap">Status</th>
-                <th className="px-5 py-3 font-medium whitespace-nowrap"># Attending</th>
+                <SortTh label="Name" column="name" sort={sort} onSort={onSort} />
+                {showCloneColumn && <SortTh label="Clone" column="clone" sort={sort} onSort={onSort} />}
+                <SortTh label="Status" column="status" sort={sort} onSort={onSort} />
+                <SortTh label="# Attending" column="attending" sort={sort} onSort={onSort} firstDir="desc" />
                 {questions.map((q) => (
-                  <th key={q.id} className="px-5 py-3 font-medium whitespace-nowrap">{q.label}</th>
+                  <SortTh key={q.id} label={q.label} column={`q:${q.id}`} sort={sort} onSort={onSort} />
                 ))}
-                <th className="px-5 py-3 font-medium whitespace-nowrap">Responded</th>
+                <SortTh label="Responded" column="responded" sort={sort} onSort={onSort} firstDir="desc" />
               </tr>
             </thead>
             <tbody>
