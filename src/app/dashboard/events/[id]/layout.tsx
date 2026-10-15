@@ -2,11 +2,12 @@ import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { getCurrentUser } from "@/lib/session";
 import { getEventById, getMembership, computeEffectiveStatus, getEventStats, isCloneScopedRole } from "@/lib/models/events";
-import { getAssembly, getAssemblyStats } from "@/lib/models/assemblies";
+import { getAssembly, getAssemblyStats, listAssemblies } from "@/lib/models/assemblies";
 import { StatusBadge } from "@/components/StatusBadge";
-import { formatDateShort, formatTime, formatNumber } from "@/lib/utils";
+import { formatDateShort, formatTime } from "@/lib/utils";
 import { EventActions } from "@/components/EventActions";
 import { EventTabs } from "@/components/EventTabs";
+import { EventHeaderStats } from "@/components/EventHeaderStats";
 
 export default async function EventLayout({ children, params }: { children: React.ReactNode; params: { id: string } }) {
   const user = await getCurrentUser();
@@ -24,6 +25,16 @@ export default async function EventLayout({ children, params }: { children: Reac
     ? await getAssemblyStats(params.id, membership.assembly_id)
     : await getEventStats(params.id);
   const status = computeEffectiveStatus(event);
+
+  // Each clone's numbers (plus Unassigned), so the header can follow a tab's clone filter without a
+  // round trip. Full-event roles only — a clone-scoped planner's stats above are already their clone.
+  const clones = isCloneScoped ? [] : await listAssemblies(params.id);
+  const byClone = clones.length > 0
+    ? Object.fromEntries(await Promise.all([
+        ...clones.map(async (c) => [c.id, { name: c.name, stats: await getAssemblyStats(params.id, c.id) }] as const),
+        (async () => ["unassigned", { name: "Unassigned", stats: await getAssemblyStats(params.id, null) }] as const)(),
+      ]))
+    : undefined;
 
   return (
     <div>
@@ -44,29 +55,13 @@ export default async function EventLayout({ children, params }: { children: Reac
           <EventActions event={event} status={status} role={membership.role} />
         </div>
 
-        <div className="mt-6 flex flex-wrap items-center gap-x-6 gap-y-2 text-sm">
-          <MiniStat label="Invited" value={stats.invited} />
-          <MiniStat label="Attending" value={stats.attending} tone="text-moss-600" />
-          <MiniStat label="Maybe" value={stats.maybe} />
-          <MiniStat label="Declined" value={stats.declined} tone="text-wine-700" />
-          <MiniStat label="No response" value={stats.noResponse} />
-          <MiniStat label="Response rate" value={`${stats.responseRate}%`} />
-        </div>
+        <EventHeaderStats stats={stats} byClone={byClone} />
 
         <nav className="mt-6 -mb-6">
           <EventTabs eventId={params.id} role={membership.role} />
         </nav>
       </div>
       <div>{children}</div>
-    </div>
-  );
-}
-
-function MiniStat({ label, value, tone = "text-ink" }: { label: string; value: string | number; tone?: string }) {
-  return (
-    <div>
-      <span className={`font-serif text-lg ${tone}`}>{typeof value === "number" ? formatNumber(value) : value}</span>
-      <span className="ml-1.5 text-ink-faint">{label}</span>
     </div>
   );
 }

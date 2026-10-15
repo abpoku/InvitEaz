@@ -1,7 +1,7 @@
 "use client";
 
 import { Fragment, useEffect, useMemo, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { StatusBadge } from "@/components/StatusBadge";
 import { AddInviteeModal } from "@/components/invitees/AddInviteeModal";
 import { UploadModal } from "@/components/invitees/UploadModal";
@@ -115,7 +115,18 @@ export function InviteesManager({ eventId, groupRsvpMode, nameFormat, eventName 
   const [loadError, setLoadError] = useState<string | null>(null);
   const [query, setQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
-  const [assemblyFilter, setAssemblyFilter] = useState("all");
+  // The clone filter lives in the URL (?clone=) — the same place Responses and Tickets keep theirs — so
+  // the event header's numbers follow it (EventHeaderStats). Updated with history.replaceState, which
+  // Next keeps in sync with useSearchParams without re-requesting the page.
+  const searchParams = useSearchParams();
+  const [assemblyFilter, setAssemblyFilterState] = useState(() => searchParams.get("clone") || "all");
+  function setAssemblyFilter(value: string) {
+    setAssemblyFilterState(value);
+    const params = new URLSearchParams(window.location.search);
+    if (value === "all") params.delete("clone"); else params.set("clone", value);
+    const qs = params.toString();
+    window.history.replaceState(null, "", `${window.location.pathname}${qs ? `?${qs}` : ""}`);
+  }
   const [showAdd, setShowAdd] = useState(false);
   const [editing, setEditing] = useState<InviteeRow | null>(null);
   const [showUpload, setShowUpload] = useState(false);
@@ -357,6 +368,13 @@ export function InviteesManager({ eventId, groupRsvpMode, nameFormat, eventName 
       (g) => g.name
     );
   }, [groupRows, filtered, groupFilterActive, query, statusFilter, groupSort, assemblies]);
+
+  // A ?clone= that isn't one of this event's clones (stale link, deleted clone) falls back to all clones.
+  useEffect(() => {
+    if (loading || assemblyFilter === "all" || assemblyFilter === "unassigned") return;
+    if (!assemblies.some((a) => a.id === assemblyFilter)) setAssemblyFilter("all");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loading, assemblies, assemblyFilter]);
 
   // Counts for the chosen clone ("All clones" = the whole event), before search/status narrow it further.
   // A group counts toward a clone when any of its members is in that clone — the same rule the Group
