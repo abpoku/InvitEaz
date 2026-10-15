@@ -3,11 +3,11 @@ import { listGroups } from "@/lib/models/invitees";
 import { getMembership, isCloneScopedRole, getEventById } from "@/lib/models/events";
 import { twilioConfigured } from "@/lib/sms";
 import { listAssemblies } from "@/lib/models/assemblies";
-import { getCurrentUser } from "@/lib/session";
+import { requireUser } from "@/lib/session";
 
 export default async function MessagesPage({ params }: { params: { id: string } }) {
-  const user = await getCurrentUser();
-  const membership = await getMembership(params.id, user!.id);
+  const user = await requireUser();
+  const membership = await getMembership(params.id, user.id);
   const assemblyId = membership && isCloneScopedRole(membership.role) ? membership.assembly_id : null;
 
   const [groups, assemblies, event] = await Promise.all([

@@ -1,13 +1,13 @@
 import { listInviteeResponseRows, listQuestions, getAnswersForResponse } from "@/lib/models/rsvp";
 import { getMembership, isCloneScopedRole } from "@/lib/models/events";
 import { listAssemblies } from "@/lib/models/assemblies";
-import { getCurrentUser } from "@/lib/session";
+import { requireUser } from "@/lib/session";
 import { CloneFilter } from "@/components/responses/CloneFilter";
 import { ResponsesManager } from "@/components/responses/ResponsesManager";
 
 export default async function ResponsesPage({ params, searchParams }: { params: { id: string }; searchParams: { clone?: string } }) {
-  const user = await getCurrentUser();
-  const membership = await getMembership(params.id, user!.id);
+  const user = await requireUser();
+  const membership = await getMembership(params.id, user.id);
   const isCloneScoped = !!membership && isCloneScopedRole(membership.role);
 
   const clones = isCloneScoped ? [] : await listAssemblies(params.id);

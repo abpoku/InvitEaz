@@ -5,7 +5,7 @@ import { listQuestions } from "@/lib/models/rsvp";
 import { listAssemblies } from "@/lib/models/assemblies";
 import { listInviteeFields } from "@/lib/models/invitee-fields";
 import { getTicketingConfig } from "@/lib/models/ticketing";
-import { getCurrentUser } from "@/lib/session";
+import { requireUser } from "@/lib/session";
 import { formatDate, formatTime } from "@/lib/utils";
 import { ShareCard } from "@/components/ShareCard";
 import { AssembliesManager } from "@/components/assemblies/AssembliesManager";
@@ -14,14 +14,14 @@ import { FormBuilder } from "@/components/rsvp-form/FormBuilder";
 import { TicketingManager } from "@/components/ticketing/TicketingManager";
 
 export default async function EventOverviewPage({ params }: { params: { id: string } }) {
-  const user = await getCurrentUser();
-  const membership = await getMembership(params.id, user!.id);
+  const user = await requireUser();
+  const membership = await getMembership(params.id, user.id);
   const isLeadPlanner = membership?.role === "lead_planner";
   const isCloneScoped = !!membership && isCloneScopedRole(membership.role);
   const assemblyId = isCloneScoped ? membership!.assembly_id : null;
 
   const event = (await getEventById(params.id))!;
-  const isOwner = event.owner_id === user!.id;
+  const isOwner = event.owner_id === user.id;
   const invitees = await listInvitees(params.id, assemblyId);
   const questions = await listQuestions(params.id);
   const [assemblies, members] = isCloneScoped ? [[], []] : await Promise.all([listAssemblies(params.id), listMembers(params.id)]);

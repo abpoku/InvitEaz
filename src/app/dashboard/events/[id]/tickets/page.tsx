@@ -1,14 +1,14 @@
 import { getEventById, getMembership, isCloneScopedRole } from "@/lib/models/events";
 import { listAssemblies } from "@/lib/models/assemblies";
 import { getTicketingSummary } from "@/lib/models/ticketing";
-import { getCurrentUser } from "@/lib/session";
+import { requireUser } from "@/lib/session";
 import { CloneFilter } from "@/components/responses/CloneFilter";
 import { TicketsManager } from "@/components/tickets/TicketsManager";
 import { TicketsSummaryCard } from "@/components/tickets/TicketsSummaryCard";
 
 export default async function TicketsPage({ params, searchParams }: { params: { id: string }; searchParams: { clone?: string } }) {
-  const user = await getCurrentUser();
-  const membership = await getMembership(params.id, user!.id);
+  const user = await requireUser();
+  const membership = await getMembership(params.id, user.id);
   const isCloneScoped = !!membership && isCloneScopedRole(membership.role);
 
   const clones = isCloneScoped ? [] : await listAssemblies(params.id);

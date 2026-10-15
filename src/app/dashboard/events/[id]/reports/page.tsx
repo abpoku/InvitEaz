@@ -1,13 +1,13 @@
 import { getMembership, isCloneScopedRole } from "@/lib/models/events";
-import { getCurrentUser } from "@/lib/session";
+import { requireUser } from "@/lib/session";
 import { getReportData } from "@/lib/report-data";
 import { TicketPaymentCards } from "@/components/reports/TicketPaymentCards";
 import { ReportExportMenu, GeneratedStamp } from "@/components/reports/ReportExportMenu";
 import { formatCurrency, formatDateShort, formatNumber } from "@/lib/utils";
 
 export default async function ReportsPage({ params }: { params: { id: string } }) {
-  const user = await getCurrentUser();
-  const membership = await getMembership(params.id, user!.id);
+  const user = await requireUser();
+  const membership = await getMembership(params.id, user.id);
   const isCloneScoped = !!membership && isCloneScopedRole(membership.role);
   const assemblyId = isCloneScoped ? membership.assembly_id : null;
 

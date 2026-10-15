@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { getCurrentUser } from "@/lib/session";
+import { requireUser } from "@/lib/session";
 import { listEventsForUser, getEventStats, computeEffectiveStatus, isCloneScopedRole } from "@/lib/models/events";
 import { getAssemblyStats, getAssembly } from "@/lib/models/assemblies";
 import { formatDateShort, formatNumber } from "@/lib/utils";
@@ -8,8 +8,8 @@ import { PLAN_LIMITS } from "@/lib/models/users";
 import { EnvelopeMark } from "@/components/EnvelopeMark";
 
 export default async function DashboardPage() {
-  const user = await getCurrentUser();
-  const events = await listEventsForUser(user!.id);
+  const user = await requireUser();
+  const events = await listEventsForUser(user.id);
 
   const upcoming = events.filter((e) => computeEffectiveStatus(e) !== "completed" && computeEffectiveStatus(e) !== "cancelled");
   const past = events.filter((e) => computeEffectiveStatus(e) === "completed");
@@ -25,13 +25,13 @@ export default async function DashboardPage() {
     return { event: e, stats, assemblyName: assembly?.name };
   }));
 
-  const limits = PLAN_LIMITS[user!.plan];
+  const limits = PLAN_LIMITS[user.plan];
 
   return (
     <div className="p-4 sm:p-8 max-w-6xl">
       <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
         <div>
-          <h1 className="font-serif text-2xl text-ink">Good to see you, {user!.first_name}.</h1>
+          <h1 className="font-serif text-2xl text-ink">Good to see you, {user.first_name}.</h1>
           <p className="mt-1 text-sm text-ink-soft">
             {events.length === 0 ? "Let's create your first event." : `You're managing ${events.length} event${events.length === 1 ? "" : "s"}.`}
           </p>

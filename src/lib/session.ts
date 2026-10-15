@@ -1,4 +1,5 @@
 import { getServerSession } from "next-auth";
+import { redirect } from "next/navigation";
 import { authOptions } from "@/lib/auth";
 import { getUserById } from "@/lib/models/users";
 import { getMembership, isCloneScopedRole, type Role } from "@/lib/models/events";
@@ -8,6 +9,15 @@ export async function getCurrentUser() {
   const id = (session?.user as any)?.id;
   if (!id) return null;
   return (await getUserById(id)) || null;
+}
+
+/** For dashboard pages: the signed-in user, or a redirect to login. Next renders a page in parallel
+ * with its layout, so the layout's own redirect doesn't stop the page running — a page that assumed a
+ * user (`user!`) used to crash with a null-user error in the logs for every signed-out visit. */
+export async function requireUser() {
+  const user = await getCurrentUser();
+  if (!user) redirect("/login");
+  return user;
 }
 
 // lead_planner and co_planner deliberately have no rank here — both are scoped roles, not a
