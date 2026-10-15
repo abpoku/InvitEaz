@@ -11,7 +11,7 @@ import { MergeGroupsModal } from "@/components/invitees/MergeGroupsModal";
 import { ViewToggle } from "@/components/ViewToggle";
 import { SortTh, useTableSort } from "@/components/SortableHeader";
 import { sortRows, statusRank, numericOrText, type SortValue } from "@/lib/table-sort";
-import { fullName } from "@/lib/utils";
+import { fullName, formatNumber } from "@/lib/utils";
 import { toE164, personalize, smsHref, isAppleDevice } from "@/lib/phone-text";
 
 // "Text from my phone" quick action: opens the planner's own Messages app with this ready to send.
@@ -358,6 +358,19 @@ export function InviteesManager({ eventId, groupRsvpMode, nameFormat, eventName 
     );
   }, [groupRows, filtered, groupFilterActive, query, statusFilter, groupSort, assemblies]);
 
+  // Counts for the chosen clone ("All clones" = the whole event), before search/status narrow it further.
+  // A group counts toward a clone when any of its members is in that clone — the same rule the Group
+  // view uses to decide which groups to show, so the number always matches the rows.
+  const inChosenClone = (i: InviteeRow) =>
+    assemblyFilter === "all" || (assemblyFilter === "unassigned" ? !i.assembly_id : i.assembly_id === assemblyFilter);
+  const cloneInviteeCount = invitees.filter(inChosenClone).length;
+  const cloneGroupCount = assemblyFilter === "all" ? groupRows.length : groupRows.filter((g) => g.members.some(inChosenClone)).length;
+  const cloneLabel = assemblyFilter === "all"
+    ? (assemblies.length > 0 ? "All clones" : null)
+    : assemblyFilter === "unassigned" ? "Unassigned" : assemblies.find((a) => a.id === assemblyFilter)?.name ?? null;
+  const narrowed = !!query || statusFilter !== "all";
+  const plural = (n: number, one: string, many: string) => `${formatNumber(n)} ${n === 1 ? one : many}`;
+
   function bulkEditGroup(groupId: string) {
     const members = groupRows.find((g) => g.id === groupId)?.members || [];
     setSelectedIds(new Set(members.map((m) => m.id)));
@@ -492,11 +505,22 @@ export function InviteesManager({ eventId, groupRsvpMode, nameFormat, eventName 
         </div>
       </div>
 
-      {(groups.length > 0 || view === "group") && (
-        <div className="mt-4">
-          <ViewToggle value={view} onChange={setView} />
-        </div>
-      )}
+      <div className="mt-4 flex flex-wrap items-center gap-x-4 gap-y-2">
+        {(groups.length > 0 || view === "group") && <ViewToggle value={view} onChange={setView} />}
+        {!loading && !loadError && (
+          <p className="text-sm text-ink-soft" aria-live="polite">
+            {cloneLabel && <><span className="font-medium text-ink">{cloneLabel}</span> · </>}
+            {plural(cloneInviteeCount, "invitee", "invitees")} · {plural(cloneGroupCount, "group", "groups")}
+            {narrowed && (
+              <span className="text-ink-faint">
+                {" "}· showing {view === "individual"
+                  ? `${formatNumber(filtered.length)} of ${formatNumber(cloneInviteeCount)}`
+                  : `${formatNumber(visibleGroupRows.length)} of ${formatNumber(cloneGroupCount)} groups`}
+              </span>
+            )}
+          </p>
+        )}
+      </div>
 
       {view === "individual" ? (
         <>
@@ -598,9 +622,6 @@ export function InviteesManager({ eventId, groupRsvpMode, nameFormat, eventName 
             )}
           </div>
 
-          {invitees.length > 0 && (
-            <p className="mt-3 text-xs text-ink-faint">{invitees.length} invitee{invitees.length === 1 ? "" : "s"} total.</p>
-          )}
         </>
       ) : (
         <>
