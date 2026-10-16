@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { formatCurrency, dollarsToCents } from "@/lib/utils";
 import { DEFAULT_DONATION_MESSAGE, MAX_DONATION_MESSAGE } from "@/lib/donation-note";
+import { TicketLimits } from "@/components/ticketing/TicketLimits";
 
 interface TicketTier { id: string; option_value: string; price_cents: number; }
 interface TicketingField { id: string; label: string; }
@@ -227,6 +228,10 @@ export function TicketingManager({
                 </div>
               )}
             </div>
+          )}
+
+          {config.field && (
+            <TicketLimits eventId={eventId} canManage={canManage} tierNames={config.tiers.map((t) => t.option_value)} />
           )}
 
           <DonationsSettings

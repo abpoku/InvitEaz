@@ -105,6 +105,15 @@ function fieldSortValue(field: InviteeField, i: InviteeRow): SortValue {
   }
 }
 
+/** The server's error message for a failed write (e.g. a ticket limit refusing it), or null when it
+ * succeeded. A crash returns an empty body, so never let parsing it throw. */
+async function errorFrom(res: Response, fallback: string): Promise<string | null> {
+  if (res.ok) return null;
+  let data: any = {};
+  try { data = await res.json(); } catch {}
+  return data.error || fallback;
+}
+
 export function InviteesManager({ eventId, groupRsvpMode, nameFormat, eventName = "our event", initialData }: { eventId: string; groupRsvpMode: string; nameFormat: "first_last" | "full"; eventName?: string; initialData?: InviteesInitialData }) {
   const router = useRouter();
   const [invitees, setInvitees] = useState<InviteeRow[]>(initialData?.invitees ?? []);
@@ -113,6 +122,7 @@ export function InviteesManager({ eventId, groupRsvpMode, nameFormat, eventName 
   const [groups, setGroups] = useState<GroupRow[]>(initialData?.groups ?? []);
   const [loading, setLoading] = useState(!initialData);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
   const [query, setQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
   // The clone filter lives in the URL (?clone=) — the same place Responses and Tickets keep theirs — so
@@ -195,12 +205,18 @@ export function InviteesManager({ eventId, groupRsvpMode, nameFormat, eventName 
 
   async function setTierValue(invitee: InviteeRow, fieldKey: string, value: string) {
     setTierBusyId(invitee.id);
+    setActionError(null);
     const current = invitee.custom_fields ? JSON.parse(invitee.custom_fields) : {};
-    await fetch(`/api/events/${eventId}/invitees/${invitee.id}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ customFields: { ...current, [fieldKey]: value } }),
-    });
+    try {
+      const res = await fetch(`/api/events/${eventId}/invitees/${invitee.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ customFields: { ...current, [fieldKey]: value } }),
+      });
+      setActionError(await errorFrom(res, "We couldn't change the ticket type. Please try again."));
+    } catch {
+      setActionError("We couldn't reach the server just now. Please try again.");
+    }
     setTierBusyId(null);
     load();
     router.refresh();
@@ -311,11 +327,20 @@ export function InviteesManager({ eventId, groupRsvpMode, nameFormat, eventName 
   }
 
   async function applyBulkEdit(fieldKey: string, value: string) {
-    await fetch(`/api/events/${eventId}/invitees/bulk`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ ids: [...selectedIds], fieldKey, value }),
-    });
+    setActionError(null);
+    try {
+      const res = await fetch(`/api/events/${eventId}/invitees/bulk`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ids: [...selectedIds], fieldKey, value }),
+      });
+      const failed = await errorFrom(res, "We couldn't apply that change. Please try again.");
+      // On a refusal (e.g. a ticket limit) keep the selection so the planner can adjust and retry.
+      if (failed) { setActionError(failed); return; }
+    } catch {
+      setActionError("We couldn't reach the server just now. Please try again.");
+      return;
+    }
     setSelectedIds(new Set());
     load();
   }
@@ -523,6 +548,12 @@ export function InviteesManager({ eventId, groupRsvpMode, nameFormat, eventName 
         </div>
       </div>
 
+      {actionError && (
+        <div role="alert" className="mt-4 flex items-start justify-between gap-3 rounded border border-clay-500/30 bg-clay-500/5 px-4 py-2.5 text-sm text-clay-600">
+          <span>{actionError}</span>
+          <button onClick={() => setActionError(null)} className="shrink-0 font-medium hover:underline">Dismiss</button>
+        </div>
+      )}
       <div className="mt-4 flex flex-wrap items-center gap-x-4 gap-y-2">
         {(groups.length > 0 || view === "group") && <ViewToggle value={view} onChange={setView} />}
         {!loading && !loadError && (

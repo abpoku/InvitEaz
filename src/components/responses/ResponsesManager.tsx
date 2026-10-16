@@ -23,6 +23,15 @@ const STATUS_ACTIVE_CLASSES: Record<Status, string> = {
 
 type StatusFilter = "all" | Status | "no_response";
 
+/** The server's error message for a failed write (e.g. a ticket limit refusing it), or null when it
+ * succeeded. A crash returns an empty body, so never let parsing it throw. */
+async function errorFrom(res: Response, fallback: string): Promise<string | null> {
+  if (res.ok) return null;
+  let data: any = {};
+  try { data = await res.json(); } catch {}
+  return data.error || fallback;
+}
+
 export function ResponsesManager({
   eventId, rows: allRows, answersByResponseId, questions, cloneNameById, showCloneColumn, canMutate,
 }: {
@@ -37,6 +46,7 @@ export function ResponsesManager({
   const router = useRouter();
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [busyId, setBusyId] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
   const [bulkStatus, setBulkStatus] = useState<Status>("attending");
   const [bulkNumAttending, setBulkNumAttending] = useState("1");
   const [bulkBusy, setBulkBusy] = useState(false);
@@ -124,27 +134,46 @@ export function ResponsesManager({
   async function setStatus(row: InviteeResponseRow, status: Status, numAttending?: number) {
     if (!row.invitation_id) return;
     setBusyId(row.invitation_id);
-    await fetch(`/api/events/${eventId}/responses/${row.invitation_id}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ status, numAttending }),
-    });
+    setActionError(null);
+    try {
+      const res = await fetch(`/api/events/${eventId}/responses/${row.invitation_id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status, numAttending }),
+      });
+      setActionError(await errorFrom(res, "We couldn't save that status. Please try again."));
+    } catch {
+      setActionError("We couldn't reach the server just now. Please try again.");
+    }
     setBusyId(null);
     router.refresh();
   }
 
+  /** PATCH .../responses/bulk; returns the error to show, or null on success. */
+  async function sendBulk(body: { invitationIds: string[]; status: Status; numAttending?: number }): Promise<string | null> {
+    try {
+      const res = await fetch(`/api/events/${eventId}/responses/bulk`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      return await errorFrom(res, "We couldn't save those statuses. Please try again.");
+    } catch {
+      return "We couldn't reach the server just now. Please try again.";
+    }
+  }
+
   async function applyBulk() {
     setBulkBusy(true);
-    await fetch(`/api/events/${eventId}/responses/bulk`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        invitationIds: [...selectedIds],
-        status: bulkStatus,
-        numAttending: bulkStatus === "attending" ? Number(bulkNumAttending) || 1 : undefined,
-      }),
+    setActionError(null);
+    const failed = await sendBulk({
+      invitationIds: [...selectedIds],
+      status: bulkStatus,
+      numAttending: bulkStatus === "attending" ? Number(bulkNumAttending) || 1 : undefined,
     });
     setBulkBusy(false);
+    // On a refusal (e.g. a ticket limit) keep the selection so the planner can adjust and retry.
+    if (failed) { setActionError(failed); return; }
     setSelectedIds(new Set());
     router.refresh();
   }
@@ -182,11 +211,8 @@ export function ResponsesManager({
 
   async function setGroupStatus(group: { groupId: string; invitationIds: string[] }, status: Status) {
     setGroupBusyId(group.groupId);
-    await fetch(`/api/events/${eventId}/responses/bulk`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ invitationIds: group.invitationIds, status, numAttending: status === "attending" ? 1 : undefined }),
-    });
+    setActionError(null);
+    setActionError(await sendBulk({ invitationIds: group.invitationIds, status, numAttending: status === "attending" ? 1 : undefined }));
     setGroupBusyId(null);
     router.refresh();
   }
@@ -208,16 +234,14 @@ export function ResponsesManager({
   async function applyGroupBulk() {
     const invitationIds = groupStatusRows.filter((g) => selectedGroupIds.has(g.groupId)).flatMap((g) => g.invitationIds);
     setGroupBulkBusy(true);
-    await fetch(`/api/events/${eventId}/responses/bulk`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        invitationIds,
-        status: groupBulkStatus,
-        numAttending: groupBulkStatus === "attending" ? Number(groupBulkNumAttending) || 1 : undefined,
-      }),
+    setActionError(null);
+    const failed = await sendBulk({
+      invitationIds,
+      status: groupBulkStatus,
+      numAttending: groupBulkStatus === "attending" ? Number(groupBulkNumAttending) || 1 : undefined,
     });
     setGroupBulkBusy(false);
+    if (failed) { setActionError(failed); return; }
     setSelectedGroupIds(new Set());
     router.refresh();
   }
@@ -253,6 +277,12 @@ export function ResponsesManager({
         )}
       </div>
 
+      {actionError && (
+        <div role="alert" className="mt-4 flex items-start justify-between gap-3 rounded border border-clay-500/30 bg-clay-500/5 px-4 py-2.5 text-sm text-clay-600">
+          <span>{actionError}</span>
+          <button onClick={() => setActionError(null)} className="shrink-0 font-medium hover:underline">Dismiss</button>
+        </div>
+      )}
       {view === "group" ? (
         <>
           {canMutate && selectedGroupIds.size > 0 && (

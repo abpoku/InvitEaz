@@ -3,6 +3,7 @@ import { requireAssemblyScope } from "@/lib/session";
 import { canManageInvitation } from "@/lib/models/invitees";
 import { recordManualResponse } from "@/lib/models/rsvp";
 import { logAudit } from "@/lib/models/events";
+import { checkTicketCaps, inviteeIdForInvitation } from "@/lib/models/ticket-caps";
 
 const VALID_STATUSES = ["attending", "declined", "maybe"];
 
@@ -16,6 +17,12 @@ export async function PATCH(req: Request, { params }: { params: { id: string; in
 
   if (!(await canManageInvitation(params.invitationId, params.id, access.assemblyId))) {
     return NextResponse.json({ error: "You don't have permission to do this." }, { status: 403 });
+  }
+
+  const inviteeId = await inviteeIdForInvitation(params.invitationId);
+  if (inviteeId) {
+    const full = await checkTicketCaps(params.id, [{ inviteeId, attending: body.status === "attending" }], "planner");
+    if (full) return NextResponse.json({ error: full }, { status: 409 });
   }
 
   const response = await recordManualResponse({

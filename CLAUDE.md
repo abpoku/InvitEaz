@@ -316,6 +316,16 @@ Overview's config sections; clone-scoped roles never see it).
   owes nothing) falls back into that pool, so members' shares sum to the group total whenever
   anyone in the group owes something. An edit can't lower a payment below its allocated total (the `PATCH` returns a 400).
   The Responses tab's per-invitee Paid column still shows only payments tagged directly to them.
+- **Ticket limits** (`ticket_caps`, set in the Ticketing card's "Ticket limits" grid): optional limits for
+  the whole event or one clone (`assembly_id`), on all types or one (`tier`). A ticket is *taken* by an
+  active invitee whose latest RSVP is attending and who holds a configured tier — so the usual moment a
+  ticket gets taken is a guest saying yes. **Every write that could take a ticket must call
+  `checkTicketCaps()`** (`models/ticket-caps.ts`) before writing: guest `/r/` and `/g/` submits (the
+  household link checks the whole family at once), planner status changes (single + bulk, all-or-nothing),
+  ticket-type changes (invitee PATCH, bulk edit, Change ticket type, upload merge) and clone moves. It
+  refuses only a change that pushes a bucket *further* over its limit, so lowering a limit below what's
+  taken never blocks unrelated edits or anything that frees a ticket. The check and the write aren't one
+  transaction, so two guests saying yes at the same instant could both get the last ticket.
 - **Tickets tab UI**: a "Receive payment" button (pick an invitee or group first) plus a ⋮
   `KebabMenu` per row — Edit (`EditPaymentsModal`: edit/void/split), Receive payment, Change
   ticket type (`ChangeTicketTypeModal` → `PATCH .../ticketing/assignments`, assembly-scoped

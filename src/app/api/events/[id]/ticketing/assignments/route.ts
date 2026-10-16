@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { checkTicketCaps } from "@/lib/models/ticket-caps";
 import { requireAssemblyScope } from "@/lib/session";
 import { canManageInvitee } from "@/lib/models/invitees";
 import { getTicketingConfig, setTicketTiers } from "@/lib/models/ticketing";
@@ -31,6 +32,9 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
     }
     assignments.push({ inviteeId: a.inviteeId, tier });
   }
+
+  const full = await checkTicketCaps(params.id, assignments.map((a) => ({ inviteeId: a.inviteeId, tier: a.tier || null })), "planner");
+  if (full) return NextResponse.json({ error: full }, { status: 409 });
 
   await setTicketTiers(params.id, assignments);
   await logAudit(params.id, access.user.email, "ticketing.tier_assigned", assignments.map((a) => `${a.inviteeId}=${a.tier || "(none)"}`).join(", "));

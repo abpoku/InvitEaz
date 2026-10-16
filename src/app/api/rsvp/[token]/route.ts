@@ -5,6 +5,7 @@ import { listQuestions, submitResponse, getLatestResponse, getAnswersForResponse
 import { sendConfirmationEmail } from "@/lib/notify";
 import { isPastDeadline, fullName } from "@/lib/utils";
 import { donationNoteFor } from "@/lib/donation-note";
+import { checkTicketCaps } from "@/lib/models/ticket-caps";
 
 export async function GET(_req: Request, { params }: { params: { token: string } }) {
   const invitation = await getInvitationByToken(params.token);
@@ -54,6 +55,12 @@ export async function POST(req: Request, { params }: { params: { token: string }
   const numAttending = Math.max(1, Number(body.numAttending) || 1);
   const guestNames: string[] = Array.isArray(body.guestNames) ? body.guestNames : [];
   const answers: { questionId: string; value: string }[] = Array.isArray(body.answers) ? body.answers : [];
+
+  // Ticket limits: saying yes takes a ticket when they hold a ticket type. Declining always goes through.
+  if (attending && invitation.invitee) {
+    const full = await checkTicketCaps(event.id, [{ inviteeId: invitation.invitee.id, attending: true }], "guest");
+    if (full) return NextResponse.json({ error: full }, { status: 409 });
+  }
 
   const response = await submitResponse({
     invitationId: invitation.id,

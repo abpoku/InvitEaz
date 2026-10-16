@@ -3,6 +3,7 @@ import { requireAssemblyScope } from "@/lib/session";
 import { getInviteeById, canManageInvitee, updateInvitee, deactivateInvitee } from "@/lib/models/invitees";
 import { listInviteeFields } from "@/lib/models/invitee-fields";
 import { logAudit } from "@/lib/models/events";
+import { checkTicketCaps, ticketFieldKey } from "@/lib/models/ticket-caps";
 
 export async function PATCH(req: Request, { params }: { params: { id: string } }) {
   const access = await requireAssemblyScope(params.id);
@@ -16,6 +17,16 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
   const fields = await listInviteeFields(params.id);
   const field = fields.find((f) => f.key === body.fieldKey && f.active);
   if (!field) return NextResponse.json({ error: "Unknown field." }, { status: 400 });
+
+  // Ticket limits: setting the ticket type for a selection is checked as a whole before any write.
+  if (field.kind === "custom" && field.key === (await ticketFieldKey(params.id))) {
+    const changes = [];
+    for (const id of ids) {
+      if (await canManageInvitee(id, params.id, access.assemblyId)) changes.push({ inviteeId: id, tier: String(body.value ?? "") || null });
+    }
+    const full = await checkTicketCaps(params.id, changes, "planner");
+    if (full) return NextResponse.json({ error: full }, { status: 409 });
+  }
 
   let updated = 0, skipped = 0;
   for (const id of ids) {

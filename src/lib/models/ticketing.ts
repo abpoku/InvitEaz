@@ -157,6 +157,8 @@ export async function deleteTier(tierId: string): Promise<void> {
     await updateInviteeField(field.id, { options: current.filter((o) => o !== tier.option_value) });
   }
   await deleteTicketTier(tierId);
+  // Its ticket limits go with it (see models/ticket-caps.ts).
+  await exec("DELETE FROM ticket_caps WHERE event_id = ? AND tier = ?", [tier.event_id, tier.option_value]);
 }
 
 /** Links ticketing to an already-existing dropdown field instead of creating a dedicated one —

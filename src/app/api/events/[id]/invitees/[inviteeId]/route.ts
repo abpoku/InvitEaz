@@ -4,6 +4,7 @@ import { updateInvitee, deactivateInvitee, getInviteeById, canManageInvitee } fr
 import { logAudit } from "@/lib/models/events";
 import { getAssembly } from "@/lib/models/assemblies";
 import { fullName } from "@/lib/utils";
+import { checkTicketCaps, ticketFieldKey, tierInCustomFields } from "@/lib/models/ticket-caps";
 
 export async function PATCH(req: Request, { params }: { params: { id: string; inviteeId: string } }) {
   const access = await requireAssemblyScope(params.id);
@@ -42,6 +43,19 @@ export async function PATCH(req: Request, { params }: { params: { id: string; in
       patch.assembly_id = assembly.id;
     } else {
       patch.assembly_id = null;
+    }
+  }
+
+  // Ticket limits: changing an attending person's ticket type or clone can take a ticket elsewhere.
+  if (patch.custom_fields !== undefined || patch.assembly_id !== undefined) {
+    const key = await ticketFieldKey(params.id);
+    if (key) {
+      const full = await checkTicketCaps(params.id, [{
+        inviteeId: params.inviteeId,
+        ...(patch.custom_fields !== undefined ? { tier: tierInCustomFields(patch.custom_fields, key) } : {}),
+        ...(patch.assembly_id !== undefined ? { assemblyId: patch.assembly_id } : {}),
+      }], "planner");
+      if (full) return NextResponse.json({ error: full }, { status: 409 });
     }
   }
 

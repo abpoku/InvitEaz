@@ -1,4 +1,5 @@
 import { query } from "@/lib/db";
+import { checkTicketCaps } from "@/lib/models/ticket-caps";
 import {
   getGroupByRsvpToken, createInvitee, createInvitationFor, updateInvitee, deactivateInvitee,
   markInvitationOpened, countActiveInvitees, type GroupRow, type InviteeRow,
@@ -264,6 +265,18 @@ export async function submitGroupResponse(token: string, input: GroupSubmission)
     }
     return { ...s, firstName, lastName, values, answers };
   });
+
+  // Ticket limits, checked for the whole household at once so a family is never half-accepted.
+  const full = await checkTicketCaps(
+    event.id,
+    [
+      ...normalized.filter((s) => s.inviteeId).map((s) => ({ inviteeId: s.inviteeId!, attending: s.attending })),
+      ...[...removeIds].map((id) => ({ inviteeId: id, removed: true })),
+    ],
+    "guest",
+    { group: true }
+  );
+  if (full) throw new GroupRsvpError(full, 409);
 
   // ---- Write ----
   const reopenedAfterDeadline = isPastDeadline(event.rsvp_deadline) && !!event.rsvp_reopened;

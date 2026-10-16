@@ -355,3 +355,17 @@ CREATE TABLE IF NOT EXISTS group_link_aliases (
   created_at TEXT NOT NULL DEFAULT to_char(now() AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')
 );
 CREATE INDEX IF NOT EXISTS idx_group_link_aliases_group ON group_link_aliases(group_id);
+
+-- Ticket limits (src/lib/ticket-caps.ts, models/ticket-caps.ts). One row per limit: assembly_id NULL =
+-- the whole event, else one clone; tier NULL = all ticket types, else one tier's name (tier names are
+-- immutable, and deleteTier removes that tier's rows). A ticket is "taken" by an active invitee whose
+-- latest RSVP is attending and who holds a configured tier. No row = no limit.
+CREATE TABLE IF NOT EXISTS ticket_caps (
+  id TEXT PRIMARY KEY,
+  event_id TEXT NOT NULL REFERENCES events(id) ON DELETE CASCADE,
+  assembly_id TEXT REFERENCES assemblies(id) ON DELETE CASCADE,
+  tier TEXT,
+  cap INTEGER NOT NULL CHECK (cap >= 0),
+  updated_at TEXT NOT NULL DEFAULT to_char(now() AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_ticket_caps_scope ON ticket_caps (event_id, COALESCE(assembly_id, ''), COALESCE(tier, ''));

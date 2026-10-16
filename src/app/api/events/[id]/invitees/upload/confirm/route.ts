@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { checkTicketCaps, ticketFieldKey } from "@/lib/models/ticket-caps";
 import { requireAssemblyScope } from "@/lib/session";
 import { getEventById, logAudit } from "@/lib/models/events";
 import { createGroup, createInvitee, countActiveInvitees, setGroupLeader, listGroups, getInviteeById, canManageInvitee, updateInvitee, type InviteeRow } from "@/lib/models/invitees";
@@ -47,6 +48,17 @@ export async function POST(req: Request, { params }: { params: { id: string } })
       return NextResponse.json({ error: "You don't have permission to merge into that invitee." }, { status: 403 });
     }
     mergeTargets.set(row.mergeIntoInviteeId, target);
+  }
+
+  // Ticket limits: a merge that fills in a ticket type for someone already attending takes a ticket.
+  // New rows have no RSVP yet, so they never do. Checked for the whole file before anything is written.
+  const ticketKey = await ticketFieldKey(params.id);
+  if (ticketKey) {
+    const changes = rows
+      .filter((r) => r.action === "merge" && r.customFields?.[ticketKey])
+      .map((r) => ({ inviteeId: r.mergeIntoInviteeId!, tier: r.customFields![ticketKey] }));
+    const full = await checkTicketCaps(params.id, changes, "planner");
+    if (full) return NextResponse.json({ error: full }, { status: 409 });
   }
 
   const createCount = rows.filter((r) => r.action === "create").length;
