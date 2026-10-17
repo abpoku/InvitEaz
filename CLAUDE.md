@@ -205,7 +205,10 @@ bulk edit/remove. `listInvitees` returns each invitee's latest response fields, 
 `inviteeRsvpExtras()` in `rsvp.ts` adds the custom questions plus all answers in one query
 (`getAnswersForResponses` — never loop `getAnswersForResponse` per row). Viewers (`canMutate`
 false) get a read-only list: badges instead of pickers, no selection/edit/add/upload, exports only.
-The RSVP pieces (picker, party size, breakdown) live in `invitees/RsvpControls.tsx`.
+The RSVP pieces (picker, party size, breakdown) live in `invitees/RsvpControls.tsx`. Phone cards
+must carry every field the desktop table does (the ticket type inline, the rest under "More details")
+— the ticket-field id comes with the invitee data (`linkedTicketFieldId()`), for every role, never from
+the ticketing route, which refuses clone-scoped planners and once left their cards with no ticket type.
 
 ### RSVP status & manual entry
 

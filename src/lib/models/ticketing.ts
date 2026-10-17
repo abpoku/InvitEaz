@@ -60,6 +60,14 @@ export interface TicketingConfig {
  * deleteTier below) — the field's options are never edited directly once linked (blocked in
  * src/app/api/events/[id]/invitee-fields/[fieldId]/route.ts), so there's nothing to reconcile
  * at read time; this is just a straightforward join. */
+/** Which invitee field is the ticket type (null while ticketing is off or unlinked) — just the id, no
+ * pricing, so every role that can see invitees gets it, clone-scoped planners included (they may change
+ * ticket types; only viewers can't). The Invitees tab needs it to draw that field as a picker. */
+export async function linkedTicketFieldId(eventId: string): Promise<string | null> {
+  const event = await getEventById(eventId);
+  return event?.ticketing_enabled && event.ticket_field_id ? event.ticket_field_id : null;
+}
+
 export async function getTicketingConfig(eventId: string): Promise<TicketingConfig> {
   const event = await getEventById(eventId);
   const enabled = !!event?.ticketing_enabled;

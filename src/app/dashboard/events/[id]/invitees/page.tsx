@@ -4,7 +4,7 @@ import { requireAssemblyScope } from "@/lib/session";
 import { listInvitees, listGroups } from "@/lib/models/invitees";
 import { listInviteeFields } from "@/lib/models/invitee-fields";
 import { listAssemblies } from "@/lib/models/assemblies";
-import { getTicketingConfig } from "@/lib/models/ticketing";
+import { linkedTicketFieldId } from "@/lib/models/ticketing";
 import { inviteeRsvpExtras } from "@/lib/models/rsvp";
 
 export default async function InviteesPage({ params }: { params: { id: string } }) {
@@ -19,13 +19,12 @@ export default async function InviteesPage({ params }: { params: { id: string } 
   const access = await requireAssemblyScope(params.id);
   if (access.ok) {
     const scoped = !!access.assemblyId;
-    const [invitees, fields, assemblies, ticketing, groups] = await Promise.all([
+    const [invitees, fields, assemblies, ticketFieldId, groups] = await Promise.all([
       listInvitees(params.id, access.assemblyId),
       listInviteeFields(params.id),
-      // The assemblies route refuses clone-scoped roles, and ticketing's requireEventRole("viewer")
-      // always fails for them — the client treats both refusals as "none", so do the same here.
+      // The assemblies route refuses clone-scoped roles — the client treats that as "none", so do the same here.
       scoped ? Promise.resolve([]) : listAssemblies(params.id),
-      scoped ? Promise.resolve(null) : getTicketingConfig(params.id),
+      linkedTicketFieldId(params.id),
       listGroups(params.id, access.assemblyId),
     ]);
     initialData = {
@@ -33,7 +32,7 @@ export default async function InviteesPage({ params }: { params: { id: string } 
       invitees: invitees as InviteesInitialData["invitees"],
       fields: fields as unknown as InviteesInitialData["fields"],
       assemblies,
-      ticketFieldId: ticketing?.field?.id ?? null,
+      ticketFieldId,
       groups: groups as InviteesInitialData["groups"],
     };
   }

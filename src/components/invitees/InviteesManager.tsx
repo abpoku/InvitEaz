@@ -128,6 +128,26 @@ function ExportMenu({ eventId }: { eventId: string }) {
   );
 }
 
+/** A phone card's remaining Details fields, collapsed: "N more details" with label/value pairs. Empty
+ * values are left out; nothing renders when none are filled in. */
+function MoreDetails({ fields, invitee }: { fields: InviteeField[]; invitee: InviteeRow }) {
+  const filled = fields.map((f) => ({ f, v: fieldValue(f, invitee) })).filter(({ v }) => v !== "—");
+  if (filled.length === 0) return null;
+  return (
+    <details className="mt-2 text-sm">
+      <summary className="cursor-pointer py-1 font-medium text-wine-500">{filled.length} more detail{filled.length === 1 ? "" : "s"}</summary>
+      <dl className="mt-1 space-y-1.5">
+        {filled.map(({ f, v }) => (
+          <div key={f.id}>
+            <dt className="text-xs text-ink-faint">{f.label}</dt>
+            <dd className="text-ink-soft break-words">{v}</dd>
+          </div>
+        ))}
+      </dl>
+    </details>
+  );
+}
+
 /** Which columns the list shows: who people are (fields, links) or how they've replied (party size,
  * answers, when). Everything else — rows, filters, selection, sort — is shared by both. */
 type Columns = "details" | "rsvp";
@@ -264,11 +284,10 @@ export function InviteesManager({ eventId, groupRsvpMode, nameFormat, eventName 
     setLoading(true);
     setLoadError(null);
     try {
-      const [inviteesRes, fieldsRes, assembliesRes, ticketingRes, groupsRes] = await Promise.all([
+      const [inviteesRes, fieldsRes, assembliesRes, groupsRes] = await Promise.all([
         fetch(`/api/events/${eventId}/invitees`),
         fetch(`/api/events/${eventId}/invitee-fields`),
         fetch(`/api/events/${eventId}/assemblies`),
-        fetch(`/api/events/${eventId}/ticketing`),
         fetch(`/api/events/${eventId}/groups`),
       ]);
       // A 500 has an empty, non-JSON body — never let parsing it throw and strand the page on
@@ -285,12 +304,12 @@ export function InviteesManager({ eventId, groupRsvpMode, nameFormat, eventName 
       setInvitees(inviteesData.invitees || []);
       setQuestions(inviteesData.questions || []);
       setAnswers(inviteesData.answers || {});
+      // Comes with the invitees themselves (not the ticketing route, which refuses clone-scoped planners),
+      // so the ticket-type picker can't vanish on its own when one side request fails.
+      setTicketFieldId(inviteesData.ticketFieldId ?? null);
       setFields(visibleFields(fieldsData.fields || []));
       // 403 for a lead planner (or a network hiccup) just means no assembly filter/picker — not fatal.
       setAssemblies(assembliesRes.ok ? (await json(assembliesRes)).assemblies || [] : []);
-      // Same tolerance for ticketing — a lead planner can't reach requireEventRole's "viewer" gate
-      // the way this route checks it in every case, and it's a non-fatal, ticketing-only detail.
-      setTicketFieldId(ticketingRes.ok ? (await json(ticketingRes)).config?.field?.id ?? null : null);
       setGroups(groupsRes.ok ? (await json(groupsRes)).groups || [] : []);
     } catch {
       // fetch() itself rejects only on a network failure (offline, DNS, connection reset).
@@ -769,6 +788,14 @@ export function InviteesManager({ eventId, groupRsvpMode, nameFormat, eventName 
     );
   }
 
+  /** The Details columns a phone card doesn't already show (its line has household and email — or phone
+   * when there's no email — and the ticket type has its own row), so a card carries every field the
+   * desktop table does. */
+  function moreDetailFields(i: InviteeRow): InviteeField[] {
+    const onCard = new Set(["group", i.email ? "email" : "phone"]);
+    return fields.filter((f) => !onCard.has(f.key) && f.id !== ticketFieldId);
+  }
+
   function linkActions(i: InviteeRow) {
     const href = mounted ? textHref(i, `/r/${i.token}`) : null;
     return (
@@ -944,12 +971,15 @@ export function InviteesManager({ eventId, groupRsvpMode, nameFormat, eventName 
                           {details.length > 0 && <p className={cn("mt-0.5 text-sm text-ink-faint", rsvpView ? "break-words" : "truncate")}>{details.join(" · ")}</p>}
                           {canEditStatus(i) && <div className="mt-2.5">{statusCell(i, true)}</div>}
                           {rsvpView && partySize(i, true)}
-                          {!rsvpView && canMutate && ticketField && (
+                          {!rsvpView && ticketField && (canMutate ? (
                             <label className="mt-2 flex items-center gap-2 text-sm text-ink-soft">
                               <span className="shrink-0">{ticketField.label}</span>
                               {ticketSelect(i, ticketField, "input py-1.5 text-base")}
                             </label>
-                          )}
+                          ) : (
+                            <p className="mt-2 text-sm text-ink-soft"><span className="text-ink-faint">{ticketField.label}:</span> {fieldValue(ticketField, i)}</p>
+                          ))}
+                          {!rsvpView && <MoreDetails fields={moreDetailFields(i)} invitee={i} />}
                           {answered.length > 0 && (
                             <details className="mt-2 text-sm">
                               <summary className="cursor-pointer py-1 font-medium text-wine-500">{answered.length} answer{answered.length === 1 ? "" : "s"}</summary>

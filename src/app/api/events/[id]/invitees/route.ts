@@ -3,6 +3,7 @@ import { z } from "zod";
 import { requireAssemblyScope } from "@/lib/session";
 import { createInvitee, listInvitees, countActiveInvitees } from "@/lib/models/invitees";
 import { inviteeRsvpExtras } from "@/lib/models/rsvp";
+import { linkedTicketFieldId } from "@/lib/models/ticketing";
 import { getUserById, PLAN_LIMITS } from "@/lib/models/users";
 import { getEventById, logAudit } from "@/lib/models/events";
 import { getAssembly } from "@/lib/models/assemblies";
@@ -25,7 +26,8 @@ export async function GET(_req: Request, { params }: { params: { id: string } })
   const access = await requireAssemblyScope(params.id);
   if (!access.ok) return NextResponse.json({ error: access.message }, { status: access.status });
   const invitees = await listInvitees(params.id, access.assemblyId);
-  return NextResponse.json({ invitees, ...(await inviteeRsvpExtras(params.id, invitees)) });
+  const [extras, ticketFieldId] = await Promise.all([inviteeRsvpExtras(params.id, invitees), linkedTicketFieldId(params.id)]);
+  return NextResponse.json({ invitees, ...extras, ticketFieldId });
 }
 
 export async function POST(req: Request, { params }: { params: { id: string } }) {
