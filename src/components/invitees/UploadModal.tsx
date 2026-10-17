@@ -22,6 +22,14 @@ const MERGE_FIELDS: { key: "firstName" | "lastName" | "email" | "phone"; label: 
   { key: "phone", label: "Phone" },
 ];
 
+/** Which side a merge keeps for a field the planner hasn't picked: the uploaded value — unless it's
+ * blank, in which case the existing one. Defaulting to a blank upload silently erased existing
+ * emails/phones on any sheet that lacked (or didn't map) that column. Shared by the picker and the merge
+ * itself so what's shown pre-selected is exactly what's applied. */
+function mergeChoiceFor(picked: "uploaded" | "existing" | undefined, uploadedValue: string | undefined): "uploaded" | "existing" {
+  return picked ?? (uploadedValue ? "uploaded" : "existing");
+}
+
 function applyFieldToRow(row: MappedInviteeRow, fields: InviteeField[], fieldKey: string, value: string): MappedInviteeRow {
   if (fieldKey === "first_name" || fieldKey === "full_name") return { ...row, firstName: value };
   if (fieldKey === "last_name") return { ...row, lastName: value };
@@ -170,7 +178,7 @@ export function UploadModal({ eventId, groupRsvpMode, onClose, onImported }: { e
   function confirmMerge(row: MappedInviteeRow, match: DuplicateMatch) {
     let merged = { ...row };
     for (const f of MERGE_FIELDS) {
-      if (mergeChoices[f.key] === "existing") {
+      if (mergeChoiceFor(mergeChoices[f.key], row[f.key]) === "existing") {
         const existingValue = match.source === "db"
           ? existingInvitees.find((e) => e.id === match.existingInviteeId)?.[f.key] ?? ""
           : rows.find((r) => r.rowNumber === match.otherRowNumber)?.[f.key] ?? "";
@@ -604,7 +612,7 @@ export function UploadModal({ eventId, groupRsvpMode, onClose, onImported }: { e
                         const otherValue = match.source === "db"
                           ? existingInvitees.find((e) => e.id === match.existingInviteeId)?.[f.key] ?? ""
                           : rows.find((x) => x.rowNumber === match.otherRowNumber)?.[f.key] ?? "";
-                        const choice = mergeChoices[f.key] ?? "uploaded";
+                        const choice = mergeChoiceFor(mergeChoices[f.key], (r as any)[f.key]);
                         return (
                           <div key={f.key} className="text-xs">
                             <p className="text-ink-faint mb-1">{f.label}</p>
