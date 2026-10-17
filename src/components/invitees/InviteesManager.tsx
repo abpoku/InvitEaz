@@ -277,7 +277,11 @@ export function InviteesManager({ eventId, groupRsvpMode, nameFormat, eventName 
   }
 
   const [appleDevice, setAppleDevice] = useState(false);
-  useEffect(() => { setAppleDevice(isAppleDevice(navigator.userAgent)); }, []);
+  // The "Text" links need window.location, so they appear only after mount — rendering them during
+  // render behind a `typeof window` check made the server and client markup differ (a hydration error
+  // that switched the whole page to client rendering whenever anyone had a phone number).
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => { setAppleDevice(isAppleDevice(navigator.userAgent)); setMounted(true); }, []);
 
   /** sms: link for one person (their own RSVP link), or null when they have no usable phone. */
   function textHref(person: InviteeRow, path: string, household?: string): string | null {
@@ -740,7 +744,7 @@ export function InviteesManager({ eventId, groupRsvpMode, nameFormat, eventName 
                           {copiedId === i.id ? "Copied!" : "Copy link"}
                         </button>
                         {(() => {
-                          const href = typeof window !== "undefined" ? textHref(i, `/r/${i.token}`) : null;
+                          const href = mounted ? textHref(i, `/r/${i.token}`) : null;
                           return href ? (
                             <a href={href} className="ml-3 text-wine-500 hover:underline text-xs font-medium" title="Opens your phone's Messages app with their RSVP link">Text</a>
                           ) : null;
@@ -925,7 +929,7 @@ export function InviteesManager({ eventId, groupRsvpMode, nameFormat, eventName 
                           <>
                           {(() => {
                             const to = groupTextTarget(g);
-                            const href = to && typeof window !== "undefined" ? textHref(to, `/g/${g.rsvp_token}`, g.name) : null;
+                            const href = to && mounted ? textHref(to, `/g/${g.rsvp_token}`, g.name) : null;
                             return href ? (
                               <a href={href} className="text-wine-500 hover:underline text-xs font-medium mr-3" title={`Text the group link to ${fullName(to!.first_name, to!.last_name)} from your phone`}>
                                 Text group link
@@ -963,7 +967,7 @@ export function InviteesManager({ eventId, groupRsvpMode, nameFormat, eventName 
                                     {copiedId === m.id ? "Copied!" : "Copy link"}
                                   </button>
                                   {(() => {
-                                    const href = typeof window !== "undefined" ? textHref(m, `/r/${m.token}`) : null;
+                                    const href = mounted ? textHref(m, `/r/${m.token}`) : null;
                                     return href ? <a href={href} className="text-wine-500 hover:underline text-xs font-medium">Text</a> : null;
                                   })()}
                                   <button onClick={() => setEditing(m)} className="text-xs text-ink-faint hover:text-ink">Edit</button>
