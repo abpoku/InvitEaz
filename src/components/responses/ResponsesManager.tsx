@@ -7,6 +7,7 @@ import { ViewToggle } from "@/components/ViewToggle";
 import { fullName, formatDateTime, cn, formatNumber } from "@/lib/utils";
 import { groupCounts } from "@/lib/bulk-select";
 import { SortTh, useTableSort } from "@/components/SortableHeader";
+import { MOBILE_DOCK, SortSelect, MobileListHeader, CardCheckbox } from "@/components/MobileList";
 import { sortRows, statusRank, numericOrText, type SortValue } from "@/lib/table-sort";
 import type { InviteeResponseRow } from "@/lib/models/rsvp";
 
@@ -22,6 +23,66 @@ const STATUS_ACTIVE_CLASSES: Record<Status, string> = {
 };
 
 type StatusFilter = "all" | Status | "no_response";
+
+/** Attending / Maybe / Declined as one segmented control. `current` highlights the recorded status;
+ * the group-level control passes none, since it sets every member at once. `large` is the phone
+ * card size: full width, 44px tall. */
+function StatusSegments({ current, disabled, onPick, large }: {
+  current?: Status | null;
+  disabled: boolean;
+  onPick: (s: Status) => void;
+  large?: boolean;
+}) {
+  return (
+    <div className={cn("rounded border border-paper-line overflow-hidden", large ? "grid grid-cols-3 divide-x divide-paper-line text-sm" : "inline-flex text-xs")}>
+      {STATUSES.map((s) => (
+        <button
+          key={s}
+          type="button"
+          disabled={disabled}
+          onClick={() => onPick(s)}
+          aria-pressed={current === undefined ? undefined : current === s}
+          className={cn(
+            large ? "py-2.5" : "px-2 py-1",
+            "disabled:opacity-50",
+            current === s ? STATUS_ACTIVE_CLASSES[s] : "text-ink-faint hover:bg-paper-soft"
+          )}
+        >
+          {STATUS_LABEL[s]}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function Breakdown({ counts }: { counts: Record<Status | "no_response", number> }) {
+  return (
+    <>
+      <span className="text-moss-600">{formatNumber(counts.attending)} attending</span> · {formatNumber(counts.maybe)} maybe · <span className="text-wine-700">{formatNumber(counts.declined)} declined</span> · {formatNumber(counts.no_response)} no response
+    </>
+  );
+}
+
+/** Party size for an attending row: saved when the field loses focus, like the table's — but only
+ * when the number actually changed, since every save records a new response row. */
+function PartySize({ row, onSave }: { row: InviteeResponseRow; onSave: (n: number) => void }) {
+  return (
+    <label className="mt-2 flex items-center gap-2 text-sm text-ink-soft">
+      Party size
+      <input
+        type="number" min={1} inputMode="numeric" className="input w-20 py-1.5 text-base"
+        defaultValue={row.num_attending ?? 1}
+        onBlur={(e) => { const n = Number(e.target.value) || 1; if (n !== (row.num_attending ?? 1)) onSave(n); }}
+      />
+    </label>
+  );
+}
+
+/** "Responded <when> (edited) · marked by <planner>", or null before any response. */
+function respondedText(r: InviteeResponseRow): string | null {
+  if (!r.responded_at) return null;
+  return `${formatDateTime(r.responded_at)}${r.is_modification ? " (edited)" : ""}${r.recorded_by ? ` · marked by ${r.recorded_by}` : ""}`;
+}
 
 /** The server's error message for a failed write (e.g. a ticket limit refusing it), or null when it
  * succeeded. A crash returns an empty body, so never let parsing it throw. */
@@ -246,8 +307,10 @@ export function ResponsesManager({
     router.refresh();
   }
 
+  const docked = canMutate && (view === "individual" ? selectedIds.size : selectedGroupIds.size) > 0;
+
   return (
-    <div>
+    <div className={docked ? "max-md:pb-44" : undefined}>
       {(groupOptions.length > 0 || groupStatusRows.length > 0 || view === "group") && (
         <div className="mt-4">
           <ViewToggle value={view} onChange={setView} />
@@ -286,7 +349,7 @@ export function ResponsesManager({
       {view === "group" ? (
         <>
           {canMutate && selectedGroupIds.size > 0 && (
-            <div className="mt-4 flex flex-wrap items-center justify-between gap-2 rounded border border-wine-200 bg-wine-50 px-4 py-2.5">
+            <div className={`mt-4 flex flex-wrap items-center justify-between gap-2 rounded border border-wine-200 bg-wine-50 px-4 py-2.5 ${MOBILE_DOCK}`}>
               <p className="text-sm text-wine-700">{selectedGroupIds.size} group{selectedGroupIds.size === 1 ? "" : "s"} selected</p>
               <div className="flex items-center gap-3 flex-wrap">
                 <select className="input py-1 text-base sm:text-xs" value={groupBulkStatus} onChange={(e) => setGroupBulkStatus(e.target.value as Status)}>
@@ -311,7 +374,78 @@ export function ResponsesManager({
           {visibleGroups.length === 0 ? (
             <p className="p-10 text-sm text-ink-faint text-center">{groupStatusRows.length === 0 ? "No groups yet." : "No groups match your filters."}</p>
           ) : (
-            <table className="w-full min-w-[560px] text-sm">
+            <>
+            <div className="md:hidden">
+              <MobileListHeader
+                selectAll={canMutate ? { checked: allGroupsSelected, onChange: toggleSelectAllGroups } : undefined}
+                sort={
+                  <SortSelect
+                    sort={groupSort}
+                    onSort={onGroupSort}
+                    options={[
+                      { key: "name", dir: "asc", label: "Name A–Z" },
+                      { key: "name", dir: "desc", label: "Name Z–A" },
+                      { key: "breakdown", dir: "desc", label: "Most attending" },
+                    ]}
+                  />
+                }
+              />
+              <ul className="divide-y divide-paper-line">
+                {visibleGroups.map((g) => {
+                  const expanded = expandedGroupIds.has(g.groupId);
+                  return (
+                    <li key={g.groupId}>
+                      <div className={cn("flex items-start gap-1 pr-4 py-1", canMutate ? "pl-1" : "pl-4")}>
+                        {canMutate && <CardCheckbox checked={selectedGroupIds.has(g.groupId)} onChange={() => toggleGroupSelected(g.groupId)} label={`Select ${g.name}`} />}
+                        <div className="min-w-0 flex-1 py-2.5">
+                          <button
+                            type="button"
+                            onClick={() => toggleGroupExpanded(g.groupId)}
+                            aria-expanded={expanded}
+                            className="flex w-full items-center gap-2 text-left text-ink font-medium"
+                          >
+                            <span className="break-words">{g.name}</span>
+                            <span className="text-ink-faint" aria-hidden="true">{expanded ? "▾" : "▸"}</span>
+                          </button>
+                          <p className="mt-0.5 text-sm text-ink-soft"><Breakdown counts={g.counts} /></p>
+                          {canMutate && (
+                            <div className="mt-2.5">
+                              <p className="mb-1 text-xs text-ink-faint">Set status for everyone</p>
+                              <StatusSegments large disabled={groupBusyId === g.groupId} onPick={(s) => setGroupStatus(g, s)} />
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                      {expanded && (
+                        <ul className={cn("mr-4 mb-3 border-l-2 border-paper-line", canMutate ? "ml-12" : "ml-4")}>
+                          {g.members.map((r) => {
+                            const currentStatus = r.rsvp_status as Status | null;
+                            const canEdit = canMutate && !!r.invitation_id;
+                            return (
+                              <li key={r.invitee_id} className="pl-3 py-2">
+                                <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm">
+                                  <span className="text-ink break-words">{fullName(r.first_name, r.last_name)}</span>
+                                  {!canEdit && <StatusBadge status={currentStatus || "no_response"} />}
+                                </div>
+                                {canEdit && (
+                                  <div className="mt-1.5">
+                                    <StatusSegments large current={currentStatus} disabled={busyId === r.invitation_id} onPick={(s) => setStatus(r, s)} />
+                                  </div>
+                                )}
+                                {canEdit && currentStatus === "attending" && (
+                                  <PartySize row={r} onSave={(n) => setStatus(r, "attending", n)} />
+                                )}
+                              </li>
+                            );
+                          })}
+                        </ul>
+                      )}
+                    </li>
+                  );
+                })}
+              </ul>
+            </div>
+            <table className="hidden md:table w-full min-w-[560px] text-sm">
               <thead>
                 <tr className="border-b border-paper-line text-left text-ink-faint">
                   {canMutate && (
@@ -349,22 +483,11 @@ export function ResponsesManager({
                       </div>
                     </td>
                     <td className="px-5 py-3 text-ink-soft whitespace-nowrap">
-                      <span className="text-moss-600">{formatNumber(g.counts.attending)} attending</span> · {formatNumber(g.counts.maybe)} maybe · <span className="text-wine-700">{formatNumber(g.counts.declined)} declined</span> · {formatNumber(g.counts.no_response)} no response
+                      <Breakdown counts={g.counts} />
                     </td>
                     {canMutate && (
                       <td className="px-5 py-3">
-                        <div className="inline-flex rounded border border-paper-line overflow-hidden text-xs">
-                          {STATUSES.map((s) => (
-                            <button
-                              key={s}
-                              disabled={groupBusyId === g.groupId}
-                              onClick={() => setGroupStatus(g, s)}
-                              className="px-2 py-1 disabled:opacity-50 text-ink-faint hover:bg-paper-soft"
-                            >
-                              {STATUS_LABEL[s]}
-                            </button>
-                          ))}
-                        </div>
+                        <StatusSegments disabled={groupBusyId === g.groupId} onPick={(s) => setGroupStatus(g, s)} />
                       </td>
                     )}
                   </tr>
@@ -387,21 +510,7 @@ export function ResponsesManager({
                                     />
                                   )}
                                   {canMutate && r.invitation_id ? (
-                                    <div className="inline-flex rounded border border-paper-line overflow-hidden text-xs">
-                                      {STATUSES.map((s) => (
-                                        <button
-                                          key={s}
-                                          disabled={isBusy}
-                                          onClick={() => setStatus(r, s)}
-                                          className={cn(
-                                            "px-2 py-1 disabled:opacity-50",
-                                            currentStatus === s ? STATUS_ACTIVE_CLASSES[s] : "text-ink-faint hover:bg-paper-soft"
-                                          )}
-                                        >
-                                          {STATUS_LABEL[s]}
-                                        </button>
-                                      ))}
-                                    </div>
+                                    <StatusSegments current={currentStatus} disabled={isBusy} onPick={(s) => setStatus(r, s)} />
                                   ) : (
                                     <StatusBadge status={currentStatus || "no_response"} />
                                   )}
@@ -418,13 +527,14 @@ export function ResponsesManager({
                 })}
               </tbody>
             </table>
+            </>
           )}
           </div>
         </>
       ) : (
         <>
       {canMutate && selectedIds.size > 0 && (
-        <div className="mt-4 flex flex-wrap items-center justify-between gap-2 rounded border border-wine-200 bg-wine-50 px-4 py-2.5">
+        <div className={`mt-4 flex flex-wrap items-center justify-between gap-2 rounded border border-wine-200 bg-wine-50 px-4 py-2.5 ${MOBILE_DOCK}`}>
           <p className="text-sm text-wine-700">{selectedIds.size} selected</p>
           <div className="flex items-center gap-3 flex-wrap">
             {groupOptions.length > 0 && (
@@ -455,7 +565,73 @@ export function ResponsesManager({
         {rows.length === 0 ? (
           <p className="p-10 text-sm text-ink-faint text-center">{allRows.length === 0 ? "No invitees yet." : "No one matches your filters."}</p>
         ) : (
-          <table className="w-full min-w-[720px] text-sm">
+          <>
+          <div className="md:hidden">
+            <MobileListHeader
+              selectAll={canMutate ? { checked: allSelected, onChange: toggleSelectAll } : undefined}
+              sort={
+                <SortSelect
+                  sort={sort}
+                  onSort={onSort}
+                  options={[
+                    { key: "name", dir: "asc", label: "Name A–Z" },
+                    { key: "name", dir: "desc", label: "Name Z–A" },
+                    { key: "status", dir: "asc", label: "Status" },
+                    { key: "responded", dir: "desc", label: "Latest response" },
+                    { key: "attending", dir: "desc", label: "Largest party" },
+                    ...(showCloneColumn ? [{ key: "clone", dir: "asc" as const, label: "Clone" }] : []),
+                  ]}
+                />
+              }
+            />
+            <ul className="divide-y divide-paper-line">
+              {rows.map((r) => {
+                const name = fullName(r.first_name, r.last_name);
+                const answers = new Map((r.response_id ? answersByResponseId[r.response_id] : undefined)?.map((a) => [a.question_id, a.value]) || []);
+                const answered = questions.filter((qq) => answers.get(qq.id));
+                const currentStatus = r.rsvp_status as Status | null;
+                const canEdit = canMutate && !!r.invitation_id;
+                const responded = respondedText(r);
+                const details = [showCloneColumn ? (r.assembly_id ? cloneNameById[r.assembly_id] || "—" : "Unassigned") : null, responded ? `Responded ${responded}` : "No response yet"].filter(Boolean);
+                return (
+                  <li key={r.invitee_id} className={cn("flex items-start gap-1 pr-4 py-1", canMutate ? "pl-1" : "pl-4")}>
+                    {canMutate && (canEdit
+                      ? <CardCheckbox checked={selectedIds.has(r.invitation_id!)} onChange={() => toggleSelected(r.invitation_id!)} label={`Select ${name}`} />
+                      : <span className="w-11 shrink-0" />)}
+                    <div className="min-w-0 flex-1 py-2.5">
+                      <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                        <span className="text-ink font-medium break-words">{name}</span>
+                        {!canEdit && <StatusBadge status={currentStatus || "no_response"} />}
+                      </div>
+                      <p className="mt-0.5 text-sm text-ink-faint">{details.join(" · ")}</p>
+                      {canEdit && (
+                        <div className="mt-2.5">
+                          <StatusSegments large current={currentStatus} disabled={busyId === r.invitation_id} onPick={(s) => setStatus(r, s)} />
+                        </div>
+                      )}
+                      {currentStatus === "attending" && (canEdit
+                        ? <PartySize row={r} onSave={(n) => setStatus(r, "attending", n)} />
+                        : <p className="mt-2 text-sm text-ink-soft">Party of {r.num_attending ?? 1}</p>)}
+                      {answered.length > 0 && (
+                        <details className="mt-2 text-sm">
+                          <summary className="cursor-pointer py-1 font-medium text-wine-500">{answered.length} answer{answered.length === 1 ? "" : "s"}</summary>
+                          <dl className="mt-1 space-y-1.5">
+                            {answered.map((qq) => (
+                              <div key={qq.id}>
+                                <dt className="text-xs text-ink-faint">{qq.label}</dt>
+                                <dd className="text-ink-soft break-words">{answers.get(qq.id)}</dd>
+                              </div>
+                            ))}
+                          </dl>
+                        </details>
+                      )}
+                    </div>
+                  </li>
+                );
+              })}
+            </ul>
+          </div>
+          <table className="hidden md:table w-full min-w-[720px] text-sm">
             <thead>
               <tr className="border-b border-paper-line text-left text-ink-faint">
                 {canMutate && (
@@ -498,21 +674,7 @@ export function ResponsesManager({
                     )}
                     <td className="px-5 py-3">
                       {canMutate && r.invitation_id ? (
-                        <div className="inline-flex rounded border border-paper-line overflow-hidden text-xs">
-                          {STATUSES.map((s) => (
-                            <button
-                              key={s}
-                              disabled={isBusy}
-                              onClick={() => setStatus(r, s)}
-                              className={cn(
-                                "px-2 py-1 disabled:opacity-50",
-                                currentStatus === s ? STATUS_ACTIVE_CLASSES[s] : "text-ink-faint hover:bg-paper-soft"
-                              )}
-                            >
-                              {STATUS_LABEL[s]}
-                            </button>
-                          ))}
-                        </div>
+                        <StatusSegments current={currentStatus} disabled={isBusy} onPick={(s) => setStatus(r, s)} />
                       ) : (
                         <StatusBadge status={currentStatus || "no_response"} />
                       )}
@@ -532,19 +694,14 @@ export function ResponsesManager({
                       <td key={q.id} className="px-5 py-3 text-ink-soft whitespace-nowrap">{answers.get(q.id) || "—"}</td>
                     ))}
                     <td className="px-5 py-3 text-ink-faint whitespace-nowrap">
-                      {r.responded_at ? (
-                        <>
-                          {formatDateTime(r.responded_at)}
-                          {r.is_modification ? " (edited)" : ""}
-                          {r.recorded_by ? ` · marked by ${r.recorded_by}` : ""}
-                        </>
-                      ) : "—"}
+                      {respondedText(r) ?? "—"}
                     </td>
                   </tr>
                 );
               })}
             </tbody>
           </table>
+          </>
         )}
       </div>
         </>

@@ -11,7 +11,8 @@ import { MergeGroupsModal } from "@/components/invitees/MergeGroupsModal";
 import { ViewToggle } from "@/components/ViewToggle";
 import { SortTh, useTableSort } from "@/components/SortableHeader";
 import { KebabMenu, type KebabItem } from "@/components/KebabMenu";
-import { sortRows, statusRank, numericOrText, type SortValue, type SortState, type SortDir } from "@/lib/table-sort";
+import { MOBILE_DOCK, SortSelect, MobileListHeader, CardCheckbox } from "@/components/MobileList";
+import { sortRows, statusRank, numericOrText, type SortValue } from "@/lib/table-sort";
 import { fullName, formatNumber } from "@/lib/utils";
 import { toE164, personalize, smsHref, isAppleDevice } from "@/lib/phone-text";
 
@@ -104,38 +105,6 @@ function fieldSortValue(field: InviteeField, i: InviteeRow): SortValue {
       return typeof v === "string" ? numericOrText(v) : typeof v === "number" ? v : null;
     }
   }
-}
-
-/** Phones only: the selection's bulk-action bar docks to the bottom of the screen (reachable from
- * anywhere in a long list) instead of sitting above it. The page adds bottom padding while it shows. */
-const MOBILE_DOCK =
-  "max-md:fixed max-md:inset-x-0 max-md:bottom-0 max-md:z-30 max-md:mt-0 max-md:rounded-none max-md:border-x-0 max-md:border-b-0 max-md:shadow-lifted max-md:pb-[calc(0.625rem+env(safe-area-inset-bottom))]";
-
-/** The phone layout has no column headings to tap, so sorting is a dropdown driving the same
- * useTableSort state (and remembered sort) as the desktop table's headings. */
-function SortSelect({ sort, onSort, options }: {
-  sort: SortState;
-  onSort: (key: string, firstDir: SortDir) => void;
-  options: { key: string; dir: SortDir; label: string }[];
-}) {
-  const value = `${sort.key}:${sort.dir}`;
-  const known = options.some((o) => `${o.key}:${o.dir}` === value);
-  return (
-    <select
-      aria-label="Sort by"
-      className="input w-auto py-1.5 text-base"
-      value={known ? value : ""}
-      onChange={(e) => {
-        const o = options.find((x) => `${x.key}:${x.dir}` === e.target.value);
-        // onSort flips the direction of the current column and starts a new column at firstDir,
-        // so one call lands on exactly the option picked.
-        if (o && (o.key !== sort.key || o.dir !== sort.dir)) onSort(o.key, o.dir);
-      }}
-    >
-      {!known && <option value="">Sorted by a column</option>}
-      {options.map((o) => <option key={`${o.key}:${o.dir}`} value={`${o.key}:${o.dir}`}>{o.label}</option>)}
-    </select>
-  );
 }
 
 /** The server's error message for a failed write (e.g. a ticket limit refusing it), or null when it
@@ -670,33 +639,28 @@ export function InviteesManager({ eventId, groupRsvpMode, nameFormat, eventName 
             ) : (
               <>
               <div className="md:hidden">
-                <div className="flex items-center justify-between gap-3 pl-1 pr-3 border-b border-paper-line">
-                  <label className="flex items-center text-sm text-ink-soft">
-                    <span className="flex h-11 w-11 items-center justify-center">
-                      <input type="checkbox" className="h-5 w-5" checked={allFilteredSelected} onChange={toggleSelectAll} />
-                    </span>
-                    Select all
-                  </label>
-                  <SortSelect
-                    sort={sort}
-                    onSort={onSort}
-                    options={[
-                      { key: "name", dir: "asc", label: "Name A–Z" },
-                      { key: "name", dir: "desc", label: "Name Z–A" },
-                      { key: "status", dir: "asc", label: "Status" },
-                      ...(assemblies.length > 0 ? [{ key: "clone", dir: "asc" as const, label: "Clone" }] : []),
-                    ]}
-                  />
-                </div>
+                <MobileListHeader
+                  selectAll={{ checked: allFilteredSelected, onChange: toggleSelectAll }}
+                  sort={
+                    <SortSelect
+                      sort={sort}
+                      onSort={onSort}
+                      options={[
+                        { key: "name", dir: "asc", label: "Name A–Z" },
+                        { key: "name", dir: "desc", label: "Name Z–A" },
+                        { key: "status", dir: "asc", label: "Status" },
+                        ...(assemblies.length > 0 ? [{ key: "clone", dir: "asc" as const, label: "Clone" }] : []),
+                      ]}
+                    />
+                  }
+                />
                 <ul className="divide-y divide-paper-line">
                   {filtered.map((i) => {
                     const name = fullName(i.first_name, i.last_name);
                     const details = [assemblies.length > 0 ? i.assembly_name || "Unassigned" : null, i.group_name, i.email || i.phone].filter(Boolean);
                     return (
                       <li key={i.id} className="flex items-start gap-1 pl-1 pr-2 py-1">
-                        <label className="flex h-11 w-11 shrink-0 items-center justify-center">
-                          <input type="checkbox" className="h-5 w-5" checked={selectedIds.has(i.id)} onChange={() => toggleSelected(i.id)} aria-label={`Select ${name}`} />
-                        </label>
+                        <CardCheckbox checked={selectedIds.has(i.id)} onChange={() => toggleSelected(i.id)} label={`Select ${name}`} />
                         <div className="min-w-0 flex-1 py-2.5">
                           <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
                             <span className="text-ink font-medium break-words">{name}</span>
@@ -826,24 +790,21 @@ export function InviteesManager({ eventId, groupRsvpMode, nameFormat, eventName 
             ) : (
               <>
               <div className="md:hidden">
-                <div className="flex items-center justify-between gap-3 pl-1 pr-3 border-b border-paper-line">
-                  <label className="flex items-center text-sm text-ink-soft">
-                    <span className="flex h-11 w-11 items-center justify-center">
-                      <input type="checkbox" className="h-5 w-5" checked={allGroupsSelected} onChange={toggleSelectAllGroups} />
-                    </span>
-                    Select all
-                  </label>
-                  <SortSelect
-                    sort={groupSort}
-                    onSort={onGroupSort}
-                    options={[
-                      { key: "name", dir: "asc", label: "Name A–Z" },
-                      { key: "name", dir: "desc", label: "Name Z–A" },
-                      { key: "members", dir: "desc", label: "Most members" },
-                      ...(assemblies.length > 0 ? [{ key: "clone", dir: "asc" as const, label: "Clone" }] : []),
-                    ]}
-                  />
-                </div>
+                <MobileListHeader
+                  selectAll={{ checked: allGroupsSelected, onChange: toggleSelectAllGroups }}
+                  sort={
+                    <SortSelect
+                      sort={groupSort}
+                      onSort={onGroupSort}
+                      options={[
+                        { key: "name", dir: "asc", label: "Name A–Z" },
+                        { key: "name", dir: "desc", label: "Name Z–A" },
+                        { key: "members", dir: "desc", label: "Most members" },
+                        ...(assemblies.length > 0 ? [{ key: "clone", dir: "asc" as const, label: "Clone" }] : []),
+                      ]}
+                    />
+                  }
+                />
                 <ul className="divide-y divide-paper-line">
                   {visibleGroupRows.map((g) => {
                     const expanded = expandedGroupIds.has(g.id);
@@ -852,9 +813,7 @@ export function InviteesManager({ eventId, groupRsvpMode, nameFormat, eventName 
                     return (
                       <li key={g.id}>
                         <div className="flex items-start gap-1 pl-1 pr-2 py-1">
-                          <label className="flex h-11 w-11 shrink-0 items-center justify-center">
-                            <input type="checkbox" className="h-5 w-5" checked={selectedGroupIds.has(g.id)} onChange={() => toggleGroupSelected(g.id)} aria-label={`Select ${g.name}`} />
-                          </label>
+                          <CardCheckbox checked={selectedGroupIds.has(g.id)} onChange={() => toggleGroupSelected(g.id)} label={`Select ${g.name}`} />
                           <div className="min-w-0 flex-1 py-2.5">
                             {renamingGroupId === g.id ? (
                               <input
