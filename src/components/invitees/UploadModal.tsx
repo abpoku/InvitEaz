@@ -306,7 +306,25 @@ export function UploadModal({ eventId, groupRsvpMode, onClose, onImported }: { e
             Match each column in your file to a field. We couldn't confidently match every column automatically —
             double-check the mapping below before continuing.
           </p>
-          <div className="mt-4 max-h-80 overflow-auto border border-paper-line rounded">
+          {/* Phones: one block per column with a full-width picker. From sm up: the table. On phones the
+              sheet itself scrolls, so the inner scroll box (max-h + overflow) applies from sm only. */}
+          <ul className="sm:hidden mt-4 border border-paper-line rounded divide-y divide-paper-line">
+            {headers.map((h) => (
+              <li key={h} className="p-3">
+                <p className="text-sm text-ink break-words">{h}</p>
+                {String(records[0]?.[h] ?? "") && <p className="text-xs text-ink-faint break-words">e.g. {String(records[0]?.[h] ?? "")}</p>}
+                <select
+                  aria-label={`Maps to, for ${h}`}
+                  className="input mt-2 py-2 text-base"
+                  value={columnMap[h] || ""}
+                  onChange={(e) => setColumnMap((m) => ({ ...m, [h]: e.target.value }))}
+                >
+                  {targets.map((t) => <option key={t.value} value={t.value}>{t.label}</option>)}
+                </select>
+              </li>
+            ))}
+          </ul>
+          <div className="hidden sm:block mt-4 max-h-80 overflow-auto border border-paper-line rounded">
             <table className="w-full min-w-[520px] text-xs">
               <thead className="bg-paper-soft sticky top-0">
                 <tr className="text-left text-ink-faint">
@@ -368,7 +386,7 @@ export function UploadModal({ eventId, groupRsvpMode, onClose, onImported }: { e
                   </li>
                 ))}
               </ul>
-              <div className="mt-2 flex items-center gap-3">
+              <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1">
                 <button onClick={() => setStep("fix")} className="text-sm font-medium text-brass-600 hover:underline">Fix before upload</button>
                 <button onClick={() => setDismissedIssueBanner(true)} className="text-sm font-medium text-brass-600 hover:underline">Continue anyway</button>
                 <button onClick={downloadErrorReport} className="text-sm font-medium text-brass-600 hover:underline">Download error report</button>
@@ -383,14 +401,15 @@ export function UploadModal({ eventId, groupRsvpMode, onClose, onImported }: { e
             </div>
           )}
 
-          <div className="mt-4 max-h-64 overflow-auto border border-paper-line rounded">
-            <table className="w-full min-w-[480px] text-xs">
-              <thead className="bg-paper-soft sticky top-0">
+          {/* Phones fold Email and Group under the name, so the table fits without sideways scrolling. */}
+          <div className="mt-4 sm:max-h-64 sm:overflow-auto border border-paper-line rounded">
+            <table className="w-full sm:min-w-[480px] text-xs">
+              <thead className="bg-paper-soft sm:sticky sm:top-0">
                 <tr className="text-left text-ink-faint">
                   <th className="px-3 py-2">Row</th>
                   <th className="px-3 py-2">Name</th>
-                  <th className="px-3 py-2">Email</th>
-                  <th className="px-3 py-2">Group</th>
+                  <th className="hidden sm:table-cell px-3 py-2">Email</th>
+                  <th className="hidden sm:table-cell px-3 py-2">Group</th>
                   <th className="px-3 py-2">Status</th>
                 </tr>
               </thead>
@@ -400,9 +419,14 @@ export function UploadModal({ eventId, groupRsvpMode, onClose, onImported }: { e
                   return (
                     <tr key={r.rowNumber} className="border-t border-paper-line">
                       <td className="px-3 py-1.5 text-ink-faint">{r.rowNumber}</td>
-                      <td className="px-3 py-1.5">{r.firstName} {r.lastName}</td>
-                      <td className="px-3 py-1.5 text-ink-soft">{r.email || "—"}</td>
-                      <td className="px-3 py-1.5 text-ink-soft">{r.groupName || "—"}</td>
+                      <td className="px-3 py-1.5">
+                        {r.firstName} {r.lastName}
+                        {(r.email || r.groupName) && (
+                          <span className="block sm:hidden text-ink-faint break-all">{[r.email, r.groupName].filter(Boolean).join(" · ")}</span>
+                        )}
+                      </td>
+                      <td className="hidden sm:table-cell px-3 py-1.5 text-ink-soft">{r.email || "—"}</td>
+                      <td className="hidden sm:table-cell px-3 py-1.5 text-ink-soft">{r.groupName || "—"}</td>
                       <td className={`px-3 py-1.5 ${status.className}`}>{status.label}</td>
                     </tr>
                   );
@@ -457,7 +481,7 @@ export function UploadModal({ eventId, groupRsvpMode, onClose, onImported }: { e
             </div>
           )}
 
-          <div className="mt-3 max-h-96 overflow-auto border border-paper-line rounded divide-y divide-paper-line">
+          <div className="mt-3 sm:max-h-96 sm:overflow-auto border border-paper-line rounded divide-y divide-paper-line">
             {flaggedRows.map((r) => (
               <div key={r.rowNumber} className="p-3">
                 <div className="flex items-center gap-3">
@@ -474,7 +498,7 @@ export function UploadModal({ eventId, groupRsvpMode, onClose, onImported }: { e
                     <p className="text-ink">Row {r.rowNumber} — {r.firstName} {r.lastName}</p>
                     <p className="text-clay-600 mt-0.5">{r.issues.map((i) => i.message).join(", ")}</p>
                   </div>
-                  <button onClick={() => setEditingRow(editingRow === r.rowNumber ? null : r.rowNumber)} className="text-xs font-medium text-wine-500 hover:underline shrink-0">
+                  <button onClick={() => setEditingRow(editingRow === r.rowNumber ? null : r.rowNumber)} className="text-sm sm:text-xs font-medium text-wine-500 hover:underline shrink-0 max-sm:-my-2 max-sm:px-2 max-sm:py-2.5">
                     {editingRow === r.rowNumber ? "Close" : "Edit"}
                   </button>
                 </div>
@@ -513,7 +537,7 @@ export function UploadModal({ eventId, groupRsvpMode, onClose, onImported }: { e
             ))}
           </div>
 
-          <div className="mt-5 flex justify-end">
+          <div className="modal-actions mt-5 flex justify-end">
             <button onClick={() => setStep("review")} className="btn-primary">Done</button>
           </div>
 
@@ -531,17 +555,17 @@ export function UploadModal({ eventId, groupRsvpMode, onClose, onImported }: { e
 
       {step === "duplicates" && (
         <div>
-          <div className="flex items-center justify-between gap-2">
+          <div className="flex flex-wrap items-center justify-between gap-2">
             <p className="text-sm text-ink-soft">Decide what to do with each matching row.</p>
             {pendingDuplicateCount > 0 && (
-              <div className="flex items-center gap-3 shrink-0">
+              <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
                 <button onClick={keepBothAllRemaining} className="text-xs font-medium text-wine-500 hover:underline">Keep both for all remaining</button>
                 <button onClick={skipAllRemaining} className="text-xs font-medium text-wine-500 hover:underline">Skip all remaining</button>
               </div>
             )}
           </div>
 
-          <div className="mt-3 max-h-96 overflow-auto border border-paper-line rounded divide-y divide-paper-line">
+          <div className="mt-3 sm:max-h-96 sm:overflow-auto border border-paper-line rounded divide-y divide-paper-line">
             {duplicateRows.map((r) => {
               const match = duplicateMap.get(r.rowNumber)!;
               const action = resolutions[r.rowNumber]?.action ?? "pending";
@@ -555,10 +579,18 @@ export function UploadModal({ eventId, groupRsvpMode, onClose, onImported }: { e
                   <p className="text-xs text-ink">
                     Row {r.rowNumber} — {r.firstName} {r.lastName} matches {otherLabel} by {matchFieldLabel}.
                   </p>
-                  <div className="mt-2 flex items-center gap-3">
-                    <button onClick={() => keepBoth(r.rowNumber)} className={`text-xs font-medium hover:underline ${action === "create" ? "text-moss-600" : "text-ink-faint"}`}>Keep both</button>
-                    <button onClick={() => startMerge(r.rowNumber)} className={`text-xs font-medium hover:underline ${action === "merge" ? "text-moss-600" : "text-ink-faint"}`}>Merge</button>
-                    <button onClick={() => skipRow(r.rowNumber)} className={`text-xs font-medium hover:underline ${action === "skip" ? "text-moss-600" : "text-ink-faint"}`}>Skip</button>
+                  {/* Phones: a three-way row of real buttons; from sm up, the compact text links. */}
+                  <div className="mt-2 grid grid-cols-3 gap-2 sm:flex sm:items-center sm:gap-3">
+                    {([["create", "Keep both", () => keepBoth(r.rowNumber)], ["merge", "Merge", () => startMerge(r.rowNumber)], ["skip", "Skip", () => skipRow(r.rowNumber)]] as const).map(([value, label, onClick]) => (
+                      <button
+                        key={value}
+                        onClick={onClick}
+                        aria-pressed={action === value}
+                        className={`text-sm sm:text-xs font-medium max-sm:rounded max-sm:border max-sm:py-2 sm:hover:underline ${action === value ? "text-moss-600 max-sm:border-moss-600 max-sm:bg-moss-50" : "text-ink-faint max-sm:border-paper-line"}`}
+                      >
+                        {label}
+                      </button>
+                    ))}
                   </div>
 
                   {mergingRow === r.rowNumber && (
@@ -576,12 +608,12 @@ export function UploadModal({ eventId, groupRsvpMode, onClose, onImported }: { e
                         return (
                           <div key={f.key} className="text-xs">
                             <p className="text-ink-faint mb-1">{f.label}</p>
-                            <div className="flex items-center gap-4">
-                              <label className="flex items-center gap-1.5">
+                            <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-4">
+                              <label className="flex items-center gap-1.5 break-all">
                                 <input type="radio" checked={choice === "uploaded"} onChange={() => setMergeChoices((c) => ({ ...c, [f.key]: "uploaded" }))} />
                                 Uploaded: {(r as any)[f.key] || "—"}
                               </label>
-                              <label className="flex items-center gap-1.5">
+                              <label className="flex items-center gap-1.5 break-all">
                                 <input type="radio" checked={choice === "existing"} onChange={() => setMergeChoices((c) => ({ ...c, [f.key]: "existing" }))} />
                                 Existing: {otherValue || "—"}
                               </label>
@@ -590,8 +622,8 @@ export function UploadModal({ eventId, groupRsvpMode, onClose, onImported }: { e
                         );
                       })}
                       <div className="flex justify-end gap-2 pt-1">
-                        <button onClick={() => setMergingRow(null)} className="text-xs text-ink-faint hover:underline">Cancel</button>
-                        <button onClick={() => confirmMerge(r, match)} className="text-xs font-medium text-wine-500 hover:underline">Confirm merge</button>
+                        <button onClick={() => setMergingRow(null)} className="text-sm sm:text-xs text-ink-faint hover:underline max-sm:px-3 max-sm:py-2">Cancel</button>
+                        <button onClick={() => confirmMerge(r, match)} className="text-sm sm:text-xs font-medium text-wine-500 hover:underline max-sm:px-3 max-sm:py-2">Confirm merge</button>
                       </div>
                     </div>
                   )}
@@ -600,7 +632,7 @@ export function UploadModal({ eventId, groupRsvpMode, onClose, onImported }: { e
             })}
           </div>
 
-          <div className="mt-5 flex justify-end">
+          <div className="modal-actions mt-5 flex justify-end">
             <button onClick={() => setStep("review")} disabled={pendingDuplicateCount > 0} className="btn-primary">
               {pendingDuplicateCount > 0 ? `${pendingDuplicateCount} left to resolve` : "Done"}
             </button>

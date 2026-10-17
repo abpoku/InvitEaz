@@ -38,9 +38,9 @@ export default async function EventLayout({ children, params }: { children: Reac
 
   return (
     <div>
-      <div data-print-hide className="border-b border-paper-line px-4 sm:px-8 py-5 sm:py-6">
+      <div data-print-hide className="border-b border-paper-line px-4 sm:px-8 py-4 sm:py-6">
         <Link href="/dashboard" className="text-sm text-ink-faint hover:text-ink-soft">← All events</Link>
-        <div className="mt-2 flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
+        <div className="mt-2 flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3 sm:gap-4">
           <div className="min-w-0">
             <div className="flex items-center gap-2.5 flex-wrap">
               <h1 className="font-serif text-2xl text-ink break-words">{event.name}</h1>
@@ -57,7 +57,7 @@ export default async function EventLayout({ children, params }: { children: Reac
 
         <EventHeaderStats stats={stats} byClone={byClone} />
 
-        <nav className="mt-6 -mb-6">
+        <nav className="mt-4 -mb-4 sm:mt-6 sm:-mb-6 max-sm:-mx-4">
           <EventTabs eventId={params.id} role={membership.role} />
         </nav>
       </div>

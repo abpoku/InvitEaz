@@ -21,8 +21,9 @@ export function EventHeaderStats({ stats, byClone }: { stats: HeaderStats; byClo
   const selected = clone && byClone ? byClone[clone] : undefined;
   const s = selected?.stats ?? stats;
   return (
-    <div className="mt-6 flex flex-wrap items-center gap-x-6 gap-y-2 text-sm">
-      {selected && <span className="chip bg-wine-500/10 text-wine-600">{selected.name}</span>}
+    // Phones: a 3×2 grid, number above label. From sm up: one wrapping line, label beside number.
+    <div className="mt-4 sm:mt-6 grid grid-cols-3 gap-x-3 gap-y-3 sm:flex sm:flex-wrap sm:items-center sm:gap-x-6 sm:gap-y-2 text-sm">
+      {selected && <span className="chip bg-wine-500/10 text-wine-600 col-span-3 justify-self-start">{selected.name}</span>}
       <MiniStat label="Invited" value={s.invited} />
       <MiniStat label="Attending" value={s.attending} tone="text-moss-600" />
       <MiniStat label="Maybe" value={s.maybe} />
@@ -35,9 +36,9 @@ export function EventHeaderStats({ stats, byClone }: { stats: HeaderStats; byClo
 
 function MiniStat({ label, value, tone = "text-ink" }: { label: string; value: string | number; tone?: string }) {
   return (
-    <div>
-      <span className={`font-serif text-lg ${tone}`}>{typeof value === "number" ? formatNumber(value) : value}</span>
-      <span className="ml-1.5 text-ink-faint">{label}</span>
+    <div className="min-w-0">
+      <span className={`block sm:inline font-serif text-lg leading-tight ${tone}`}>{typeof value === "number" ? formatNumber(value) : value}</span>
+      <span className="block sm:inline sm:ml-1.5 text-xs sm:text-sm text-ink-faint">{label}</span>
     </div>
   );
 }
