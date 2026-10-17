@@ -164,22 +164,44 @@ export async function createInvitationFor(eventId: string, inviteeId: string): P
   return (await queryOne<InvitationRow>("SELECT * FROM invitations WHERE id = ?", [id]))!;
 }
 
-export async function listInvitees(eventId: string, assemblyId?: string | null): Promise<(InviteeRow & { token: string; status: string; group_name: string | null; assembly_name: string | null })[]> {
-  // `status` is the invitee's *latest response* when they have one — the same source every stat and
-  // the Responses tab read (see CLAUDE.md, "RSVP status & manual entry") — falling back to the
-  // invitation's delivery status (invited/opened/…) only when there's no response yet. One invitation
-  // per invitee (the earliest), so a second invitation row can never duplicate someone in this list.
+/** One invitee row as the Invitees tab, exports, messaging and reports read it: the invitee, their
+ * earliest invitation, and their latest response. */
+export type InviteeListRow = InviteeRow & {
+  token: string;
+  /** Latest response's rsvp_status when they have one, else the invitation's delivery status. */
+  status: string;
+  group_name: string | null;
+  assembly_name: string | null;
+  invitation_id: string | null;
+  invitation_status: string | null;
+  response_id: string | null;
+  rsvp_status: "attending" | "declined" | "maybe" | null;
+  num_attending: number | null;
+  responded_at: string | null;
+  is_modification: number | null;
+  /** Planner's email when a planner recorded the latest response; null for a guest's own. */
+  recorded_by: string | null;
+};
+
+export async function listInvitees(eventId: string, assemblyId?: string | null): Promise<InviteeListRow[]> {
+  // `status` is the invitee's *latest response* when they have one — the same source every stat
+  // reads (see CLAUDE.md, "RSVP status & manual entry") — falling back to the invitation's delivery
+  // status (invited/opened/…) only when there's no response yet. One invitation per invitee (the
+  // earliest), so a second invitation row can never duplicate someone in this list. The latest
+  // response's other columns ride along for the Invitees tab's RSVP view.
   return query(
     `SELECT iv.*, g.name as group_name, a.name as assembly_name, i.token,
-       COALESCE(
-         (SELECT r.rsvp_status FROM rsvp_responses r WHERE r.invitation_id = i.id ORDER BY r.responded_at DESC LIMIT 1),
-         i.status
-       ) as status
+       i.id as invitation_id, i.status as invitation_status,
+       r.id as response_id, r.rsvp_status, r.num_attending, r.responded_at, r.is_modification, r.recorded_by,
+       COALESCE(r.rsvp_status, i.status) as status
      FROM invitees iv
      LEFT JOIN groups g ON g.id = iv.group_id
      LEFT JOIN assemblies a ON a.id = iv.assembly_id
      LEFT JOIN invitations i ON i.id = (
        SELECT i2.id FROM invitations i2 WHERE i2.invitee_id = iv.id ORDER BY i2.created_at ASC LIMIT 1
+     )
+     LEFT JOIN rsvp_responses r ON r.id = (
+       SELECT r2.id FROM rsvp_responses r2 WHERE r2.invitation_id = i.id ORDER BY r2.responded_at DESC LIMIT 1
      )
      WHERE iv.event_id = ? AND iv.active = 1
      ${assemblyId ? "AND iv.assembly_id = ?" : ""}

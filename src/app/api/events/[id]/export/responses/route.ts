@@ -1,5 +1,5 @@
 import { requireAssemblyScope } from "@/lib/session";
-import { listResponsesForEvent, listQuestions, getAnswersForResponse } from "@/lib/models/rsvp";
+import { listResponsesForEvent, listQuestions, getAnswersForResponses } from "@/lib/models/rsvp";
 
 function csvEscape(v: any): string {
   const s = String(v ?? "");
@@ -16,10 +16,10 @@ export async function GET(_req: Request, { params }: { params: { id: string } })
 
   const headers = ["First Name", "Last Name", "Attending", "Number Attending", "Guest Names", "Responded At", ...questions.map((q) => q.label)];
   const lines = [headers.join(",")];
+  const answersByResponse = await getAnswersForResponses(responses.map((r) => r.id));
 
   for (const r of responses) {
-    const answers = await getAnswersForResponse(r.id);
-    const answerMap = new Map(answers.map((a) => [a.question_id, a.value]));
+    const answerMap = new Map((answersByResponse[r.id] || []).map((a) => [a.question_id, a.value]));
     const guestNames = r.guest_names_json ? JSON.parse(r.guest_names_json).join("; ") : "";
     lines.push([
       csvEscape(r.first_name), csvEscape(r.last_name),

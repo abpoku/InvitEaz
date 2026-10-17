@@ -140,6 +140,30 @@ export async function getAnswersForResponse(responseId: string): Promise<{ quest
   return query("SELECT question_id, value FROM rsvp_answers WHERE response_id = ?", [responseId]);
 }
 
+/** What the Invitees tab's RSVP view needs beyond the rows themselves: the planner's own questions
+ * (core ones never store answers — they write to dedicated columns) and each latest response's
+ * answers, fetched in one query. */
+export async function inviteeRsvpExtras(eventId: string, rows: { response_id: string | null }[]) {
+  const [questions, answers] = await Promise.all([
+    listQuestions(eventId),
+    getAnswersForResponses(rows.map((r) => r.response_id).filter((id): id is string => !!id)),
+  ]);
+  return { questions: questions.filter((q) => q.kind === "custom").map((q) => ({ id: q.id, label: q.label })), answers };
+}
+
+/** Answers for many responses in one query, keyed by response id — for lists (the Invitees tab, the
+ * responses CSV) that would otherwise run one getAnswersForResponse query per person. */
+export async function getAnswersForResponses(responseIds: string[]): Promise<Record<string, { question_id: string; value: string | null }[]>> {
+  const byResponse: Record<string, { question_id: string; value: string | null }[]> = {};
+  if (responseIds.length === 0) return byResponse;
+  const rows = await query<{ response_id: string; question_id: string; value: string | null }>(
+    "SELECT response_id, question_id, value FROM rsvp_answers WHERE response_id = ANY(?)",
+    [responseIds]
+  );
+  for (const r of rows) (byResponse[r.response_id] ??= []).push({ question_id: r.question_id, value: r.value });
+  return byResponse;
+}
+
 export async function submitResponse(input: {
   invitationId: string;
   eventId: string;

@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { requireAssemblyScope } from "@/lib/session";
 import { createInvitee, listInvitees, countActiveInvitees } from "@/lib/models/invitees";
+import { inviteeRsvpExtras } from "@/lib/models/rsvp";
 import { getUserById, PLAN_LIMITS } from "@/lib/models/users";
 import { getEventById, logAudit } from "@/lib/models/events";
 import { getAssembly } from "@/lib/models/assemblies";
@@ -23,7 +24,8 @@ const schema = z.object({
 export async function GET(_req: Request, { params }: { params: { id: string } }) {
   const access = await requireAssemblyScope(params.id);
   if (!access.ok) return NextResponse.json({ error: access.message }, { status: access.status });
-  return NextResponse.json({ invitees: await listInvitees(params.id, access.assemblyId) });
+  const invitees = await listInvitees(params.id, access.assemblyId);
+  return NextResponse.json({ invitees, ...(await inviteeRsvpExtras(params.id, invitees)) });
 }
 
 export async function POST(req: Request, { params }: { params: { id: string } }) {
