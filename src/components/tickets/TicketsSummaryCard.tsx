@@ -44,7 +44,8 @@ export function TicketsSummaryCard({
           <p className={caption}>Ticket payments, net of refunds</p>
           {viewAll}
         </button>
-        <button type="button" onClick={() => setOpen("outstanding")} className={linkTile}>
+        {/* Three tiles on the phone's two columns: Outstanding takes the whole last row, so no empty cell shows. */}
+        <button type="button" onClick={() => setOpen("outstanding")} className={`${linkTile} ${showDonationTile ? "" : "col-span-2 sm:col-span-1"}`}>
           <p className={caption}>Outstanding</p>
           <p className={value}>{formatCurrency(totals.outstandingCents)}</p>
           <p className={caption}>{totals.creditCents > 0 ? `${formatCurrency(totals.creditCents)} in credits` : "Still owed"}</p>
@@ -113,26 +114,28 @@ function CollectedModal({ eventId, clone, total, context, onClose }: { eventId: 
             } satisfies ExportDoc} />
           </div>
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[520px] text-sm">
+            {/* Phones drop Date and Type to a line under the name, so the list fits without sideways scrolling. */}
+            <table className="w-full sm:min-w-[520px] text-sm">
               <thead>
                 <tr className="border-b border-paper-line text-left text-ink-faint">
-                  <th className="py-2 pr-3 font-medium">Date</th>
+                  <th className="hidden sm:table-cell py-2 pr-3 font-medium">Date</th>
                   <th className="py-2 pr-3 font-medium">From</th>
-                  <th className="py-2 pr-3 font-medium">Type</th>
+                  <th className="hidden sm:table-cell py-2 pr-3 font-medium">Type</th>
                   <th className="py-2 text-right font-medium">Amount</th>
                 </tr>
               </thead>
               <tbody>
                 {rows.map((r) => (
                   <tr key={r.paymentId} className="border-b border-paper-line last:border-0 align-top">
-                    <td className="py-2 pr-3 whitespace-nowrap text-ink-soft">{r.paidOn ? formatDateShort(r.paidOn) : "—"}</td>
+                    <td className="hidden sm:table-cell py-2 pr-3 whitespace-nowrap text-ink-soft">{r.paidOn ? formatDateShort(r.paidOn) : "—"}</td>
                     <td className="py-2 pr-3 text-ink">
                       {r.who}
                       <span className="text-ink-faint"> · {r.targetType === "group" ? "Group" : "Individual"}</span>
                       {r.kind === "refund" && <span className="ml-1.5 chip bg-brass-500/10 text-brass-600">Refund</span>}
+                      <span className="block text-xs text-ink-faint sm:hidden">{[r.paidOn ? formatDateShort(r.paidOn) : null, paymentMethodLabel(r.method, r.methodOther)].filter((x) => x && x !== "—").join(" · ")}</span>
                       {r.note && <span className="block text-xs text-ink-faint">{r.note}</span>}
                     </td>
-                    <td className="py-2 pr-3 text-ink-soft">{paymentMethodLabel(r.method, r.methodOther)}</td>
+                    <td className="hidden sm:table-cell py-2 pr-3 text-ink-soft">{paymentMethodLabel(r.method, r.methodOther)}</td>
                     <td className={`py-2 text-right tabular-nums whitespace-nowrap ${r.ticketCents < 0 ? "text-clay-600" : "text-moss-600"}`}>
                       {r.ticketCents < 0 ? "−" : ""}{formatCurrency(Math.abs(r.ticketCents))}
                     </td>
@@ -169,7 +172,7 @@ function OutstandingModal({ summary, context, onClose }: { summary: TicketingSum
 
   const table = (list: typeof parties, kind: "due" | "credit") => (
     <div className="overflow-x-auto">
-      <table className="w-full min-w-[480px] text-sm">
+      <table className="w-full sm:min-w-[480px] text-sm">
         <thead>
           <tr className="border-b border-paper-line text-left text-ink-faint">
             <th className="py-2 pr-3 font-medium">Name</th>
@@ -280,27 +283,29 @@ function DonationsModal({ eventId, clone, label, context, onClose }: { eventId: 
             } satisfies ExportDoc} />
           </div>
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[520px] text-sm">
+            {/* Phones drop Date, Source and Type to a line under the name, as in Collected. */}
+            <table className="w-full sm:min-w-[520px] text-sm">
               <thead>
                 <tr className="border-b border-paper-line text-left text-ink-faint">
-                  <th className="py-2 pr-3 font-medium">Date</th>
+                  <th className="hidden sm:table-cell py-2 pr-3 font-medium">Date</th>
                   <th className="py-2 pr-3 font-medium">From</th>
-                  <th className="py-2 pr-3 font-medium">Source</th>
-                  <th className="py-2 pr-3 font-medium">Type</th>
+                  <th className="hidden sm:table-cell py-2 pr-3 font-medium">Source</th>
+                  <th className="hidden sm:table-cell py-2 pr-3 font-medium">Type</th>
                   <th className="py-2 text-right font-medium">Amount</th>
                 </tr>
               </thead>
               <tbody>
                 {rows.map((r) => (
                   <tr key={r.paymentId} className="border-b border-paper-line last:border-0 align-top">
-                    <td className="py-2 pr-3 whitespace-nowrap text-ink-soft">{r.paidOn ? formatDateShort(r.paidOn) : "—"}</td>
+                    <td className="hidden sm:table-cell py-2 pr-3 whitespace-nowrap text-ink-soft">{r.paidOn ? formatDateShort(r.paidOn) : "—"}</td>
                     <td className="py-2 pr-3 text-ink">
                       {r.who}
                       <span className="text-ink-faint"> · {r.targetType === "group" ? "Group" : "Individual"}</span>
+                      <span className="block text-xs text-ink-faint sm:hidden">{[r.paidOn ? formatDateShort(r.paidOn) : null, sourceLabel(r), paymentMethodLabel(r.method, r.methodOther)].filter((x) => x && x !== "—").join(" · ")}</span>
                       {r.note && <span className="block text-xs text-ink-faint">{r.note}</span>}
                     </td>
-                    <td className="py-2 pr-3 text-ink-soft">{sourceLabel(r)}</td>
-                    <td className="py-2 pr-3 text-ink-soft">{paymentMethodLabel(r.method, r.methodOther)}</td>
+                    <td className="hidden sm:table-cell py-2 pr-3 text-ink-soft">{sourceLabel(r)}</td>
+                    <td className="hidden sm:table-cell py-2 pr-3 text-ink-soft">{paymentMethodLabel(r.method, r.methodOther)}</td>
                     <td className={`py-2 text-right tabular-nums whitespace-nowrap ${r.kind === "refund" ? "text-clay-600" : "text-ink"}`}>
                       {r.kind === "refund" ? "−" : ""}{formatCurrency(r.donationCents)}
                     </td>

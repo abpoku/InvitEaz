@@ -10,6 +10,7 @@ import { ChangeTicketTypeModal } from "@/components/tickets/ChangeTicketTypeModa
 import { RefundModal } from "@/components/tickets/RefundModal";
 import { ViewToggle } from "@/components/ViewToggle";
 import { SortTh, useTableSort } from "@/components/SortableHeader";
+import { SortSelect, MobileListHeader } from "@/components/MobileList";
 import { sortRows, type SortValue } from "@/lib/table-sort";
 import type { TicketingSummary } from "@/lib/models/ticketing";
 
@@ -38,6 +39,29 @@ function payMatches(owed: number, balance: number, f: PayFilter) {
   if (f === "credit") return balance < 0;
   if (f === "paid") return owed > 0 && balance === 0;
   return owed === 0 && balance === 0;
+}
+
+/** A phone card's Owed / Paid / Balance, side by side — the same colors and wording as the table. */
+function MoneyStrip({ owedCents, paidCents, balanceCents, paidNote }: { owedCents: number; paidCents: number; balanceCents: number; paidNote?: string }) {
+  return (
+    <dl className="mt-2 grid grid-cols-3 gap-2 text-sm">
+      <div>
+        <dt className="text-xs text-ink-faint">Owed</dt>
+        <dd className="tabular-nums text-wine-700">{formatCurrency(owedCents)}</dd>
+      </div>
+      <div>
+        <dt className="text-xs text-ink-faint">Paid</dt>
+        <dd className="tabular-nums text-moss-600">
+          {formatCurrency(paidCents)}
+          {paidNote && <span className="block text-xs text-ink-faint">{paidNote}</span>}
+        </dd>
+      </div>
+      <div>
+        <dt className="text-xs text-ink-faint">{balanceCents < 0 ? "Credit" : "Balance"}</dt>
+        <dd className="tabular-nums font-medium text-ink">{formatCurrency(Math.abs(balanceCents))}</dd>
+      </div>
+    </dl>
+  );
 }
 
 export function TicketsManager({
@@ -185,7 +209,45 @@ export function TicketsManager({
           ) : invitees.length === 0 ? (
             <p className="p-10 text-sm text-ink-faint text-center">No one matches these filters.</p>
           ) : (
-            <table className="w-full min-w-[720px] text-sm">
+            <>
+            <div className="md:hidden">
+              <MobileListHeader
+                sort={
+                  <SortSelect
+                    sort={sort}
+                    onSort={onSort}
+                    options={[
+                      { key: "name", dir: "asc", label: "Name A–Z" },
+                      { key: "name", dir: "desc", label: "Name Z–A" },
+                      { key: "balance", dir: "desc", label: "Largest balance" },
+                      { key: "owed", dir: "desc", label: "Most owed" },
+                      { key: "paid", dir: "desc", label: "Most paid" },
+                      { key: "group", dir: "asc", label: "Group" },
+                      { key: "tier", dir: "asc", label: summary.fieldLabel },
+                    ]}
+                  />
+                }
+              />
+              <ul className="divide-y divide-paper-line">
+                {sortedInvitees.map((inv) => (
+                  <li key={inv.inviteeId} className="flex items-start gap-1 pl-4 pr-2 py-1">
+                    <div className="min-w-0 flex-1 py-2.5">
+                      <p className="text-ink font-medium break-words">{inv.name}</p>
+                      <p className="mt-0.5 text-sm text-ink-faint">
+                        {[inv.groupName, inv.tier || `No ${summary.fieldLabel?.toLowerCase() || "ticket type"}`].filter(Boolean).join(" · ")}
+                        {inv.rsvpStatus === "declined" && " · Declined — no ticket"}
+                      </p>
+                      <MoneyStrip
+                        owedCents={inv.owedCents} paidCents={inv.paidCents} balanceCents={inv.balanceCents}
+                        paidNote={inv.groupShareCents !== 0 ? `incl. ${formatCurrency(inv.groupShareCents)} from group` : undefined}
+                      />
+                    </div>
+                    {canMutate && rowActions({ type: "invitee", id: inv.inviteeId, label: inv.name })}
+                  </li>
+                ))}
+              </ul>
+            </div>
+            <table className="hidden md:table w-full min-w-[720px] text-sm">
               <thead>
                 <tr className="border-b border-paper-line text-left text-ink-faint">
                   <SortTh label="Name" column="name" sort={sort} onSort={onSort} />
@@ -225,13 +287,48 @@ export function TicketsManager({
                 ))}
               </tbody>
             </table>
+            </>
           )
         ) : summary.groups.length === 0 ? (
           <p className="p-10 text-sm text-ink-faint text-center">No groups yet.</p>
         ) : groups.length === 0 ? (
           <p className="p-10 text-sm text-ink-faint text-center">No groups match these filters.</p>
         ) : (
-          <table className="w-full min-w-[720px] text-sm">
+          <>
+          <div className="md:hidden">
+            <MobileListHeader
+              sort={
+                <SortSelect
+                  sort={sort}
+                  onSort={onSort}
+                  options={[
+                    { key: "name", dir: "asc", label: "Name A–Z" },
+                    { key: "name", dir: "desc", label: "Name Z–A" },
+                    { key: "balance", dir: "desc", label: "Largest balance" },
+                    { key: "owed", dir: "desc", label: "Most owed" },
+                    { key: "paid", dir: "desc", label: "Most paid" },
+                    { key: "members", dir: "desc", label: "Most members" },
+                  ]}
+                />
+              }
+            />
+            <ul className="divide-y divide-paper-line">
+              {sortedGroups.map((g) => (
+                <li key={g.groupId} className="flex items-start gap-1 pl-4 pr-2 py-1">
+                  <div className="min-w-0 flex-1 py-2.5">
+                    <p className="text-ink font-medium break-words">{g.name}</p>
+                    <p className="mt-0.5 text-sm text-ink-faint">
+                      {g.memberCount} member{g.memberCount === 1 ? "" : "s"}
+                      {g.tierBreakdown.length > 0 && ` · ${g.tierBreakdown.map((t) => `${t.tier || "No tier"} x${t.count}`).join(", ")}`}
+                    </p>
+                    <MoneyStrip owedCents={g.owedCents} paidCents={g.paidCents} balanceCents={g.balanceCents} />
+                  </div>
+                  {canMutate && rowActions({ type: "group", id: g.groupId, label: g.name })}
+                </li>
+              ))}
+            </ul>
+          </div>
+          <table className="hidden md:table w-full min-w-[720px] text-sm">
             <thead>
               <tr className="border-b border-paper-line text-left text-ink-faint">
                 <SortTh label="Name" column="name" sort={sort} onSort={onSort} />
@@ -266,6 +363,7 @@ export function TicketsManager({
               ))}
             </tbody>
           </table>
+          </>
         )}
       </div>
 
