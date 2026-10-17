@@ -192,14 +192,28 @@ trip.
   is silently dropped from the write and reported back via a `skipped` count, rather than
   failing the whole request.
 
+### Invitees tab (Details | RSVP)
+
+There is no separate Responses tab any more: `InviteesManager.tsx` is one list of every active
+invitee with a **Details | RSVP** column switch (default Details; `?view=rsvp` in the URL, which is
+also where the old `/responses` route redirects, `?clone=` included). Name, clone and the
+Attending/Maybe/Declined **status picker** show in both; Details adds the invitee fields and RSVP
+links, RSVP adds party size, answers to the event's *custom* RSVP questions (core questions never
+store answers — they write dedicated columns), and when/who responded. Rows, filters, selection,
+sort (one remembered sort) and bulk actions are shared; the bulk bars carry "set status" alongside
+bulk edit/remove. `listInvitees` returns each invitee's latest response fields, and
+`inviteeRsvpExtras()` in `rsvp.ts` adds the custom questions plus all answers in one query
+(`getAnswersForResponses` — never loop `getAnswersForResponse` per row). Viewers (`canMutate`
+false) get a read-only list: badges instead of pickers, no selection/edit/add/upload, exports only.
+The RSVP pieces (picker, party size, breakdown) live in `invitees/RsvpControls.tsx`.
+
 ### RSVP status & manual entry
 
 Guests self-submit via the public `/r/[token]` form, which stays a strict binary
-Attending/Declined — never touched by anything below. Separately, planners can now record a
-status on an invitee's behalf from the Responses tab (`src/components/responses/
-ResponsesManager.tsx`, which lists **every** invitee for the event, not just ones who've
-actually responded — contrast with `listResponsesForEvent` in `rsvp.ts`, which still only
-returns invitations with a response row and backs the CSV export).
+Attending/Declined — never touched by anything below. Separately, planners can record a
+status on an invitee's behalf from the Invitees tab's status picker (see above — the list covers
+**every** invitee, not just ones who've responded; contrast with `listResponsesForEvent` in
+`rsvp.ts`, which only returns invitations with a response row and backs the responses CSV export).
 
 - **A third status, "Maybe", is a real tri-state**, not just a UI label — it gets its own
   bucket in every stat (`EventStats`/`AssemblyStats` both carry a `maybe` field alongside
@@ -251,10 +265,9 @@ Overview's config sections; clone-scoped roles never see it).
   `custom_fields[field.key]`. `priceForInvitee()`/`priceForGroup()` in `ticketing.ts` are
   pure functions that look that value up against the configured tiers; no tier assigned (or
   a value that matches no configured tier) owes **$0**, never an error, never blocking.
-  Both the Invitees table and the Responses table render this field as an inline `<select>`
-  when it's the linked ticketing field (not the generic read-only text every other custom
-  field gets) — the dropdown's options always come from the tier list, so the two tables
-  can't disagree with each other or with the Ticketing card.
+  The Invitees tab (Details view) renders this field as an inline `<select>` when it's the
+  linked ticketing field (not the generic read-only text every other custom field gets) — the
+  dropdown's options always come from the tier list, so it can't disagree with the Ticketing card.
 - **Payments are a flexible ledger** (`ticket_payments`): one entry is tagged to exactly one
   of an invitee or a group (DB `CHECK (num_nonnulls(invitee_id, group_id) = 1)`), so a
   planner can record either "$50 from Alex" or "$150 from the Johnson family" as a single
@@ -303,7 +316,7 @@ Overview's config sections; clone-scoped roles never see it).
   parties the card sums.
 - **RSVP status for filtering comes from the latest response.** `listInvitees` returns
   `COALESCE(latest rsvp_status, invitations.status)` and one (earliest) invitation per invitee; the
-  Invitees, Responses, and Tickets filters all key off that same source, never
+  Invitees and Tickets filters both key off that same source, never
   `invitations.status` alone. Group views show a group when any member matches. Changing a
   filter clears the current selection, so a bulk action can never hit hidden rows.
 - **Group payments can be custom-split** (`ticket_payment_allocations`): portions credited to
@@ -315,7 +328,6 @@ Overview's config sections; clone-scoped roles never see it).
   whatever's left unallocated; an allocation to someone no longer an active member (or who now
   owes nothing) falls back into that pool, so members' shares sum to the group total whenever
   anyone in the group owes something. An edit can't lower a payment below its allocated total (the `PATCH` returns a 400).
-  The Responses tab's per-invitee Paid column still shows only payments tagged directly to them.
 - **Ticket limits** (`ticket_caps`, set in the Ticketing card's "Ticket limits" grid): optional limits for
   the whole event or one clone (`assembly_id`), on all types or one (`tier`). A ticket is *taken* by an
   active invitee whose latest RSVP is attending and who holds a configured tier — so the usual moment a
