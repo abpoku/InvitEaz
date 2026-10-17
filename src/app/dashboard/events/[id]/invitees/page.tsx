@@ -5,6 +5,7 @@ import { listInvitees, listGroups } from "@/lib/models/invitees";
 import { listInviteeFields } from "@/lib/models/invitee-fields";
 import { listAssemblies } from "@/lib/models/assemblies";
 import { getTicketingConfig } from "@/lib/models/ticketing";
+import { inviteeRsvpExtras } from "@/lib/models/rsvp";
 
 export default async function InviteesPage({ params }: { params: { id: string } }) {
   const event = (await getEventById(params.id))!;
@@ -28,6 +29,7 @@ export default async function InviteesPage({ params }: { params: { id: string } 
       listGroups(params.id, access.assemblyId),
     ]);
     initialData = {
+      ...(await inviteeRsvpExtras(params.id, invitees)),
       invitees: invitees as InviteesInitialData["invitees"],
       fields: fields as unknown as InviteesInitialData["fields"],
       assemblies,
@@ -36,5 +38,7 @@ export default async function InviteesPage({ params }: { params: { id: string } 
     };
   }
 
-  return <InviteesManager eventId={params.id} groupRsvpMode={event.group_rsvp_mode} nameFormat={event.invitee_name_format} eventName={event.name} initialData={initialData} />;
+  // Viewers get a read-only list; every write route refuses them anyway.
+  const canMutate = access.ok && access.role !== "viewer";
+  return <InviteesManager eventId={params.id} groupRsvpMode={event.group_rsvp_mode} nameFormat={event.invitee_name_format} eventName={event.name} initialData={initialData} canMutate={canMutate} />;
 }
