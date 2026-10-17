@@ -145,7 +145,7 @@ export function RefundModal({
             <label className="label" htmlFor="rf-note">Reason <span className="text-ink-faint font-normal">(optional)</span></label>
             <input id="rf-note" className="input" placeholder="e.g. Recorded as a donation by mistake" value={note} onChange={(e) => setNote(e.target.value)} />
           </div>
-          <div className="flex justify-end gap-2">
+          <div className="modal-actions flex justify-end gap-2">
             <button type="button" onClick={onClose} className="btn-ghost">Cancel</button>
             <button type="submit" disabled={saving} className="btn-primary">{saving ? "Saving…" : "Record refund"}</button>
           </div>

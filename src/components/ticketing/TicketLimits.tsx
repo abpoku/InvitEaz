@@ -111,7 +111,7 @@ export function TicketLimits({ eventId, canManage, tierNames }: { eventId: strin
                         <input
                           type="number" min={0} step={1} inputMode="numeric"
                           aria-label={`Limit: ${r.name}, ${t ?? "all types"}`}
-                          className="input w-24 py-1 text-sm"
+                          className="input w-24 py-1 text-base sm:text-sm"
                           placeholder="No limit"
                           disabled={!canManage || saving}
                           value={values[k] ?? ""}

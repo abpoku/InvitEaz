@@ -47,6 +47,14 @@
   .label {
     @apply block text-sm font-medium text-ink-soft mb-1.5;
   }
+  /* A Modal's main Save/Cancel row: pinned to the bottom of the sheet on phones so it's never
+   * scrolled out of reach under a long form or the keyboard; an ordinary row from `sm` up. Bleeds
+   * over Modal's p-4 body padding so the bar spans the sheet. Only for a row that's the modal's own
+   * last element — not an inline sub-form inside a list. */
+  .modal-actions {
+    @apply sticky bottom-0 z-10 -mx-4 px-4 py-3 bg-paper border-t border-paper-line
+      sm:static sm:mx-0 sm:px-0 sm:py-0 sm:border-0 sm:bg-transparent;
+  }
   .chip {
     @apply inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-medium;
   }

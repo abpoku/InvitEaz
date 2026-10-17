@@ -114,7 +114,7 @@ export function ChangeTicketTypeModal({
             </p>
           </>
         )}
-        <div className="flex justify-end gap-2">
+        <div className="modal-actions flex justify-end gap-2">
           <button type="button" onClick={onClose} className="btn-ghost">Cancel</button>
           <button type="button" onClick={save} disabled={saving || tiers.length === 0} className="btn-primary">
             {saving ? "Saving…" : changed.length > 1 ? `Save ${changed.length} changes` : "Save"}

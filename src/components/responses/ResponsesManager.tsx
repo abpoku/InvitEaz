@@ -289,12 +289,12 @@ export function ResponsesManager({
             <div className="mt-4 flex flex-wrap items-center justify-between gap-2 rounded border border-wine-200 bg-wine-50 px-4 py-2.5">
               <p className="text-sm text-wine-700">{selectedGroupIds.size} group{selectedGroupIds.size === 1 ? "" : "s"} selected</p>
               <div className="flex items-center gap-3 flex-wrap">
-                <select className="input py-1 text-xs" value={groupBulkStatus} onChange={(e) => setGroupBulkStatus(e.target.value as Status)}>
+                <select className="input py-1 text-base sm:text-xs" value={groupBulkStatus} onChange={(e) => setGroupBulkStatus(e.target.value as Status)}>
                   {STATUSES.map((s) => <option key={s} value={s}>{STATUS_LABEL[s]}</option>)}
                 </select>
                 {groupBulkStatus === "attending" && (
                   <input
-                    type="number" min={1} className="input py-1 text-xs w-16"
+                    type="number" min={1} className="input py-1 text-base sm:text-xs w-16"
                     value={groupBulkNumAttending} onChange={(e) => setGroupBulkNumAttending(e.target.value)}
                     aria-label="Party size"
                   />
@@ -381,7 +381,7 @@ export function ResponsesManager({
                                 <div className="flex items-center gap-3">
                                   {currentStatus === "attending" && canMutate && r.invitation_id && (
                                     <input
-                                      type="number" min={1} className="input w-16 py-1 text-xs"
+                                      type="number" min={1} className="input w-16 py-1 text-base sm:text-xs"
                                       defaultValue={r.num_attending ?? 1}
                                       onBlur={(e) => setStatus(r, "attending", Number(e.target.value) || 1)}
                                     />
@@ -428,17 +428,17 @@ export function ResponsesManager({
           <p className="text-sm text-wine-700">{selectedIds.size} selected</p>
           <div className="flex items-center gap-3 flex-wrap">
             {groupOptions.length > 0 && (
-              <select className="input py-1 text-xs max-w-[200px]" value="" onChange={(e) => e.target.value && selectGroup(e.target.value)}>
+              <select className="input py-1 text-base sm:text-xs max-w-[200px]" value="" onChange={(e) => e.target.value && selectGroup(e.target.value)}>
                 <option value="">Select all in group…</option>
                 {groupOptions.map((g) => <option key={g.name} value={g.name}>{g.name} ({g.count})</option>)}
               </select>
             )}
-            <select className="input py-1 text-xs" value={bulkStatus} onChange={(e) => setBulkStatus(e.target.value as Status)}>
+            <select className="input py-1 text-base sm:text-xs" value={bulkStatus} onChange={(e) => setBulkStatus(e.target.value as Status)}>
               {STATUSES.map((s) => <option key={s} value={s}>{STATUS_LABEL[s]}</option>)}
             </select>
             {bulkStatus === "attending" && (
               <input
-                type="number" min={1} className="input py-1 text-xs w-16"
+                type="number" min={1} className="input py-1 text-base sm:text-xs w-16"
                 value={bulkNumAttending} onChange={(e) => setBulkNumAttending(e.target.value)}
                 aria-label="Party size"
               />
@@ -521,7 +521,7 @@ export function ResponsesManager({
                       {currentStatus === "attending" ? (
                         canMutate && r.invitation_id ? (
                           <input
-                            type="number" min={1} className="input w-16 py-1 text-xs"
+                            type="number" min={1} className="input w-16 py-1 text-base sm:text-xs"
                             defaultValue={r.num_attending ?? 1}
                             onBlur={(e) => setStatus(r, "attending", Number(e.target.value) || 1)}
                           />

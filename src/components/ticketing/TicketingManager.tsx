@@ -200,7 +200,7 @@ export function TicketingManager({
                 <div className="w-24">
                   <div className="flex items-center gap-1">
                     <span className="text-ink-faint text-sm">$</span>
-                    <input type="number" min="0" step="0.01" className="input py-1 text-sm" value={newTierPrice} onChange={(e) => setNewTierPrice(e.target.value)} />
+                    <input type="number" min="0" step="0.01" className="input py-1 text-base sm:text-sm" value={newTierPrice} onChange={(e) => setNewTierPrice(e.target.value)} />
                   </div>
                 </div>
                 <button type="submit" disabled={busy} className="btn-primary shrink-0">Add tier</button>
@@ -361,7 +361,7 @@ function TierRow({
           <div className="flex items-center gap-1">
             <span className="text-ink-faint text-sm">$</span>
             <input
-              type="number" min="0" step="0.01" className="input w-24 py-1 text-sm"
+              type="number" min="0" step="0.01" className="input w-24 py-1 text-base sm:text-sm"
               value={price} onChange={(e) => setPrice(e.target.value)}
               onBlur={() => onSave(price)}
             />

@@ -322,7 +322,7 @@ export function UploadModal({ eventId, groupRsvpMode, onClose, onImported }: { e
                     <td className="px-3 py-2 text-ink-faint">{String(records[0]?.[h] ?? "")}</td>
                     <td className="px-3 py-2">
                       <select
-                        className="input py-1 text-xs"
+                        className="input py-1 text-base sm:text-xs"
                         value={columnMap[h] || ""}
                         onChange={(e) => setColumnMap((m) => ({ ...m, [h]: e.target.value }))}
                       >
@@ -334,7 +334,7 @@ export function UploadModal({ eventId, groupRsvpMode, onClose, onImported }: { e
               </tbody>
             </table>
           </div>
-          <div className="mt-5 flex justify-end gap-2">
+          <div className="modal-actions mt-5 flex justify-end gap-2">
             <button onClick={() => setStep("select")} className="btn-ghost">Choose a different file</button>
             <button onClick={applyMapping} className="btn-primary">Continue</button>
           </div>
@@ -411,7 +411,7 @@ export function UploadModal({ eventId, groupRsvpMode, onClose, onImported }: { e
             </table>
           </div>
 
-          <div className="mt-5 flex justify-end gap-2">
+          <div className="modal-actions mt-5 flex justify-end gap-2">
             <button onClick={() => setStep("select")} className="btn-ghost">Choose a different file</button>
             <button onClick={confirmImport} disabled={busy || pendingDuplicateCount > 0 || rows.length === 0} className="btn-primary">
               {busy ? "Importing…" : pendingDuplicateCount > 0 ? `Resolve ${pendingDuplicateCount} duplicates before importing` : `Import ${readyCount} invitee${readyCount === 1 ? "" : "s"}`}
@@ -436,7 +436,7 @@ export function UploadModal({ eventId, groupRsvpMode, onClose, onImported }: { e
               </label>
               {groupCounts(flaggedRows, (r) => r.groupName).length > 0 && (
                 <select
-                  className="input py-1 text-xs max-w-[200px]"
+                  className="input py-1 text-base sm:text-xs max-w-[200px]"
                   value=""
                   onChange={(e) => {
                     if (!e.target.value) return;

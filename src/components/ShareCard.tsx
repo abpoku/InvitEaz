@@ -40,7 +40,7 @@ export function ShareCard({ slug, visibility, status }: { slug: string; visibili
         {url && <QRCodeSVG value={url} size={140} fgColor="#1E2233" />}
       </div>
       <div className="mt-4 flex items-center gap-2">
-        <input readOnly value={url} className="input text-xs" />
+        <input readOnly value={url} className="input text-base sm:text-xs" />
         <button
           className="btn-secondary shrink-0"
           onClick={() => {

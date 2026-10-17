@@ -578,7 +578,7 @@ export function InviteesManager({ eventId, groupRsvpMode, nameFormat, eventName 
               <p className="text-sm text-wine-700">{selectedIds.size} selected</p>
               <div className="flex items-center gap-3 flex-wrap">
                 {groupOptions.length > 0 && (
-                  <select className="input py-1 text-xs max-w-[200px]" value="" onChange={(e) => e.target.value && selectGroup(e.target.value)}>
+                  <select className="input py-1 text-base sm:text-xs max-w-[200px]" value="" onChange={(e) => e.target.value && selectGroup(e.target.value)}>
                     <option value="">Select all in group…</option>
                     {groupOptions.map((g) => <option key={g.name} value={g.name}>{g.name} ({g.count})</option>)}
                   </select>
@@ -635,7 +635,7 @@ export function InviteesManager({ eventId, groupRsvpMode, nameFormat, eventName 
                         <td key={f.id} className="px-5 py-3 text-ink-soft whitespace-nowrap">
                           {f.id === ticketFieldId ? (
                             <select
-                              className="input py-1 text-xs"
+                              className="input py-1 text-base sm:text-xs"
                               disabled={tierBusyId === i.id}
                               value={fieldValue(f, i) === "—" ? "" : fieldValue(f, i)}
                               onChange={(e) => setTierValue(i, f.key, e.target.value)}
@@ -735,7 +735,7 @@ export function InviteesManager({ eventId, groupRsvpMode, nameFormat, eventName 
                           </button>
                           {renamingGroupId === g.id ? (
                             <input
-                              className="input py-1 text-xs"
+                              className="input py-1 text-base sm:text-xs"
                               autoFocus
                               value={renameValue}
                               onChange={(e) => setRenameValue(e.target.value)}

@@ -47,7 +47,7 @@ export function BulkEditModal({
 
         {field && <InviteeFieldInput field={field} value={value} onChange={setValue} groupRsvpMode={groupRsvpMode} />}
 
-        <div className="flex justify-end gap-2 pt-2">
+        <div className="modal-actions flex justify-end gap-2 sm:pt-2">
           <button type="button" onClick={onClose} className="btn-ghost">Cancel</button>
           <button type="submit" disabled={applying || !field} className="btn-primary">
             {applying ? "Applying…" : `Apply to ${count} invitee${count === 1 ? "" : "s"}`}

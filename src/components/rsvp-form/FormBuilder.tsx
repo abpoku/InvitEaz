@@ -251,7 +251,7 @@ function QuestionModal({
           Required
           {isAttending && <span className="text-ink-faint">— every guest must answer this</span>}
         </label>
-        <div className="flex justify-end gap-2 pt-2">
+        <div className="modal-actions flex justify-end gap-2 sm:pt-2">
           <button type="button" onClick={onClose} className="btn-ghost">Cancel</button>
           <button type="submit" disabled={saving} className="btn-primary">{saving ? "Saving…" : "Save question"}</button>
         </div>

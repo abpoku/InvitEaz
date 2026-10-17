@@ -197,7 +197,7 @@ export function FieldsManagerModal({
         <button onClick={() => setShowAdd(true)} className="btn-secondary mt-4">+ Add custom field</button>
       )}
 
-      <div className="flex justify-end pt-5">
+      <div className="modal-actions flex justify-end sm:pt-5">
         <button onClick={onClose} className="btn-primary">Done</button>
       </div>
     </Modal>

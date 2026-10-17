@@ -177,7 +177,7 @@ export function ReceivePaymentModal({
               <label className="label" htmlFor="rp-note">Note <span className="text-ink-faint font-normal">(optional)</span></label>
               <input id="rp-note" className="input" value={note} onChange={(e) => setNote(e.target.value)} />
             </div>
-            <div className="flex justify-end gap-2 pt-1">
+            <div className="modal-actions flex justify-end gap-2 sm:pt-1">
               <button type="button" onClick={onClose} className="btn-ghost">Cancel</button>
               <button type="submit" disabled={saving} className="btn-primary">{saving ? "Saving…" : "Record payment"}</button>
             </div>

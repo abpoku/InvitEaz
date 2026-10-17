@@ -76,7 +76,7 @@ export function MergeGroupsModal({
             </p>
           </>
         )}
-        <div className="flex justify-end gap-2">
+        <div className="modal-actions flex justify-end gap-2">
           <button type="button" onClick={onClose} className="btn-ghost">Cancel</button>
           <button type="button" onClick={merge} disabled={saving || mixedClones || !targetId} className="btn-primary">
             {saving ? "Merging…" : "Merge groups"}
