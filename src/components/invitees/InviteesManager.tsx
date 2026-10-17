@@ -10,7 +10,8 @@ import { BulkEditModal } from "@/components/invitees/BulkEditModal";
 import { MergeGroupsModal } from "@/components/invitees/MergeGroupsModal";
 import { ViewToggle } from "@/components/ViewToggle";
 import { SortTh, useTableSort } from "@/components/SortableHeader";
-import { sortRows, statusRank, numericOrText, type SortValue } from "@/lib/table-sort";
+import { KebabMenu, type KebabItem } from "@/components/KebabMenu";
+import { sortRows, statusRank, numericOrText, type SortValue, type SortState, type SortDir } from "@/lib/table-sort";
 import { fullName, formatNumber } from "@/lib/utils";
 import { toE164, personalize, smsHref, isAppleDevice } from "@/lib/phone-text";
 
@@ -103,6 +104,38 @@ function fieldSortValue(field: InviteeField, i: InviteeRow): SortValue {
       return typeof v === "string" ? numericOrText(v) : typeof v === "number" ? v : null;
     }
   }
+}
+
+/** Phones only: the selection's bulk-action bar docks to the bottom of the screen (reachable from
+ * anywhere in a long list) instead of sitting above it. The page adds bottom padding while it shows. */
+const MOBILE_DOCK =
+  "max-md:fixed max-md:inset-x-0 max-md:bottom-0 max-md:z-30 max-md:mt-0 max-md:rounded-none max-md:border-x-0 max-md:border-b-0 max-md:shadow-lifted max-md:pb-[calc(0.625rem+env(safe-area-inset-bottom))]";
+
+/** The phone layout has no column headings to tap, so sorting is a dropdown driving the same
+ * useTableSort state (and remembered sort) as the desktop table's headings. */
+function SortSelect({ sort, onSort, options }: {
+  sort: SortState;
+  onSort: (key: string, firstDir: SortDir) => void;
+  options: { key: string; dir: SortDir; label: string }[];
+}) {
+  const value = `${sort.key}:${sort.dir}`;
+  const known = options.some((o) => `${o.key}:${o.dir}` === value);
+  return (
+    <select
+      aria-label="Sort by"
+      className="input w-auto py-1.5 text-base"
+      value={known ? value : ""}
+      onChange={(e) => {
+        const o = options.find((x) => `${x.key}:${x.dir}` === e.target.value);
+        // onSort flips the direction of the current column and starts a new column at firstDir,
+        // so one call lands on exactly the option picked.
+        if (o && (o.key !== sort.key || o.dir !== sort.dir)) onSort(o.key, o.dir);
+      }}
+    >
+      {!known && <option value="">Sorted by a column</option>}
+      {options.map((o) => <option key={`${o.key}:${o.dir}`} value={`${o.key}:${o.dir}`}>{o.label}</option>)}
+    </select>
+  );
 }
 
 /** The server's error message for a failed write (e.g. a ticket limit refusing it), or null when it
@@ -515,8 +548,40 @@ export function InviteesManager({ eventId, groupRsvpMode, nameFormat, eventName 
     load();
   }
 
+  // ---- Phone layout (below md): cards with a ⋮ menu instead of the wide tables. Same rows, selection,
+  // sort and handlers as the tables, so the two can't disagree.
+  const ticketField = fields.find((f) => f.id === ticketFieldId);
+  const hasPhone = (p: InviteeRow) => !!(p.phone && toE164(p.phone));
+
+  function inviteeActions(i: InviteeRow): KebabItem[] {
+    return [
+      { label: "Copy RSVP link", onSelect: () => copyLink(i) },
+      ...(hasPhone(i) ? [{ label: "Text RSVP link", onSelect: () => { const href = textHref(i, `/r/${i.token}`); if (href) window.location.href = href; } }] : []),
+      { label: "Edit", onSelect: () => setEditing(i) },
+      { label: "Remove", onSelect: () => removeInvitee(i.id) },
+    ];
+  }
+
+  function groupActions(g: (typeof visibleGroupRows)[number]): KebabItem[] {
+    const items: KebabItem[] = [];
+    if (g.totalMembers > 0 && g.rsvp_token) {
+      const to = groupTextTarget(g);
+      if (to) items.push({ label: `Text group link to ${to.first_name}`, onSelect: () => { const href = textHref(to, `/g/${g.rsvp_token}`, g.name); if (href) window.location.href = href; } });
+      items.push({ label: "Copy group link", onSelect: () => copyGroupLink(g) });
+    }
+    if (g.totalMembers > 0) {
+      items.push({ label: "Bulk edit members", onSelect: () => bulkEditGroup(g.id) });
+      items.push({ label: "Remove all members", onSelect: () => removeGroup(g.id) });
+    }
+    items.push({ label: "Rename", onSelect: () => startRenameGroup(g) });
+    if (g.totalMembers === 0) items.push({ label: "Delete group", onSelect: () => deleteGroupRow(g.id) });
+    return items;
+  }
+
+  const docked = (view === "individual" ? selectedIds.size : selectedGroupIds.size) > 0;
+
   return (
-    <div className="p-4 sm:p-8">
+    <div className={`p-4 sm:p-8 ${docked ? "max-md:pb-44" : ""}`}>
       <div className="flex items-center justify-between gap-4 flex-wrap">
         <div className="flex items-center gap-3 flex-wrap flex-1 min-w-[240px]">
           <input
@@ -574,7 +639,7 @@ export function InviteesManager({ eventId, groupRsvpMode, nameFormat, eventName 
       {view === "individual" ? (
         <>
           {selectedIds.size > 0 && (
-            <div className="mt-4 flex flex-wrap items-center justify-between gap-2 rounded border border-wine-200 bg-wine-50 px-4 py-2.5">
+            <div className={`mt-4 flex flex-wrap items-center justify-between gap-2 rounded border border-wine-200 bg-wine-50 px-4 py-2.5 ${MOBILE_DOCK}`}>
               <p className="text-sm text-wine-700">{selectedIds.size} selected</p>
               <div className="flex items-center gap-3 flex-wrap">
                 {groupOptions.length > 0 && (
@@ -603,7 +668,64 @@ export function InviteesManager({ eventId, groupRsvpMode, nameFormat, eventName 
                 {invitees.length === 0 ? "No invitees yet. Add someone or upload a spreadsheet to get started." : "No invitees match your search."}
               </p>
             ) : (
-              <table className="w-full min-w-[720px] text-sm">
+              <>
+              <div className="md:hidden">
+                <div className="flex items-center justify-between gap-3 pl-1 pr-3 border-b border-paper-line">
+                  <label className="flex items-center text-sm text-ink-soft">
+                    <span className="flex h-11 w-11 items-center justify-center">
+                      <input type="checkbox" className="h-5 w-5" checked={allFilteredSelected} onChange={toggleSelectAll} />
+                    </span>
+                    Select all
+                  </label>
+                  <SortSelect
+                    sort={sort}
+                    onSort={onSort}
+                    options={[
+                      { key: "name", dir: "asc", label: "Name A–Z" },
+                      { key: "name", dir: "desc", label: "Name Z–A" },
+                      { key: "status", dir: "asc", label: "Status" },
+                      ...(assemblies.length > 0 ? [{ key: "clone", dir: "asc" as const, label: "Clone" }] : []),
+                    ]}
+                  />
+                </div>
+                <ul className="divide-y divide-paper-line">
+                  {filtered.map((i) => {
+                    const name = fullName(i.first_name, i.last_name);
+                    const details = [assemblies.length > 0 ? i.assembly_name || "Unassigned" : null, i.group_name, i.email || i.phone].filter(Boolean);
+                    return (
+                      <li key={i.id} className="flex items-start gap-1 pl-1 pr-2 py-1">
+                        <label className="flex h-11 w-11 shrink-0 items-center justify-center">
+                          <input type="checkbox" className="h-5 w-5" checked={selectedIds.has(i.id)} onChange={() => toggleSelected(i.id)} aria-label={`Select ${name}`} />
+                        </label>
+                        <div className="min-w-0 flex-1 py-2.5">
+                          <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                            <span className="text-ink font-medium break-words">{name}</span>
+                            <StatusBadge status={i.status} />
+                            {copiedId === i.id && <span className="text-xs text-moss-600">Link copied</span>}
+                          </div>
+                          {details.length > 0 && <p className="mt-0.5 text-sm text-ink-faint truncate">{details.join(" · ")}</p>}
+                          {ticketField && (
+                            <label className="mt-2 flex items-center gap-2 text-sm text-ink-soft">
+                              <span className="shrink-0">{ticketField.label}</span>
+                              <select
+                                className="input py-1.5 text-base"
+                                disabled={tierBusyId === i.id}
+                                value={fieldValue(ticketField, i) === "—" ? "" : fieldValue(ticketField, i)}
+                                onChange={(e) => setTierValue(i, ticketField.key, e.target.value)}
+                              >
+                                <option value="">—</option>
+                                {(ticketField.options_json ? JSON.parse(ticketField.options_json) : []).map((o: string) => <option key={o} value={o}>{o}</option>)}
+                              </select>
+                            </label>
+                          )}
+                        </div>
+                        <KebabMenu label={`Actions for ${name}`} items={inviteeActions(i)} />
+                      </li>
+                    );
+                  })}
+                </ul>
+              </div>
+              <table className="hidden md:table w-full min-w-[720px] text-sm">
                 <thead>
                   <tr className="border-b border-paper-line text-left text-ink-faint">
                     <th className="px-5 py-3 w-8">
@@ -668,6 +790,7 @@ export function InviteesManager({ eventId, groupRsvpMode, nameFormat, eventName 
                   ))}
                 </tbody>
               </table>
+              </>
             )}
           </div>
 
@@ -679,7 +802,7 @@ export function InviteesManager({ eventId, groupRsvpMode, nameFormat, eventName 
           )}
 
           {selectedGroupIds.size > 0 && (
-            <div className="mt-4 flex flex-wrap items-center justify-between gap-2 rounded border border-wine-200 bg-wine-50 px-4 py-2.5">
+            <div className={`mt-4 flex flex-wrap items-center justify-between gap-2 rounded border border-wine-200 bg-wine-50 px-4 py-2.5 ${MOBILE_DOCK}`}>
               <p className="text-sm text-wine-700">{selectedGroupIds.size} group{selectedGroupIds.size === 1 ? "" : "s"} selected</p>
               <div className="flex items-center gap-3 flex-wrap">
                 {selectedGroupIds.size >= 2 && (
@@ -701,7 +824,90 @@ export function InviteesManager({ eventId, groupRsvpMode, nameFormat, eventName 
             ) : visibleGroupRows.length === 0 ? (
               <p className="p-10 text-sm text-ink-faint text-center">{groupRows.length === 0 ? "No groups yet." : "No groups match your filters."}</p>
             ) : (
-              <table className="w-full min-w-[640px] text-sm">
+              <>
+              <div className="md:hidden">
+                <div className="flex items-center justify-between gap-3 pl-1 pr-3 border-b border-paper-line">
+                  <label className="flex items-center text-sm text-ink-soft">
+                    <span className="flex h-11 w-11 items-center justify-center">
+                      <input type="checkbox" className="h-5 w-5" checked={allGroupsSelected} onChange={toggleSelectAllGroups} />
+                    </span>
+                    Select all
+                  </label>
+                  <SortSelect
+                    sort={groupSort}
+                    onSort={onGroupSort}
+                    options={[
+                      { key: "name", dir: "asc", label: "Name A–Z" },
+                      { key: "name", dir: "desc", label: "Name Z–A" },
+                      { key: "members", dir: "desc", label: "Most members" },
+                      ...(assemblies.length > 0 ? [{ key: "clone", dir: "asc" as const, label: "Clone" }] : []),
+                    ]}
+                  />
+                </div>
+                <ul className="divide-y divide-paper-line">
+                  {visibleGroupRows.map((g) => {
+                    const expanded = expandedGroupIds.has(g.id);
+                    const memberText = `${g.members.length !== g.totalMembers ? `${g.members.length} of ${g.totalMembers}` : g.totalMembers} member${g.totalMembers === 1 ? "" : "s"}`;
+                    const details = [assemblies.length > 0 ? assemblies.find((a) => a.id === g.assembly_id)?.name || "Unassigned" : null, memberText].filter(Boolean);
+                    return (
+                      <li key={g.id}>
+                        <div className="flex items-start gap-1 pl-1 pr-2 py-1">
+                          <label className="flex h-11 w-11 shrink-0 items-center justify-center">
+                            <input type="checkbox" className="h-5 w-5" checked={selectedGroupIds.has(g.id)} onChange={() => toggleGroupSelected(g.id)} aria-label={`Select ${g.name}`} />
+                          </label>
+                          <div className="min-w-0 flex-1 py-2.5">
+                            {renamingGroupId === g.id ? (
+                              <input
+                                className="input py-1.5 text-base"
+                                autoFocus
+                                value={renameValue}
+                                onChange={(e) => setRenameValue(e.target.value)}
+                                onBlur={() => saveRenameGroup(g.id)}
+                                onKeyDown={(e) => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); if (e.key === "Escape") setRenamingGroupId(null); }}
+                              />
+                            ) : (
+                              <button
+                                type="button"
+                                onClick={() => toggleGroupExpanded(g.id)}
+                                disabled={g.members.length === 0}
+                                aria-expanded={g.members.length > 0 ? expanded : undefined}
+                                className="flex w-full items-center gap-2 text-left text-ink font-medium disabled:cursor-default"
+                              >
+                                <span className="break-words">{g.name}</span>
+                                {g.members.length > 0 && <span className="text-ink-faint" aria-hidden="true">{expanded ? "▾" : "▸"}</span>}
+                              </button>
+                            )}
+                            <p className="mt-0.5 text-sm text-ink-faint">
+                              {details.join(" · ")}
+                              {copiedId === g.id && <span className="ml-2 text-xs text-moss-600">Group link copied</span>}
+                            </p>
+                          </div>
+                          <KebabMenu label={`Actions for ${g.name}`} items={groupActions(g)} />
+                        </div>
+                        {expanded && g.members.length > 0 && (
+                          <ul className="ml-12 mr-2 mb-2 border-l-2 border-paper-line">
+                            {g.members.map((m) => {
+                              const name = fullName(m.first_name, m.last_name);
+                              return (
+                                <li key={m.id} className="flex items-center gap-2 pl-3">
+                                  <div className="min-w-0 flex-1 flex flex-wrap items-center gap-x-2 gap-y-1 py-1.5 text-sm">
+                                    <span className="text-ink break-words">{name}</span>
+                                    <StatusBadge status={m.status} />
+                                    {!!m.added_by_guest && <span className="chip bg-brass-500/10 text-brass-600">Added by guest</span>}
+                                    {copiedId === m.id && <span className="text-xs text-moss-600">Link copied</span>}
+                                  </div>
+                                  <KebabMenu label={`Actions for ${name}`} items={inviteeActions(m)} />
+                                </li>
+                              );
+                            })}
+                          </ul>
+                        )}
+                      </li>
+                    );
+                  })}
+                </ul>
+              </div>
+              <table className="hidden md:table w-full min-w-[640px] text-sm">
                 <thead>
                   <tr className="border-b border-paper-line text-left text-ink-faint">
                     <th className="px-5 py-3 w-8">
@@ -815,6 +1021,7 @@ export function InviteesManager({ eventId, groupRsvpMode, nameFormat, eventName 
                   })}
                 </tbody>
               </table>
+              </>
             )}
           </div>
         </>

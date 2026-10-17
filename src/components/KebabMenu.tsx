@@ -21,7 +21,7 @@ export function KebabMenu({ label, items }: { label: string; items: KebabItem[] 
     if (!buttonRef.current) return false;
     const rect = buttonRef.current.getBoundingClientRect();
     if (rect.bottom < 0 || rect.top > window.innerHeight || rect.right < 0 || rect.left > window.innerWidth) return false;
-    const menuHeight = menuRef.current?.offsetHeight || items.length * 36 + 8;
+    const menuHeight = menuRef.current?.offsetHeight || items.length * 44 + 8;
     const below = rect.bottom + 4;
     const top = below + menuHeight > window.innerHeight - 8 ? Math.max(8, rect.top - 4 - menuHeight) : below;
     setPos({ top, right: Math.max(8, window.innerWidth - rect.right) });
@@ -77,7 +77,7 @@ export function KebabMenu({ label, items }: { label: string; items: KebabItem[] 
         aria-haspopup="menu"
         aria-expanded={open}
         onClick={() => setOpen((o) => !o)}
-        className="inline-flex h-8 w-8 items-center justify-center rounded text-ink-faint hover:text-ink hover:bg-paper-soft"
+        className="inline-flex h-11 w-11 sm:h-8 sm:w-8 items-center justify-center rounded text-ink-faint hover:text-ink hover:bg-paper-soft"
       >
         <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true" fill="currentColor">
           <circle cx="8" cy="3" r="1.5" /><circle cx="8" cy="8" r="1.5" /><circle cx="8" cy="13" r="1.5" />
@@ -98,7 +98,7 @@ export function KebabMenu({ label, items }: { label: string; items: KebabItem[] 
               type="button"
               role="menuitem"
               onClick={() => { setOpen(false); item.onSelect(); }}
-              className="block w-full px-3.5 py-2 text-left text-sm text-ink hover:bg-paper-soft focus:bg-paper-soft focus:outline-none"
+              className="block w-full px-3.5 py-3 sm:py-2 text-left text-sm text-ink hover:bg-paper-soft focus:bg-paper-soft focus:outline-none"
             >
               {item.label}
             </button>
