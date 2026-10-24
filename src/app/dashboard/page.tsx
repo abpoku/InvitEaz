@@ -28,7 +28,7 @@ export default async function DashboardPage() {
   const limits = PLAN_LIMITS[user.plan];
 
   return (
-    <div className="p-4 sm:p-8 max-w-6xl">
+    <div className="p-4 sm:p-8 mx-auto max-w-6xl">
       <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
         <div>
           <h1 className="font-serif text-2xl text-ink">Good to see you, {user.first_name}.</h1>

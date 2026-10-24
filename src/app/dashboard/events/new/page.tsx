@@ -66,7 +66,7 @@ export default function NewEventPage() {
   }
 
   return (
-    <div className="p-4 sm:p-8 max-w-2xl">
+    <div className="p-4 sm:p-8 mx-auto max-w-2xl">
       <Link href="/dashboard" className="text-sm text-ink-faint hover:text-ink-soft">← Back to dashboard</Link>
       <h1 className="font-serif text-2xl text-ink mt-3">Create a new event</h1>
       <p className="mt-1.5 text-sm text-ink-soft">Start with the essentials — you can add invitees and RSVP questions after.</p>

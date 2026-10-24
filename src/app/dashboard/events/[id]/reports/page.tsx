@@ -17,7 +17,7 @@ export default async function ReportsPage({ params }: { params: { id: string } }
   return (
     // #report-content is what the image export captures and what printing (PDF) keeps — see
     // ReportExportMenu and the print rules in globals.css.
-    <div id="report-content" className="p-4 sm:p-8 max-w-4xl space-y-8 bg-paper">
+    <div id="report-content" className="p-4 sm:p-8 mx-auto max-w-4xl space-y-8 bg-paper">
       <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
         <div>
           {/* Only shown in exports (image/PDF), where the event header above the tabs isn't. */}

@@ -113,7 +113,7 @@ function CollectedModal({ eventId, clone, total, context, onClose }: { eventId: 
               }],
             } satisfies ExportDoc} />
           </div>
-          <div className="overflow-x-auto">
+          <div className="relative overflow-x-auto">
             {/* Phones drop Date and Type to a line under the name, so the list fits without sideways scrolling. */}
             <table className="w-full sm:min-w-[520px] text-sm">
               <thead>
@@ -171,7 +171,7 @@ function OutstandingModal({ summary, context, onClose }: { summary: TicketingSum
   const sum = (list: typeof parties) => list.reduce((s, p) => s + Math.abs(p.balance), 0);
 
   const table = (list: typeof parties, kind: "due" | "credit") => (
-    <div className="overflow-x-auto">
+    <div className="relative overflow-x-auto">
       <table className="w-full sm:min-w-[480px] text-sm">
         <thead>
           <tr className="border-b border-paper-line text-left text-ink-faint">
@@ -282,7 +282,7 @@ function DonationsModal({ eventId, clone, label, context, onClose }: { eventId: 
               }],
             } satisfies ExportDoc} />
           </div>
-          <div className="overflow-x-auto">
+          <div className="relative overflow-x-auto">
             {/* Phones drop Date, Source and Type to a line under the name, as in Collected. */}
             <table className="w-full sm:min-w-[520px] text-sm">
               <thead>

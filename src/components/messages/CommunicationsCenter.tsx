@@ -174,7 +174,7 @@ export function CommunicationsCenter({
   const chip = (active: boolean) => `chip border ${active ? "bg-wine-500 text-paper border-wine-500" : "border-paper-line text-ink-soft"}`;
 
   return (
-    <div className="p-4 sm:p-8 grid lg:grid-cols-[1fr_360px] gap-6 sm:gap-8 max-w-5xl">
+    <div className="p-4 sm:p-8 grid lg:grid-cols-[1fr_360px] gap-6 sm:gap-8 mx-auto max-w-6xl">
       <div>
         <h2 className="font-serif text-xl text-ink">Send a message</h2>
         <p className="mt-1 text-sm text-ink-soft">

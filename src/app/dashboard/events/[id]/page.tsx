@@ -38,7 +38,7 @@ export default async function EventOverviewPage({ params }: { params: { id: stri
   ];
 
   return (
-    <div className="p-4 sm:p-8 max-w-5xl grid lg:grid-cols-[1fr_320px] gap-6 sm:gap-8">
+    <div className="p-4 sm:p-8 mx-auto max-w-6xl grid lg:grid-cols-[1fr_320px] gap-6 sm:gap-8">
       <div className="space-y-6">
         {/* Publishing is a master-planner concern — clone-scoped roles have nothing to do with any of these steps. */}
         {event.status === "draft" && !isCloneScoped && (

@@ -5,6 +5,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { signOut } from "next-auth/react";
 import { EnvelopeMark } from "@/components/EnvelopeMark";
+import { PageFrame } from "@/components/PageFrame";
 
 /** Every signed-in page: a slim top bar (logo → dashboard, account menu) over the page, the same on
  * phones and desktop. There's no sidebar — its links lived elsewhere already (the logo, "← All events",
@@ -30,7 +31,7 @@ export function DashboardShell({
   return (
     <div className="min-h-screen bg-paper">
       <header data-print-hide className="h-14 border-b border-paper-line">
-        <div className="h-full flex items-center justify-between px-4 sm:px-8">
+        <PageFrame className="h-full flex items-center justify-between px-4 sm:px-8">
           <Link href="/dashboard" className="flex items-center gap-2">
             <EnvelopeMark className="w-6 h-4" />
             <span className="font-serif text-lg text-ink">InvitEaz</span>
@@ -39,7 +40,7 @@ export function DashboardShell({
             userInitials={userInitials} userName={userName} userEmail={userEmail}
             planLabel={planLabel} eventsUsed={eventsUsed} eventsLimit={eventsLimit}
           />
-        </div>
+        </PageFrame>
       </header>
       <main className="min-w-0">{children}</main>
     </div>

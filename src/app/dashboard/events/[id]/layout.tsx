@@ -8,6 +8,7 @@ import { formatDateShort, formatTime } from "@/lib/utils";
 import { EventActions } from "@/components/EventActions";
 import { EventTabs } from "@/components/EventTabs";
 import { EventHeaderStats } from "@/components/EventHeaderStats";
+import { PageFrame } from "@/components/PageFrame";
 
 export default async function EventLayout({ children, params }: { children: React.ReactNode; params: { id: string } }) {
   const user = await getCurrentUser();
@@ -38,7 +39,8 @@ export default async function EventLayout({ children, params }: { children: Reac
 
   return (
     <div>
-      <div data-print-hide className="border-b border-paper-line px-4 sm:px-8 py-4 sm:py-6">
+      <div data-print-hide className="border-b border-paper-line">
+        <PageFrame className="px-4 sm:px-8 py-4 sm:py-6">
         <Link href="/dashboard" className="text-sm text-ink-faint hover:text-ink-soft">← All events</Link>
         <div className="mt-2 flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3 sm:gap-4">
           <div className="min-w-0">
@@ -60,6 +62,7 @@ export default async function EventLayout({ children, params }: { children: Reac
         <nav className="mt-4 -mb-4 sm:mt-6 sm:-mb-6 max-sm:-mx-4">
           <EventTabs eventId={params.id} role={membership.role} />
         </nav>
+        </PageFrame>
       </div>
       <div>{children}</div>
     </div>

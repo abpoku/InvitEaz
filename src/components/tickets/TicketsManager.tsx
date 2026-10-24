@@ -202,7 +202,7 @@ export function TicketsManager({
         )}
       </div>
 
-      <div className="mt-4 card overflow-x-auto">
+      <div className="relative mt-4 card overflow-x-auto">
         {view === "individual" ? (
           summary.invitees.length === 0 ? (
             <p className="p-10 text-sm text-ink-faint text-center">No invitees yet.</p>

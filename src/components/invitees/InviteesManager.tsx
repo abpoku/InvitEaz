@@ -930,7 +930,9 @@ export function InviteesManager({ eventId, groupRsvpMode, nameFormat, eventName 
             </div>
           )}
 
-          <div className="mt-6 card overflow-x-auto">
+          {/* `relative` so the table's absolutely positioned bits (the sr-only "Actions" heading) are clipped by
+              this scroller instead of positioning against the page and widening it. */}
+          <div className="relative mt-6 card overflow-x-auto">
             {loading ? (
               <p className="p-8 text-sm text-ink-faint text-center">Loading invitees…</p>
             ) : loadError ? (
@@ -1099,7 +1101,7 @@ export function InviteesManager({ eventId, groupRsvpMode, nameFormat, eventName 
             </div>
           )}
 
-          <div className="mt-6 card overflow-x-auto">
+          <div className="relative mt-6 card overflow-x-auto">
             {loading ? (
               <p className="p-8 text-sm text-ink-faint text-center">Loading groups…</p>
             ) : visibleGroupRows.length === 0 ? (
