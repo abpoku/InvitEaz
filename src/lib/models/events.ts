@@ -184,6 +184,12 @@ export async function deleteEvent(id: string) {
   await exec("DELETE FROM events WHERE id = ?", [id]);
 }
 
+/** What counts against a plan's active-event limit: anything not a draft and not cancelled. Shared by
+ * the dashboard's usage line and the account menu so the two always agree. */
+export function activeEventsUsed(events: { status: string }[]): number {
+  return events.filter((e) => e.status !== "draft" && e.status !== "cancelled").length;
+}
+
 export async function listEventsForUser(userId: string): Promise<(EventRow & { member_role: Role; member_assembly_id: string | null })[]> {
   return query(
     `SELECT e.*, m.role as member_role, m.assembly_id as member_assembly_id FROM events e

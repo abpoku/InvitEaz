@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { requireUser } from "@/lib/session";
-import { listEventsForUser, getEventStats, computeEffectiveStatus, isCloneScopedRole } from "@/lib/models/events";
+import { listEventsForUser, getEventStats, computeEffectiveStatus, isCloneScopedRole, activeEventsUsed } from "@/lib/models/events";
 import { getAssemblyStats, getAssembly } from "@/lib/models/assemblies";
 import { formatDateShort, formatNumber } from "@/lib/utils";
 import { StatusBadge } from "@/components/StatusBadge";
@@ -49,7 +49,7 @@ export default async function DashboardPage() {
 
       {events.length > 0 && (
         <p className="mt-3 text-xs text-ink-faint">
-          {events.filter((e) => e.status !== "draft" && e.status !== "cancelled").length} / {limits.activeEvents === Infinity ? "∞" : limits.activeEvents} active events used on your {limits.label} plan.
+          {activeEventsUsed(events)} / {limits.activeEvents === Infinity ? "∞" : limits.activeEvents} active events used on your {limits.label} plan.
         </p>
       )}
 

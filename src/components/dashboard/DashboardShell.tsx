@@ -1,110 +1,101 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
+import { usePathname } from "next/navigation";
+import { signOut } from "next-auth/react";
 import { EnvelopeMark } from "@/components/EnvelopeMark";
-import { SignOutButton } from "@/components/SignOutButton";
 
+/** Every signed-in page: a slim top bar (logo → dashboard, account menu) over the page, the same on
+ * phones and desktop. There's no sidebar — its links lived elsewhere already (the logo, "← All events",
+ * the dashboard's Create button), and the room goes to the page, mostly the wide Invitees table. */
 export function DashboardShell({
   children,
   userInitials,
   userName,
+  userEmail,
   planLabel,
+  eventsUsed,
+  eventsLimit,
 }: {
   children: React.ReactNode;
   userInitials: string;
   userName: string;
+  userEmail: string;
   planLabel: string;
+  eventsUsed: number;
+  /** Infinity on unlimited plans. */
+  eventsLimit: number;
 }) {
-  const [open, setOpen] = useState(false);
-
   return (
-    <div className="min-h-screen bg-paper md:flex">
-      {/* Mobile top bar */}
-      <div data-print-hide className="md:hidden flex items-center justify-between h-14 px-4 border-b border-paper-line">
-        <Link href="/dashboard" className="flex items-center gap-2">
-          <EnvelopeMark className="w-6 h-4" />
-          <span className="font-serif text-lg text-ink">InvitEaz</span>
-        </Link>
-        <button
-          onClick={() => setOpen(true)}
-          aria-label="Open menu"
-          className="p-2 -mr-2 text-ink-soft hover:text-ink"
-        >
-          <svg width="22" height="22" viewBox="0 0 22 22" fill="none" xmlns="http://www.w3.org/2000/svg">
-            <path d="M3 6h16M3 11h16M3 16h16" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
-          </svg>
-        </button>
-      </div>
-
-      {/* Mobile drawer */}
-      {open && (
-        <div className="fixed inset-0 z-50 md:hidden">
-          <div className="absolute inset-0 bg-ink/40" onClick={() => setOpen(false)} />
-          <aside className="absolute left-0 top-0 bottom-0 w-72 max-w-[80vw] bg-paper border-r border-paper-line flex flex-col animate-rise">
-            <div className="h-14 flex items-center justify-between px-4 border-b border-paper-line">
-              <Link href="/dashboard" className="flex items-center gap-2" onClick={() => setOpen(false)}>
-                <EnvelopeMark className="w-6 h-4" />
-                <span className="font-serif text-lg text-ink">InvitEaz</span>
-              </Link>
-              <button
-                onClick={() => setOpen(false)}
-                aria-label="Close menu"
-                className="p-2 -mr-2 text-ink-faint hover:text-ink text-xl leading-none"
-              >
-                ×
-              </button>
-            </div>
-            <nav className="flex-1 px-3 py-5 space-y-0.5">
-              <SidebarLink href="/dashboard" onClick={() => setOpen(false)}>Dashboard</SidebarLink>
-              <SidebarLink href="/dashboard/events/new" onClick={() => setOpen(false)}>+ New event</SidebarLink>
-            </nav>
-            <UserBlock userInitials={userInitials} userName={userName} planLabel={planLabel} />
-          </aside>
-        </div>
-      )}
-
-      {/* Desktop sidebar */}
-      <aside data-print-hide className="hidden md:flex w-60 shrink-0 border-r border-paper-line flex-col">
-        <div className="h-16 flex items-center px-5 border-b border-paper-line">
+    <div className="min-h-screen bg-paper">
+      <header data-print-hide className="h-14 border-b border-paper-line">
+        <div className="h-full flex items-center justify-between px-4 sm:px-8">
           <Link href="/dashboard" className="flex items-center gap-2">
             <EnvelopeMark className="w-6 h-4" />
             <span className="font-serif text-lg text-ink">InvitEaz</span>
           </Link>
+          <AccountMenu
+            userInitials={userInitials} userName={userName} userEmail={userEmail}
+            planLabel={planLabel} eventsUsed={eventsUsed} eventsLimit={eventsLimit}
+          />
         </div>
-        <nav className="flex-1 px-3 py-5 space-y-0.5">
-          <SidebarLink href="/dashboard">Dashboard</SidebarLink>
-          <SidebarLink href="/dashboard/events/new">+ New event</SidebarLink>
-        </nav>
-        <UserBlock userInitials={userInitials} userName={userName} planLabel={planLabel} />
-      </aside>
-
-      <main className="flex-1 min-w-0">{children}</main>
+      </header>
+      <main className="min-w-0">{children}</main>
     </div>
   );
 }
 
-function SidebarLink({ href, children, onClick }: { href: string; children: React.ReactNode; onClick?: () => void }) {
-  return (
-    <Link href={href} onClick={onClick} className="block rounded px-3 py-2 text-sm text-ink-soft hover:bg-ink/[0.04] hover:text-ink">
-      {children}
-    </Link>
-  );
-}
+/** The avatar button and its menu: who's signed in, their plan and usage, New event, Log out. Closes on
+ * an outside click, Escape (focus returns to the button) or navigating. */
+function AccountMenu({ userInitials, userName, userEmail, planLabel, eventsUsed, eventsLimit }: {
+  userInitials: string; userName: string; userEmail: string; planLabel: string; eventsUsed: number; eventsLimit: number;
+}) {
+  const [open, setOpen] = useState(false);
+  const wrapRef = useRef<HTMLDivElement>(null);
+  const buttonRef = useRef<HTMLButtonElement>(null);
+  const pathname = usePathname();
 
-function UserBlock({ userInitials, userName, planLabel }: { userInitials: string; userName: string; planLabel: string }) {
+  useEffect(() => { setOpen(false); }, [pathname]);
+  useEffect(() => {
+    if (!open) return;
+    const onDown = (e: MouseEvent) => { if (!wrapRef.current?.contains(e.target as Node)) setOpen(false); };
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") { setOpen(false); buttonRef.current?.focus(); } };
+    document.addEventListener("mousedown", onDown);
+    document.addEventListener("keydown", onKey);
+    return () => { document.removeEventListener("mousedown", onDown); document.removeEventListener("keydown", onKey); };
+  }, [open]);
+
+  const usage = eventsLimit === Infinity ? `${planLabel} plan` : `${planLabel} plan · ${eventsUsed} of ${eventsLimit} active events used`;
+  const item = "block w-full px-4 py-3 sm:py-2 text-left text-sm text-ink hover:bg-paper-soft focus:bg-paper-soft focus:outline-none";
+
   return (
-    <div className="px-4 py-4 border-t border-paper-line">
-      <div className="flex items-center gap-2.5">
-        <div className="w-8 h-8 rounded-full bg-wine-100 text-wine-600 flex items-center justify-center text-xs font-medium shrink-0">
-          {userInitials}
+    <div ref={wrapRef} className="relative">
+      <button
+        ref={buttonRef}
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        aria-haspopup="menu"
+        aria-expanded={open}
+        aria-label={`Account menu for ${userName}`}
+        className="flex h-11 items-center gap-1.5 rounded-full pl-1 pr-2 -mr-2 text-ink-faint hover:text-ink hover:bg-ink/[0.04]"
+      >
+        <span className="w-8 h-8 rounded-full bg-wine-100 text-wine-600 flex items-center justify-center text-xs font-medium">{userInitials}</span>
+        <svg width="10" height="10" viewBox="0 0 10 10" aria-hidden="true" fill="none">
+          <path d="M2 3.5 5 6.5 8 3.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
+      </button>
+      {open && (
+        <div role="menu" aria-label="Account" className="absolute right-0 top-full z-40 mt-1 w-72 max-w-[calc(100vw-2rem)] rounded-md border border-paper-line bg-paper py-1 shadow-lifted">
+          <div className="px-4 py-3 border-b border-paper-line">
+            <p className="text-sm font-medium text-ink truncate">{userName}</p>
+            <p className="text-xs text-ink-faint truncate">{userEmail}</p>
+            <p className="mt-2 text-xs text-ink-soft">{usage}</p>
+          </div>
+          <Link role="menuitem" href="/dashboard/events/new" onClick={() => setOpen(false)} className={item}>+ New event</Link>
+          <button role="menuitem" type="button" onClick={() => signOut({ callbackUrl: "/" })} className={item}>Log out</button>
         </div>
-        <div className="min-w-0">
-          <p className="text-sm text-ink truncate">{userName}</p>
-          <p className="text-xs text-ink-faint">{planLabel} plan</p>
-        </div>
-      </div>
-      <SignOutButton className="mt-3 text-xs text-ink-faint hover:text-ink" />
+      )}
     </div>
   );
 }
