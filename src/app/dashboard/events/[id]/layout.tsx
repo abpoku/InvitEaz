@@ -9,6 +9,7 @@ import { EventActions } from "@/components/EventActions";
 import { EventTabs } from "@/components/EventTabs";
 import { EventHeaderStats } from "@/components/EventHeaderStats";
 import { PageFrame } from "@/components/PageFrame";
+import { countPendingRequests } from "@/lib/models/seating";
 
 export default async function EventLayout({ children, params }: { children: React.ReactNode; params: { id: string } }) {
   const user = await getCurrentUser();
@@ -37,6 +38,9 @@ export default async function EventLayout({ children, params }: { children: Reac
       ]))
     : undefined;
 
+  // Seating changes clone planners asked for — only the owner can approve, so only the owner gets the badge.
+  const seatingPending = membership.role === "owner" ? await countPendingRequests(params.id) : 0;
+
   return (
     <div>
       <div data-print-hide className="border-b border-paper-line">
@@ -60,7 +64,7 @@ export default async function EventLayout({ children, params }: { children: Reac
         <EventHeaderStats stats={stats} byClone={byClone} />
 
         <nav className="mt-4 -mb-4 sm:mt-6 sm:-mb-6 max-sm:-mx-4">
-          <EventTabs eventId={params.id} role={membership.role} />
+          <EventTabs eventId={params.id} role={membership.role} seatingAccess={!!membership.seating_access} seatingPending={seatingPending} />
         </nav>
         </PageFrame>
       </div>

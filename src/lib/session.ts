@@ -58,3 +58,28 @@ export async function requireAssemblyScope(eventId: string) {
     assemblyId: isCloneScopedRole(membership.role) ? membership.assembly_id! : null,
   };
 }
+
+/** Gates the Seating tab. Owner/admin: full edit (layout + seating anyone). Viewer: read-only. A
+ * lead/co-planner only gets in when the owner turned on their seating_access, and is then confined
+ * to their own clone's guests and the tables set aside for that clone; moving or unseating someone
+ * already seated becomes a request the owner (`canApprove`) must approve. */
+export async function requireSeatingAccess(eventId: string) {
+  const user = await getCurrentUser();
+  if (!user) return { ok: false as const, status: 401, message: "Sign in required." };
+  const membership = await getMembership(eventId, user.id);
+  if (!membership) return { ok: false as const, status: 403, message: "You don't have access to this event." };
+  const scoped = isCloneScopedRole(membership.role);
+  if (scoped && (!membership.assembly_id || !membership.seating_access)) {
+    return { ok: false as const, status: 403, message: "The event owner hasn't given you access to seating." };
+  }
+  const fullEdit = membership.role === "owner" || membership.role === "admin";
+  return {
+    ok: true as const,
+    user,
+    role: membership.role,
+    assemblyId: scoped ? membership.assembly_id! : null,
+    canEditLayout: fullEdit,
+    canSeat: fullEdit || scoped,
+    canApprove: membership.role === "owner",
+  };
+}

@@ -369,3 +369,60 @@ CREATE TABLE IF NOT EXISTS ticket_caps (
   updated_at TEXT NOT NULL DEFAULT to_char(now() AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')
 );
 CREATE UNIQUE INDEX IF NOT EXISTS idx_ticket_caps_scope ON ticket_caps (event_id, COALESCE(assembly_id, ''), COALESCE(tier, ''));
+
+-- Seating chart (src/lib/seating.ts, models/seating.ts, the Seating tab). Clone planners only see the
+-- tab when the owner turns on their seating_access; the floor layout itself is owner/admin-only.
+ALTER TABLE event_members ADD COLUMN IF NOT EXISTS seating_access INTEGER NOT NULL DEFAULT 0;
+
+-- Everything on the floor plan: tables (kind 'table', with a capacity) and fixtures (stage, bar, …).
+-- x/y/width/height are in floor units (1 unit ≈ 1px at 100% zoom), x/y the top-left corner before
+-- rotation. assembly_id sets a table aside for one clone — that clone's planners can seat their own
+-- guests there; NULL = not set aside (owner/admin seat anyone anywhere regardless).
+CREATE TABLE IF NOT EXISTS seating_items (
+  id TEXT PRIMARY KEY,
+  event_id TEXT NOT NULL REFERENCES events(id) ON DELETE CASCADE,
+  kind TEXT NOT NULL CHECK (kind IN ('table', 'fixture')),
+  shape TEXT NOT NULL,
+  label TEXT NOT NULL,
+  capacity INTEGER CHECK (capacity IS NULL OR capacity >= 0),
+  assembly_id TEXT REFERENCES assemblies(id) ON DELETE SET NULL,
+  x REAL NOT NULL DEFAULT 0,
+  y REAL NOT NULL DEFAULT 0,
+  width REAL NOT NULL DEFAULT 100,
+  height REAL NOT NULL DEFAULT 100,
+  rotation REAL NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL DEFAULT to_char(now() AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'),
+  updated_at TEXT NOT NULL DEFAULT to_char(now() AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')
+);
+CREATE INDEX IF NOT EXISTS idx_seating_items_event ON seating_items(event_id);
+
+-- One table per guest (table-level seating, no specific chairs). Deleting a table unseats its guests.
+CREATE TABLE IF NOT EXISTS seating_assignments (
+  invitee_id TEXT PRIMARY KEY REFERENCES invitees(id) ON DELETE CASCADE,
+  event_id TEXT NOT NULL REFERENCES events(id) ON DELETE CASCADE,
+  table_id TEXT NOT NULL REFERENCES seating_items(id) ON DELETE CASCADE,
+  assigned_by TEXT,
+  assigned_at TEXT NOT NULL DEFAULT to_char(now() AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')
+);
+CREATE INDEX IF NOT EXISTS idx_seating_assignments_event ON seating_assignments(event_id);
+CREATE INDEX IF NOT EXISTS idx_seating_assignments_table ON seating_assignments(table_id);
+
+-- A clone planner moving or unseating an already-seated guest asks the owner first; nothing changes
+-- until the owner approves. to_table_id NULL = unseat. Table ids are deliberately not FKs: a request
+-- outlives the tables it names, and one whose guest/table changed underneath it is marked
+-- 'superseded' by supersedeStaleRequests() rather than vanishing.
+CREATE TABLE IF NOT EXISTS seating_requests (
+  id TEXT PRIMARY KEY,
+  event_id TEXT NOT NULL REFERENCES events(id) ON DELETE CASCADE,
+  invitee_id TEXT NOT NULL REFERENCES invitees(id) ON DELETE CASCADE,
+  assembly_id TEXT, -- the requesting planner's clone; the request goes stale if the guest leaves it
+  from_table_id TEXT,
+  to_table_id TEXT,
+  requested_by TEXT NOT NULL,
+  requested_at TEXT NOT NULL DEFAULT to_char(now() AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'),
+  status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'approved', 'rejected', 'withdrawn', 'superseded')),
+  decided_by TEXT,
+  decided_at TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_seating_requests_event ON seating_requests(event_id, status);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_seating_requests_one_pending ON seating_requests(invitee_id) WHERE status = 'pending';

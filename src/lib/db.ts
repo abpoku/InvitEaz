@@ -169,3 +169,36 @@ export async function exec(text: string, params: any[] = []): Promise<number> {
   const result = await runQuery(pgText, params);
   return result.rowCount ?? 0;
 }
+
+export interface Tx {
+  query<T = any>(text: string, params?: any[]): Promise<T[]>;
+  exec(text: string, params?: any[]): Promise<number>;
+}
+
+/** Runs `fn` inside one BEGIN/COMMIT on a single pooled connection (same `?` placeholders as
+ * query/exec). Anything `fn` throws rolls the whole thing back and is rethrown. Never retried — a
+ * transaction is a write. Used where a check and its write must not interleave with another request
+ * (e.g. seating capacity: `SELECT … FOR UPDATE` the table, count, then assign). */
+export async function transaction<T>(fn: (tx: Tx) => Promise<T>): Promise<T> {
+  await schemaReady();
+  const client = await getPool().connect();
+  const toPg = (text: string) => { let i = 0; return text.replace(/\?/g, () => `$${++i}`); };
+  let dead: Error | undefined;
+  try {
+    await client.query("BEGIN");
+    const tx: Tx = {
+      query: async (text, params = []) => (await client.query(toPg(text), params)).rows,
+      exec: async (text, params = []) => (await client.query(toPg(text), params)).rowCount ?? 0,
+    };
+    const result = await fn(tx);
+    await client.query("COMMIT");
+    return result;
+  } catch (err) {
+    if (CONNECTION_FAILURE.test(String((err as Error)?.message))) dead = err as Error;
+    else await client.query("ROLLBACK").catch((e) => { dead = e; });
+    throw err;
+  } finally {
+    // A dead connection is destroyed rather than handed to the next query (see ensureSchema).
+    client.release(dead);
+  }
+}

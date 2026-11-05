@@ -2,12 +2,12 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { ClonePlanners } from "@/components/assemblies/ClonePlanners";
+import { ClonePlanners, SeatingAccessToggle } from "@/components/assemblies/ClonePlanners";
 import { formatNumber } from "@/lib/utils";
 
 interface AssemblyStats { invited: number; attending: number; declined: number; noResponse: number; responseRate: number; }
 interface Assembly { id: string; name: string; stats?: AssemblyStats; }
-interface Member { id: string; role: string; status: string; invited_email: string; email: string | null; assembly_id: string | null; }
+interface Member { id: string; role: string; status: string; invited_email: string; email: string | null; assembly_id: string | null; seating_access?: number; }
 
 export function AssembliesManager({
   eventId, canManage, isOwner, initialAssemblies, initialMembers,
@@ -189,7 +189,10 @@ function AssemblyCard({
               {leadPlanner.status === "pending" && <span className="text-ink-faint"> (invited, awaiting sign-up)</span>}
             </p>
             {canAssign && (
-              <button onClick={() => onRemoveLeadPlanner(leadPlanner.id)} className="text-xs text-ink-faint hover:text-clay-600 shrink-0">Remove</button>
+              <div className="flex items-center gap-3 shrink-0">
+                <SeatingAccessToggle eventId={eventId} member={leadPlanner} onChange={onCoPlannersChange} />
+                <button onClick={() => onRemoveLeadPlanner(leadPlanner.id)} className="text-xs text-ink-faint hover:text-clay-600">Remove</button>
+              </div>
             )}
           </div>
         ) : canAssign ? (
@@ -211,7 +214,7 @@ function AssemblyCard({
       </div>
 
       {leadPlanner && canAssign && (
-        <ClonePlanners eventId={eventId} assemblyId={assembly.id} planners={coPlanners} onChange={onCoPlannersChange} />
+        <ClonePlanners eventId={eventId} assemblyId={assembly.id} planners={coPlanners} onChange={onCoPlannersChange} canToggleSeating />
       )}
     </div>
   );

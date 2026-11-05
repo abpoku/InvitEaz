@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { requireEventRole, requireAssemblyScope } from "@/lib/session";
-import { removeCoPlanner, getMember, logAudit } from "@/lib/models/events";
+import { removeCoPlanner, getMember, logAudit, setSeatingAccess, isCloneScopedRole } from "@/lib/models/events";
 
 export async function DELETE(_req: Request, { params }: { params: { id: string; memberId: string } }) {
   const ownerAccess = await requireEventRole(params.id, "owner");
@@ -24,5 +24,20 @@ export async function DELETE(_req: Request, { params }: { params: { id: string; 
 
   await removeCoPlanner(params.memberId);
   await logAudit(params.id, actorEmail, "planner.removed", params.memberId);
+  return NextResponse.json({ ok: true });
+}
+
+/** Owner only: turn a lead/co-planner's access to the Seating tab on or off. */
+export async function PATCH(req: Request, { params }: { params: { id: string; memberId: string } }) {
+  const access = await requireEventRole(params.id, "owner");
+  if (!access.ok) return NextResponse.json({ error: access.message }, { status: access.status });
+  const body = await req.json().catch(() => ({}));
+  if (typeof body.seatingAccess !== "boolean") return NextResponse.json({ error: "Nothing to change." }, { status: 400 });
+  const target = await getMember(params.memberId);
+  if (!target || target.event_id !== params.id || !isCloneScopedRole(target.role)) {
+    return NextResponse.json({ error: "Seating access only applies to lead planners and co-planners." }, { status: 400 });
+  }
+  await setSeatingAccess(params.memberId, body.seatingAccess);
+  await logAudit(params.id, access.user.email, body.seatingAccess ? "seating.access_granted" : "seating.access_removed", target.invited_email);
   return NextResponse.json({ ok: true });
 }

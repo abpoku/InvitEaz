@@ -2,11 +2,37 @@
 
 import { useState } from "react";
 
-interface Planner { id: string; email: string | null; invited_email: string; status: string; }
+interface Planner { id: string; email: string | null; invited_email: string; status: string; seating_access?: number; }
+
+/** Owner-only switch letting a lead/co-planner use the Seating tab (seat their own clone's guests;
+ * moves of already-seated guests still need the owner's approval). */
+export function SeatingAccessToggle({ eventId, member, onChange }: { eventId: string; member: { id: string; seating_access?: number }; onChange: () => void }) {
+  const [on, setOn] = useState(!!member.seating_access);
+  const [saving, setSaving] = useState(false);
+  async function toggle() {
+    const next = !on;
+    setOn(next);
+    setSaving(true);
+    const res = await fetch(`/api/events/${eventId}/members/${member.id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ seatingAccess: next }),
+    });
+    setSaving(false);
+    if (!res.ok) { setOn(!next); return; }
+    onChange();
+  }
+  return (
+    <label className="flex items-center gap-1.5 text-xs text-ink-soft cursor-pointer select-none" title="Let them seat their clone's guests on the Seating tab">
+      <input type="checkbox" checked={on} disabled={saving} onChange={toggle} className="accent-wine-500" />
+      Seating access
+    </label>
+  );
+}
 
 export function ClonePlanners({
-  eventId, assemblyId, planners, onChange,
-}: { eventId: string; assemblyId: string; planners: Planner[]; onChange: () => void }) {
+  eventId, assemblyId, planners, onChange, canToggleSeating,
+}: { eventId: string; assemblyId: string; planners: Planner[]; onChange: () => void; canToggleSeating?: boolean }) {
   const [adding, setAdding] = useState(false);
   const [email, setEmail] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -49,7 +75,10 @@ export function ClonePlanners({
               <span className="text-ink">{p.email || p.invited_email}</span>
               {p.status === "pending" && <span className="text-ink-faint"> (invited, awaiting sign-up)</span>}
             </p>
-            <button onClick={() => remove(p.id)} className="text-xs text-ink-faint hover:text-clay-600 shrink-0">Remove</button>
+            <div className="flex items-center gap-3 shrink-0">
+              {canToggleSeating && <SeatingAccessToggle eventId={eventId} member={p} onChange={onChange} />}
+              <button onClick={() => remove(p.id)} className="text-xs text-ink-faint hover:text-clay-600">Remove</button>
+            </div>
           </div>
         ))}
         {planners.length === 0 && <p className="text-sm text-ink-faint">No co-planners assigned yet.</p>}

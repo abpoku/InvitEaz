@@ -200,16 +200,16 @@ export async function listEventsForUser(userId: string): Promise<(EventRow & { m
   );
 }
 
-export async function getMembership(eventId: string, userId: string): Promise<{ role: Role; assembly_id: string | null } | undefined> {
-  return queryOne<{ role: Role; assembly_id: string | null }>(
-    "SELECT role, assembly_id FROM event_members WHERE event_id = ? AND user_id = ? AND status = 'active'",
+export async function getMembership(eventId: string, userId: string): Promise<{ role: Role; assembly_id: string | null; seating_access: number } | undefined> {
+  return queryOne<{ role: Role; assembly_id: string | null; seating_access: number }>(
+    "SELECT role, assembly_id, seating_access FROM event_members WHERE event_id = ? AND user_id = ? AND status = 'active'",
     [eventId, userId]
   );
 }
 
 export async function listMembers(eventId: string) {
   return query(
-    `SELECT em.id, em.role, em.status, em.invited_email, em.created_at, em.assembly_id,
+    `SELECT em.id, em.role, em.status, em.invited_email, em.created_at, em.assembly_id, em.seating_access,
             a.name as assembly_name,
             u.first_name, u.last_name, u.email, u.id as user_id
      FROM event_members em
@@ -232,10 +232,15 @@ export async function addCoPlanner(eventId: string, email: string, role: Exclude
 }
 
 export async function getMember(id: string) {
-  return queryOne<{ id: string; event_id: string; user_id: string | null; invited_email: string; role: Role; assembly_id: string | null; status: string }>(
+  return queryOne<{ id: string; event_id: string; user_id: string | null; invited_email: string; role: Role; assembly_id: string | null; status: string; seating_access: number }>(
     "SELECT * FROM event_members WHERE id = ?",
     [id]
   );
+}
+
+/** Owner-only toggle (see PATCH /members/[memberId]): lets a lead/co-planner use the Seating tab. */
+export async function setSeatingAccess(memberId: string, on: boolean) {
+  await exec("UPDATE event_members SET seating_access = ? WHERE id = ? AND role IN ('lead_planner', 'co_planner')", [on ? 1 : 0, memberId]);
 }
 
 export async function removeCoPlanner(memberId: string) {

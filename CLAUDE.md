@@ -353,6 +353,36 @@ Overview's config sections; clone-scoped roles never see it).
   row (not the request body) before checking `canManageInvitee`/`canManageGroup` — so a
   lead/co-planner can't spoof scope by naming a payment ID that belongs to someone else's clone.
 
+### Seating tab
+
+Table-level seating chart (`src/components/seating/`, pure helpers in `src/lib/seating.ts`, DB in
+`models/seating.ts`, routes under `/api/events/[id]/seating`). Tables *and* room fixtures (stage, bar…)
+are rows in `seating_items` (`kind`), positioned in floor units; `seating_assignments` holds one table
+per invitee; `seating_requests` holds clone planners' pending changes.
+
+- **Access** — one gate, `requireSeatingAccess()` in `session.ts`. Owner/admin: full edit (layout +
+  seat anyone anywhere). Viewer: read-only. Lead/co-planners only when the owner switched on their
+  `event_members.seating_access` (checkbox next to each planner on the Clones card, `PATCH
+  /members/[memberId]`, owner-only); then they see the whole floor and every table's counts, but only
+  their own clone's guests (other clones' guests are "+N from other clones", other clones' names never
+  sent), and can seat only into tables set aside for their clone (`seating_items.assembly_id`). Only the
+  owner creates/moves tables.
+- **Approval** — a clone planner seating someone *with no table yet* applies at once; moving or
+  unseating someone *already seated* becomes a `seating_requests` row instead (one pending per guest; a
+  newer one withdraws the older). Only the **owner** approves/rejects (admins can't). Approval re-checks
+  capacity. Requests whose guest/table changed underneath them are marked `superseded` lazily by
+  `supersedeStaleRequests()` (on load and after seating writes), so no other code path needs to know
+  requests exist.
+- **Chairs** — `seatsFor()`: an attending invitee takes `max(1, num_attending)` (the legacy
+  individual-link "party of 3" row), anyone else holds 1 chair while seated. Seated guests who decline,
+  go Maybe, or change clone stay seated and are flagged (`guestWarning`), never auto-removed. Removed
+  invitees (`active = 0`) drop out of every count via the join.
+- **Capacity** is enforced inside `transaction()` (new in `db.ts`) with `SELECT … FOR UPDATE` on the
+  table row, so two planners can't both take the last seat. Lowering a capacity below what's seated is
+  allowed; the table just shows as over.
+- Guests drag with native HTML5 DnD (`GUEST_DRAG` dataTransfer type); tables move with pointer events.
+  Phones (and keyboards) use select-guests-then-click/"Seat here" instead, and open on the Tables list.
+
 ### Messages tab
 
 `src/components/messages/CommunicationsCenter.tsx` → `POST /api/events/[id]/communications` with

@@ -12,17 +12,19 @@ const TABS = [
   { href: "/tickets", label: "Tickets", masterOnly: false },
   { href: "/messages", label: "Messages", masterOnly: false },
   { href: "/reports", label: "Reports", masterOnly: false },
+  { href: "/seating", label: "Seating", masterOnly: false },
   { href: "/settings", label: "Settings", masterOnly: true },
 ];
 
-export function EventTabs({ eventId, role }: { eventId: string; role: Role }) {
+export function EventTabs({ eventId, role, seatingAccess, seatingPending = 0 }: { eventId: string; role: Role; seatingAccess: boolean; seatingPending?: number }) {
   const pathname = usePathname();
   const base = `/dashboard/events/${eventId}`;
   // Clone-scoped roles (lead_planner, co_planner) lose these tabs — existing owner/admin/viewer behavior is unchanged.
   // (Inlined rather than importing isCloneScopedRole from "@/lib/models/events" — that module also
   // exports the pg-backed query helpers, which must never end up in a client bundle.)
   const isCloneScoped = role === "lead_planner" || role === "co_planner";
-  const tabs = TABS.filter((t) => !t.masterOnly || !isCloneScoped);
+  // Seating is opt-in for clone-scoped planners: the owner turns it on per person.
+  const tabs = TABS.filter((t) => (!t.masterOnly || !isCloneScoped) && (t.href !== "/seating" || !isCloneScoped || seatingAccess));
 
   // On a phone the tabs scroll sideways. Bring the active one into view (Tickets, Messages… start
   // off-screen otherwise), and fade the edge that has more tabs beyond it.
@@ -67,6 +69,12 @@ export function EventTabs({ eventId, role }: { eventId: string; role: Role }) {
             )}
           >
             {t.label}
+            {t.href === "/seating" && seatingPending > 0 && (
+              <span className="ml-1.5 inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-brass-400 px-1 text-[11px] font-semibold text-ink"
+                title={`${seatingPending} seating change${seatingPending === 1 ? "" : "s"} awaiting your approval`}>
+                {seatingPending}
+              </span>
+            )}
           </Link>
         );
       })}
