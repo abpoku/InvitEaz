@@ -11,7 +11,7 @@ export class SeatingError extends Error {
 
 export async function listItems(eventId: string): Promise<SeatingItem[]> {
   const rows = await query<SeatingItem>(
-    `SELECT id, kind, shape, label, capacity, assembly_id, x, y, width, height, rotation
+    `SELECT id, kind, shape, label, capacity, assembly_id, x, y, width, height, rotation, color
      FROM seating_items WHERE event_id = ? ORDER BY created_at ASC, id ASC`,
     [eventId]
   );
@@ -29,7 +29,7 @@ export async function getItem(id: string): Promise<(SeatingItem & { event_id: st
 
 export interface NewItem {
   kind: SeatingKind; shape: string; label: string; capacity: number | null; assembly_id: string | null;
-  x: number; y: number; width: number; height: number; rotation: number;
+  x: number; y: number; width: number; height: number; rotation: number; color: string | null;
 }
 
 export async function createItems(eventId: string, items: NewItem[]): Promise<SeatingItem[]> {
@@ -38,9 +38,9 @@ export async function createItems(eventId: string, items: NewItem[]): Promise<Se
     for (const it of items) {
       const id = newId("seat");
       await tx.exec(
-        `INSERT INTO seating_items (id, event_id, kind, shape, label, capacity, assembly_id, x, y, width, height, rotation)
-         VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`,
-        [id, eventId, it.kind, it.shape, it.label, it.kind === "table" ? it.capacity : null, it.kind === "table" ? it.assembly_id : null, it.x, it.y, it.width, it.height, it.rotation]
+        `INSERT INTO seating_items (id, event_id, kind, shape, label, capacity, assembly_id, x, y, width, height, rotation, color)
+         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+        [id, eventId, it.kind, it.shape, it.label, it.kind === "table" ? it.capacity : null, it.kind === "table" ? it.assembly_id : null, it.x, it.y, it.width, it.height, it.rotation, it.color]
       );
       created.push({ id, ...it, capacity: it.kind === "table" ? it.capacity : null, assembly_id: it.kind === "table" ? it.assembly_id : null });
     }
@@ -49,7 +49,7 @@ export async function createItems(eventId: string, items: NewItem[]): Promise<Se
 }
 
 export async function updateItem(id: string, patch: Partial<Omit<NewItem, "kind">>) {
-  const allowed = ["shape", "label", "capacity", "assembly_id", "x", "y", "width", "height", "rotation"] as const;
+  const allowed = ["shape", "label", "capacity", "assembly_id", "x", "y", "width", "height", "rotation", "color"] as const;
   const keys = allowed.filter((k) => k in patch);
   if (keys.length === 0) return;
   await exec(
@@ -61,7 +61,7 @@ export async function updateItem(id: string, patch: Partial<Omit<NewItem, "kind"
 /** Several items at once (a group move, or setting a clone on a selection) — all or nothing. Only
  * rows of this event are touched. */
 export async function updateItems(eventId: string, updates: ({ id: string } & Partial<Omit<NewItem, "kind">>)[]) {
-  const allowed = ["shape", "label", "capacity", "assembly_id", "x", "y", "width", "height", "rotation"] as const;
+  const allowed = ["shape", "label", "capacity", "assembly_id", "x", "y", "width", "height", "rotation", "color"] as const;
   const now = new Date().toISOString();
   await transaction(async (tx) => {
     for (const { id, ...patch } of updates) {
@@ -73,6 +73,31 @@ export async function updateItems(eventId: string, updates: ({ id: string } & Pa
       );
     }
   });
+}
+
+/** Undo/redo: put items back exactly as they were (same ids, every field) and remove others, in one
+ * transaction. An id that already belongs to another event is refused rather than overwritten. */
+export async function syncItems(eventId: string, upsert: (NewItem & { id: string })[], remove: string[]) {
+  const now = new Date().toISOString();
+  await transaction(async (tx) => {
+    if (remove.length) await tx.exec("DELETE FROM seating_items WHERE event_id = ? AND id = ANY(?)", [eventId, remove]);
+    for (const it of upsert) {
+      const table = it.kind === "table";
+      const n = await tx.exec(
+        `INSERT INTO seating_items (id, event_id, kind, shape, label, capacity, assembly_id, x, y, width, height, rotation, color, updated_at)
+         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+         ON CONFLICT (id) DO UPDATE SET kind = EXCLUDED.kind, shape = EXCLUDED.shape, label = EXCLUDED.label,
+           capacity = EXCLUDED.capacity, assembly_id = EXCLUDED.assembly_id, x = EXCLUDED.x, y = EXCLUDED.y,
+           width = EXCLUDED.width, height = EXCLUDED.height, rotation = EXCLUDED.rotation, color = EXCLUDED.color,
+           updated_at = EXCLUDED.updated_at
+         WHERE seating_items.event_id = EXCLUDED.event_id`,
+        [it.id, eventId, it.kind, it.shape, it.label, table ? it.capacity : null, table ? it.assembly_id : null,
+          it.x, it.y, it.width, it.height, it.rotation, it.color, now]
+      );
+      if (n === 0) throw new SeatingError("That change can't be undone any more. Refresh the page.", 409);
+    }
+  });
+  await supersedeStaleRequests(eventId);
 }
 
 export async function deleteItems(eventId: string, ids: string[]) {

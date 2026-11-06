@@ -31,7 +31,7 @@ export async function POST(req: Request, { params }: { params: { id: string } })
     }
   }
   const items = await createItems(params.id, parsed.data.items.map((it) => ({
-    ...it, capacity: it.capacity ?? null, assembly_id: it.assembly_id ?? null, rotation: it.rotation ?? 0,
+    ...it, capacity: it.capacity ?? null, assembly_id: it.assembly_id ?? null, rotation: it.rotation ?? 0, color: it.color ?? null,
   })));
   await logAudit(params.id, access.user.email, "seating.items_added", items.map((i) => i.label).join(", "));
   return NextResponse.json({ items });

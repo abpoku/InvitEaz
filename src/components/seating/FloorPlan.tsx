@@ -3,8 +3,9 @@
 import { forwardRef, useRef, useState } from "react";
 import { cn } from "@/lib/utils";
 import {
-  clampGroupDelta, floorSize, itemLayer, itemsInRect, structureFromDrag, GRID, UNLABELED_SHAPES,
-  type Box, type SeatingItem,
+  clampGroupDelta, floorSize, itemLayer, itemsInRect, lineEnds, lineFromPointer, resizeBox, rotateToward, structureFromDrag,
+  DEFAULT_ITEM_COLOR, FIXTURE_SHAPES, GRID, LINE_SHAPES, RESIZE_HANDLES, SQUARE_SHAPES, UNLABELED_SHAPES,
+  type Box, type Handle, type SeatingItem,
 } from "@/lib/seating";
 import { GUEST_DRAG } from "./types";
 
@@ -22,38 +23,46 @@ interface Props {
   selected: Set<string>;
   canEditLayout: boolean;
   seatMode: boolean;           // guests are selected: clicking a table seats them
-  drawTool: string | null;     // a structure shape being drawn, or null
+  drawTool: string | null;     // a shape being drawn, or null
   look: (table: SeatingItem) => TableLook;
   onSelect: (ids: Set<string>) => void;
   onSeatSelected: (tableId: string) => void;
   onDropGuests: (ids: string[], tableId: string) => void;
   onMove: (moves: { id: string; x: number; y: number }[]) => void;
   onDraw: (shape: string, box: Box) => void;
+  onReshape: (id: string, box: Box) => void;   // resize / rotate / line ends
+  onGesture: (active: boolean) => void;         // an item is being dragged or reshaped
 }
 
 type Gesture =
-  | { kind: "drag"; ids: string[]; hit: string; additive: boolean; px: number; py: number; orig: Map<string, { x: number; y: number }>; moved: boolean }
+  | { kind: "drag"; ids: string[]; additive: boolean; px: number; py: number; orig: Map<string, Box>; moved: boolean }
   | { kind: "marquee"; x0: number; y0: number; additive: boolean; moved: boolean }
-  | { kind: "draw"; shape: string; x0: number; y0: number };
+  | { kind: "draw"; shape: string; x0: number; y0: number }
+  | { kind: "resize"; id: string; handle: Handle; start: Box; square: boolean }
+  | { kind: "rotate"; id: string; start: Box }
+  | { kind: "end"; id: string; which: "a" | "b"; start: Box };
 
 /** The floor: tables and room items at their saved positions, scaled by `zoom`.
  *
  * Owner/admin: click selects one item; Shift/⌘/Ctrl-click adds or removes; dragging on empty floor
  * draws a selection box; dragging any selected item moves the whole selection (arrow keys are handled
- * by SeatingManager). With a Draw tool on, dragging on the floor draws that structure instead.
- * Everyone: guests are dropped onto tables with native drag-and-drop from the guest panel, or seated
- * by selecting them and clicking a table — the tap path phones and keyboards use. */
+ * by SeatingManager). A single selected item gets handles: 8 to resize and one to rotate, or one at
+ * each end for walls, doors, windows, lines and arrows. With a Draw tool on, dragging on the floor
+ * draws that item instead. Everyone: guests are dropped onto tables with native drag-and-drop from the
+ * guest panel, or seated by selecting them and clicking a table — the tap path phones and keyboards use. */
 export const FloorPlan = forwardRef<HTMLDivElement, Props>(function FloorPlan(
-  { items, zoom, selected, canEditLayout, seatMode, drawTool, look, onSelect, onSeatSelected, onDropGuests, onMove, onDraw }, exportRef
+  { items, zoom, selected, canEditLayout, seatMode, drawTool, look, onSelect, onSeatSelected, onDropGuests, onMove, onDraw, onReshape, onGesture }, exportRef
 ) {
   const gesture = useRef<Gesture | null>(null);
   const layer = useRef<HTMLDivElement | null>(null);
   const [offset, setOffset] = useState<{ ids: Set<string>; dx: number; dy: number } | null>(null);
+  const [reshape, setReshape] = useState<{ id: string; box: Box } | null>(null);
   const [marquee, setMarquee] = useState<{ left: number; top: number; right: number; bottom: number } | null>(null);
   const [preview, setPreview] = useState<{ shape: string; box: Box } | null>(null);
   const [hover, setHover] = useState<string | null>(null);
   const size = floorSize(items);
   const ordered = [...items].sort((a, b) => itemLayer(a) - itemLayer(b));
+  const handlesFor = canEditLayout && !drawTool && selected.size === 1 ? [...selected][0] : null;
 
   /** Pointer position in floor units. */
   function floorPoint(e: React.PointerEvent) {
@@ -71,8 +80,8 @@ export const FloorPlan = forwardRef<HTMLDivElement, Props>(function FloorPlan(
     // Dragging a selected item carries the whole selection; an unselected one moves alone (or joins
     // the selection when a modifier is held).
     const ids = selected.has(item.id) ? [...selected] : additive ? [...selected, item.id] : [item.id];
-    const orig = new Map(items.filter((i) => ids.includes(i.id)).map((i) => [i.id, { x: i.x, y: i.y }]));
-    gesture.current = { kind: "drag", ids, hit: item.id, additive, px: e.clientX, py: e.clientY, orig, moved: false };
+    const orig = new Map(items.filter((i) => ids.includes(i.id)).map((i) => [i.id, boxOf(i)]));
+    gesture.current = { kind: "drag", ids, additive, px: e.clientX, py: e.clientY, orig, moved: false };
   }
 
   function itemUp(item: SeatingItem) {
@@ -83,6 +92,7 @@ export const FloorPlan = forwardRef<HTMLDivElement, Props>(function FloorPlan(
     if (g.moved && offset) {
       onMove(g.ids.map((id) => ({ id, x: g.orig.get(id)!.x + offset.dx, y: g.orig.get(id)!.y + offset.dy })));
       setOffset(null);
+      onGesture(false);
       if (!selected.has(item.id)) onSelect(new Set(g.ids));
       return;
     }
@@ -99,6 +109,47 @@ export const FloorPlan = forwardRef<HTMLDivElement, Props>(function FloorPlan(
     } else {
       onSelect(new Set([item.id]));
     }
+  }
+
+  // ----- handles -----
+  function handleDown(e: React.PointerEvent, item: SeatingItem, g: Gesture) {
+    e.stopPropagation();
+    if (e.button !== 0) return;
+    (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+    gesture.current = g;
+    setReshape({ id: item.id, box: boxOf(item) });
+    onGesture(true);
+  }
+  function handleMove(e: React.PointerEvent) {
+    e.stopPropagation();
+    const g = gesture.current;
+    if (!g || (g.kind !== "resize" && g.kind !== "rotate" && g.kind !== "end")) return;
+    const p = floorPoint(e);
+    let box: Box;
+    if (g.kind === "resize") {
+      const corner = g.handle.hx !== 0 && g.handle.hy !== 0;
+      box = resizeBox(g.start, g.handle, p, g.square || (corner && e.shiftKey));
+    } else if (g.kind === "rotate") {
+      box = { ...g.start, rotation: rotateToward(g.start, p, e.shiftKey) };
+    } else {
+      const ends = lineEnds(g.start);
+      // Dragging end B keeps A fixed (A stays the start); dragging A keeps B fixed.
+      box = g.which === "b"
+        ? lineFromPointer(ends.a, p, g.start.height, true, e.shiftKey)
+        : lineFromPointer(ends.b, p, g.start.height, false, e.shiftKey);
+    }
+    setReshape({ id: g.id, box });
+  }
+  function handleUp(e: React.PointerEvent) {
+    e.stopPropagation();
+    const g = gesture.current;
+    gesture.current = null;
+    if (reshape && g && (g.kind === "resize" || g.kind === "rotate" || g.kind === "end")) {
+      const s = g.start, b = reshape.box;
+      if (b.x !== s.x || b.y !== s.y || b.width !== s.width || b.height !== s.height || b.rotation !== s.rotation) onReshape(g.id, b);
+    }
+    setReshape(null);
+    onGesture(false);
   }
 
   // ----- floor background: selection box, or drawing -----
@@ -123,6 +174,7 @@ export const FloorPlan = forwardRef<HTMLDivElement, Props>(function FloorPlan(
     if (g.kind === "drag") {
       const dx = (e.clientX - g.px) / zoom, dy = (e.clientY - g.py) / zoom;
       if (!g.moved && Math.hypot(dx, dy) < 4) return;
+      if (!g.moved) onGesture(true);
       g.moved = true;
       const d = clampGroupDelta([...g.orig.values()], dx, dy);
       setOffset({ ids: new Set(g.ids), ...d });
@@ -131,7 +183,7 @@ export const FloorPlan = forwardRef<HTMLDivElement, Props>(function FloorPlan(
       if (!canEditLayout || (!g.moved && Math.hypot(p.x - g.x0, p.y - g.y0) < 4)) return;
       g.moved = true;
       setMarquee({ left: Math.min(g.x0, p.x), top: Math.min(g.y0, p.y), right: Math.max(g.x0, p.x), bottom: Math.max(g.y0, p.y) });
-    } else {
+    } else if (g.kind === "draw") {
       const p = floorPoint(e);
       setPreview({ shape: g.shape, box: structureFromDrag(g.shape, g.x0, g.y0, p.x, p.y) });
     }
@@ -157,10 +209,13 @@ export const FloorPlan = forwardRef<HTMLDivElement, Props>(function FloorPlan(
   }
 
   function cancel() {
+    const was = gesture.current;
     gesture.current = null;
     setOffset(null);
+    setReshape(null);
     setMarquee(null);
     setPreview(null);
+    if (was && was.kind !== "marquee" && was.kind !== "draw") onGesture(false);
   }
 
   return (
@@ -184,7 +239,9 @@ export const FloorPlan = forwardRef<HTMLDivElement, Props>(function FloorPlan(
       >
         {ordered.map((item) => {
           const shifted = offset?.ids.has(item.id);
-          const pos = shifted ? { x: item.x + offset!.dx, y: item.y + offset!.dy } : item;
+          const box: Box = reshape?.id === item.id ? reshape.box
+            : shifted ? { ...boxOf(item), x: item.x + offset!.dx, y: item.y + offset!.dy } : boxOf(item);
+          const shown = { ...item, ...box };
           const isTable = item.kind === "table";
           const l = isTable ? look(item) : null;
           const over = !!l && item.capacity !== null && l.used > item.capacity;
@@ -222,12 +279,13 @@ export const FloorPlan = forwardRef<HTMLDivElement, Props>(function FloorPlan(
                 drawTool && "pointer-events-none",
                 canEditLayout ? (shifted ? "cursor-grabbing z-20" : "cursor-grab") : "cursor-pointer",
                 isTable && !l!.enabled && "opacity-45",
+                handlesFor === item.id && "z-30",
               )}
-              style={{ left: pos.x, top: pos.y, width: item.width, height: item.height, transform: `rotate(${item.rotation}deg)` }}
+              style={{ left: box.x, top: box.y, width: box.width, height: box.height, transform: `rotate(${box.rotation}deg)` }}
             >
               {isTable ? (
                 <>
-                  <Chairs item={item} used={l!.used} over={over} />
+                  <Chairs item={shown} used={l!.used} over={over} />
                   <div
                     className={cn(
                       "absolute inset-0 flex items-center justify-center text-center border-2 transition-shadow",
@@ -240,20 +298,31 @@ export const FloorPlan = forwardRef<HTMLDivElement, Props>(function FloorPlan(
                     style={!over ? { borderColor: l!.color || "rgba(30,34,51,0.25)" } : undefined}
                   >
                     {/* Text stays upright however the table is rotated. */}
-                    <div style={{ transform: `rotate(${-item.rotation}deg)` }} className="px-1 leading-tight pointer-events-none">
+                    <div style={{ transform: `rotate(${-box.rotation}deg)` }} className="px-1 leading-tight pointer-events-none">
                       <p className="font-medium text-ink text-xs">{item.label}</p>
                       <p className={cn("text-[11px] tabular-nums", over ? "text-clay-600 font-semibold" : "text-ink-faint")}>{l!.used}/{item.capacity ?? "∞"}</p>
                     </div>
                   </div>
                   {(l!.pending > 0 || l!.warnings > 0) && (
-                    <div className="absolute -top-2 -right-2 flex gap-0.5 pointer-events-none" style={{ transform: `rotate(${-item.rotation}deg)` }}>
+                    <div className="absolute -top-2 -right-2 flex gap-0.5 pointer-events-none" style={{ transform: `rotate(${-box.rotation}deg)` }}>
                       {l!.warnings > 0 && <span title="Guests needing a second look" className="h-5 min-w-5 px-1 rounded-full bg-clay-500 text-paper text-[10px] font-semibold flex items-center justify-center">!</span>}
                       {l!.pending > 0 && <span title="Changes awaiting approval" className="h-5 min-w-5 px-1 rounded-full bg-brass-400 text-ink text-[10px] font-semibold flex items-center justify-center">+{l!.pending}</span>}
                     </div>
                   )}
                 </>
               ) : (
-                <Fixture item={item} selected={isSelected} />
+                <Fixture item={shown} selected={isSelected} />
+              )}
+              {handlesFor === item.id && (
+                <Handles
+                  item={shown}
+                  zoom={zoom}
+                  onResize={(e, h) => handleDown(e, item, { kind: "resize", id: item.id, handle: h, start: boxOf(item), square: SQUARE_SHAPES.has(item.shape) })}
+                  onRotate={(e) => handleDown(e, item, { kind: "rotate", id: item.id, start: boxOf(item) })}
+                  onEnd={(e, which) => handleDown(e, item, { kind: "end", id: item.id, which, start: boxOf(item) })}
+                  onMove={handleMove}
+                  onUp={handleUp}
+                />
               )}
             </div>
           );
@@ -261,7 +330,7 @@ export const FloorPlan = forwardRef<HTMLDivElement, Props>(function FloorPlan(
 
         {preview && (
           <div className="absolute pointer-events-none opacity-60" style={{ left: preview.box.x, top: preview.box.y, width: preview.box.width, height: preview.box.height, transform: `rotate(${preview.box.rotation}deg)` }}>
-            <Fixture item={{ shape: preview.shape, label: "", width: preview.box.width, height: preview.box.height, rotation: preview.box.rotation }} selected={false} />
+            <Fixture item={{ shape: preview.shape, label: FIXTURE_SHAPES[preview.shape]?.label || "", color: null, ...preview.box }} selected={false} />
           </div>
         )}
         {marquee && (
@@ -273,15 +342,106 @@ export const FloorPlan = forwardRef<HTMLDivElement, Props>(function FloorPlan(
   );
 });
 
-/** Room items and structures, drawn as floor-plan symbols. */
-function Fixture({ item, selected }: { item: Pick<SeatingItem, "shape" | "label" | "width" | "height" | "rotation">; selected: boolean }) {
+const boxOf = (i: Box): Box => ({ x: i.x, y: i.y, width: i.width, height: i.height, rotation: i.rotation });
+
+/** Grab points on the selected item, in its own (rotated) frame, kept the same on-screen size at
+ * any zoom. Boxes: 8 resize + 1 rotate. Lines (walls, doors, windows, lines, arrows): one per end. */
+function Handles({ item, zoom, onResize, onRotate, onEnd, onMove, onUp }: {
+  item: SeatingItem; zoom: number;
+  onResize: (e: React.PointerEvent, h: Handle) => void;
+  onRotate: (e: React.PointerEvent) => void;
+  onEnd: (e: React.PointerEvent, which: "a" | "b") => void;
+  onMove: (e: React.PointerEvent) => void;
+  onUp: (e: React.PointerEvent) => void;
+}) {
+  const s = 12 / zoom;
+  const dot = "absolute rounded-full bg-white border-2 border-wine-500 shadow touch-none";
+  const common = { onPointerMove: onMove, onPointerUp: onUp, onPointerCancel: onUp };
+  if (LINE_SHAPES.has(item.shape)) {
+    return (
+      <>
+        {(["a", "b"] as const).map((w) => (
+          <span key={w} data-handle={`end-${w}`} {...common} onPointerDown={(e) => onEnd(e, w)} title="Drag to change length and angle (Shift: any angle)"
+            className={cn(dot, "cursor-crosshair")}
+            style={{ width: s, height: s, left: w === "a" ? 0 : "100%", top: "50%", transform: "translate(-50%, -50%)" }} />
+        ))}
+      </>
+    );
+  }
+  const cursor = (h: Handle) => (h.hx === 0 ? "cursor-ns-resize" : h.hy === 0 ? "cursor-ew-resize" : h.hx === h.hy ? "cursor-nwse-resize" : "cursor-nesw-resize");
+  return (
+    <>
+      <span className="absolute left-1/2 border-l border-wine-500 pointer-events-none" style={{ top: -26 / zoom, height: 26 / zoom }} />
+      <span data-handle="rotate" {...common} onPointerDown={onRotate} title="Drag to rotate (Shift: any angle)"
+        className={cn(dot, "cursor-grab bg-wine-500")}
+        style={{ width: s, height: s, left: "50%", top: -26 / zoom, transform: "translate(-50%, -50%)" }} />
+      {RESIZE_HANDLES.map((h) => (
+        <span key={`${h.hx}${h.hy}`} data-handle={`resize-${h.hx}-${h.hy}`} {...common} onPointerDown={(e) => onResize(e, h)}
+          className={cn(dot, "rounded-sm", cursor(h))}
+          style={{ width: s, height: s, left: `${(h.hx + 1) * 50}%`, top: `${(h.hy + 1) * 50}%`, transform: "translate(-50%, -50%)" }} />
+      ))}
+    </>
+  );
+}
+
+const STAR = Array.from({ length: 10 }, (_, i) => {
+  const r = i % 2 ? 20 : 49, a = (i * Math.PI) / 5 - Math.PI / 2;
+  return `${(50 + Math.cos(a) * r).toFixed(1)},${(50 + Math.sin(a) * r).toFixed(1)}`;
+}).join(" ");
+const SHAPE_PATHS: Record<string, (p: React.SVGProps<SVGElement>) => React.ReactNode> = {
+  shape_rect: (p) => <rect x="1" y="1" width="98" height="98" {...(p as any)} />,
+  shape_rounded: (p) => <rect x="1" y="1" width="98" height="98" rx="14" {...(p as any)} />,
+  shape_ellipse: (p) => <ellipse cx="50" cy="50" rx="49" ry="49" {...(p as any)} />,
+  shape_circle: (p) => <ellipse cx="50" cy="50" rx="49" ry="49" {...(p as any)} />,
+  shape_triangle: (p) => <polygon points="50,1 99,99 1,99" {...(p as any)} />,
+  shape_diamond: (p) => <polygon points="50,1 99,50 50,99 1,50" {...(p as any)} />,
+  shape_hexagon: (p) => <polygon points="25,1 75,1 99,50 75,99 25,99 1,50" {...(p as any)} />,
+  shape_star: (p) => <polygon points={STAR} {...(p as any)} />,
+};
+
+/** Room items, structures and annotations, drawn as floor-plan symbols. */
+export function Fixture({ item, selected }: { item: Pick<SeatingItem, "shape" | "label" | "width" | "height" | "rotation" | "color">; selected: boolean }) {
   const ring = selected && "ring-2 ring-wine-500 ring-offset-2";
+  const color = item.color || DEFAULT_ITEM_COLOR;
+  const named = item.label && item.label !== FIXTURE_SHAPES[item.shape]?.label;
   const label = !UNLABELED_SHAPES.has(item.shape) && item.label && (
     <div style={{ transform: `rotate(${-item.rotation}deg)` }} className="px-1 leading-tight pointer-events-none">
       <p className="text-[11px] italic text-ink-soft">{item.label}</p>
     </div>
   );
+  if (SHAPE_PATHS[item.shape]) {
+    return (
+      <div className={cn("absolute inset-0 flex items-center justify-center text-center", ring)}>
+        <svg className="absolute inset-0 overflow-visible" width="100%" height="100%" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
+          {SHAPE_PATHS[item.shape]({ fill: color, fillOpacity: 0.12, stroke: color, strokeWidth: 2, vectorEffect: "non-scaling-stroke" } as any)}
+        </svg>
+        {named && (
+          <div style={{ transform: `rotate(${-item.rotation}deg)`, color }} className="relative px-1 leading-tight pointer-events-none text-xs font-medium">{item.label}</div>
+        )}
+      </div>
+    );
+  }
+  if (item.shape === "line" || item.shape === "arrow" || item.shape === "double_arrow") {
+    const w = item.width, h = item.height, head = Math.min(h, w / 3);
+    const start = item.shape === "double_arrow" ? head * 0.8 : 0, end = item.shape === "line" ? w : w - head * 0.8;
+    return (
+      <div className={cn("absolute inset-0", ring)}>
+        <svg className="absolute inset-0 overflow-visible" width={w} height={h} aria-hidden="true">
+          <line x1={start} y1={h / 2} x2={end} y2={h / 2} stroke={color} strokeWidth="3" strokeLinecap={item.shape === "line" ? "round" : "butt"} />
+          {item.shape !== "line" && <polygon points={`${w - head},0 ${w},${h / 2} ${w - head},${h}`} fill={color} />}
+          {item.shape === "double_arrow" && <polygon points={`${head},0 0,${h / 2} ${head},${h}`} fill={color} />}
+        </svg>
+      </div>
+    );
+  }
   switch (item.shape) {
+    case "text":
+      return (
+        <div className={cn("absolute inset-0 flex items-center justify-center text-center", ring)}>
+          <p className="whitespace-pre-wrap break-words font-medium leading-[1.15] pointer-events-none"
+            style={{ color, fontSize: Math.max(8, item.height * 0.6) }}>{item.label}</p>
+        </div>
+      );
     case "wall":
       return <div className={cn("absolute inset-0 bg-ink/80 rounded-[1px]", ring)} />;
     case "window":
@@ -297,6 +457,20 @@ function Fixture({ item, selected }: { item: Pick<SeatingItem, "shape" | "label"
           </svg>
         </div>
       );
+    case "double_door": {
+      // Two leaves, one from each jamb, meeting in the middle.
+      const w = item.width, r = w / 2;
+      return (
+        <div className={cn("absolute inset-0 bg-white border border-ink/40", ring)}>
+          <svg className="absolute left-0 bottom-full overflow-visible pointer-events-none" width={w} height={r} aria-hidden="true">
+            <line x1="0" y1={r} x2="0" y2="0" stroke="#4A4F63" strokeWidth="2" />
+            <path d={`M 0 0 A ${r} ${r} 0 0 1 ${r} ${r}`} fill="none" stroke="#83879A" strokeWidth="1" strokeDasharray="4 3" />
+            <line x1={w} y1={r} x2={w} y2="0" stroke="#4A4F63" strokeWidth="2" />
+            <path d={`M ${w} 0 A ${r} ${r} 0 0 0 ${r} ${r}`} fill="none" stroke="#83879A" strokeWidth="1" strokeDasharray="4 3" />
+          </svg>
+        </div>
+      );
+    }
     case "pillar":
       return <div className={cn("absolute inset-0 bg-ink/60 rounded-sm", ring)} />;
     case "stairs":

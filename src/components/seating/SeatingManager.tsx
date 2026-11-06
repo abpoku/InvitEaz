@@ -16,6 +16,8 @@ import { SeatingSummary } from "./SeatingSummary";
 import { GenerateTablesModal, type GenerateSpec } from "./GenerateTablesModal";
 import { SeatingExportMenu } from "./SeatingExportMenu";
 import { TableListView } from "./TableListView";
+import { DrawToolbar } from "./DrawToolbar";
+import { FloatingInspector } from "./FloatingInspector";
 import type { SeatingData } from "./types";
 
 type Msg = { kind: "error" | "info"; text: string } | null;
@@ -36,6 +38,9 @@ export function SeatingManager({ eventId, eventName }: { eventId: string; eventN
   const [msg, setMsg] = useState<Msg>(null);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [drawTool, setDrawTool] = useState<string | null>(null);
+  const [gestureActive, setGestureActive] = useState(false);
+  const [docked, setDocked] = useState(false);
+  const floorWrap = useRef<HTMLDivElement>(null);
   const [selectedGuests, setSelectedGuests] = useState<Set<string>>(new Set());
   const [view, setView] = useState<"floor" | "list">("floor");
   const [zoom, setZoom] = useState(1);
@@ -46,6 +51,7 @@ export function SeatingManager({ eventId, eventName }: { eventId: string; eventN
   const nudged = useRef<Set<string>>(new Set());
   const nudgeTimer = useRef<ReturnType<typeof setTimeout>>();
   const selectOne = (id: string | null) => setSelectedIds(new Set(id ? [id] : []));
+  useEffect(() => { if (selectedIds.size !== 1) setDocked(false); }, [selectedIds]);
 
   const load = useCallback(async () => {
     const { ok, data } = await call(base);
@@ -132,21 +138,88 @@ export function SeatingManager({ eventId, eventName }: { eventId: string; eventN
     await load();
   }
 
+  // ---------- undo / redo (floor layout only) ----------
+  // Each step is the before/after state of every item it touched (null = didn't exist). Undo writes
+  // `before` back through /items/sync (same ids), redo writes `after`. Deleting tables also remembers
+  // who sat there, so undoing it re-seats them (if they haven't been given a table since).
+  type Snap = SeatingItem | null;
+  interface Step { before: Record<string, Snap>; after: Record<string, Snap>; seats?: Record<string, string[]> }
+  const undoStack = useRef<Step[]>([]);
+  const redoStack = useRef<Step[]>([]);
+  const [, setHistoryTick] = useState(0);
+  const [restoring, setRestoring] = useState(false);
+  const snap = (list: SeatingItem[]) => Object.fromEntries(list.map((i) => [i.id, { ...i }])) as Record<string, Snap>;
+  const gone = (ids: string[]) => Object.fromEntries(ids.map((id) => [id, null])) as Record<string, Snap>;
+  function record(step: Step) {
+    undoStack.current.push(step);
+    if (undoStack.current.length > 100) undoStack.current.shift();
+    redoStack.current = [];
+    setHistoryTick((n) => n + 1);
+  }
+
+  async function restore(target: Record<string, Snap>, seats?: Record<string, string[]>): Promise<boolean> {
+    const upsert = Object.values(target).filter((i): i is SeatingItem => !!i).map((i) => ({
+      id: i.id, kind: i.kind, shape: i.shape, label: i.label, capacity: i.capacity, assembly_id: i.assembly_id,
+      x: i.x, y: i.y, width: i.width, height: i.height, rotation: i.rotation, color: i.color,
+    }));
+    const del = Object.entries(target).filter(([, v]) => !v).map(([k]) => k);
+    const { ok, data: r } = await call(`${base}/items/sync`, { method: "POST", body: JSON.stringify({ upsert, delete: del }) });
+    if (!ok) { setMsg({ kind: "error", text: r.error || "That couldn't be undone." }); await load(); return false; }
+    if (seats) {
+      const fresh = await call(base);
+      const free = new Set<string>((fresh.data.guests || []).filter((g: SeatingGuest) => !g.table_id).map((g: SeatingGuest) => g.id));
+      const failed: string[] = [];
+      for (const [tableId, ids] of Object.entries(seats)) {
+        const back = ids.filter((id) => free.has(id));
+        if (!target[tableId] || back.length === 0) continue;
+        const res = await call(`${base}/assign`, { method: "POST", body: JSON.stringify({ inviteeIds: back, tableId }) });
+        if (!res.ok) failed.push(res.data.error || "");
+      }
+      if (failed.length) setMsg({ kind: "error", text: `The tables are back, but some guests couldn't be re-seated: ${failed.join(" ")}` });
+    }
+    await load();
+    return true;
+  }
+
+  async function undo() {
+    if (restoring) return;
+    await flushNudges();
+    const step = undoStack.current.pop();
+    if (!step) return;
+    setRestoring(true);
+    if (await restore(step.before, step.seats)) redoStack.current.push(step);
+    setRestoring(false);
+    setHistoryTick((n) => n + 1);
+  }
+  async function redo() {
+    if (restoring) return;
+    const step = redoStack.current.pop();
+    if (!step) return;
+    setRestoring(true);
+    if (await restore(step.after)) undoStack.current.push(step);
+    setRestoring(false);
+    setHistoryTick((n) => n + 1);
+  }
+
+  // ---------- layout edits ----------
   function setItemLocal(id: string, patch: Partial<SeatingItem>) {
     setData((prev) => prev && { ...prev, items: prev.items.map((i) => (i.id === id ? { ...i, ...patch } : i)) });
   }
 
   async function patchItem(id: string, patch: Partial<SeatingItem>) {
+    const item = itemById.get(id);
+    if (!item) return;
     if (patch.shape) {
-      const item = itemById.get(id)!;
       const def = (item.kind === "table" ? TABLE_SHAPES : FIXTURE_SHAPES)[patch.shape];
-      // Wall ↔ door ↔ window keeps the drawn length and angle; anything else takes the new default size.
+      // Line ↔ line (wall, door, window, arrow…) keeps the drawn length and angle; anything else
+      // takes the new shape's default size.
       const lineToLine = LINE_SHAPES.has(item.shape) && LINE_SHAPES.has(patch.shape);
       if (def) patch = lineToLine ? { ...patch, height: def.height } : { ...patch, width: def.width, height: def.height };
     }
     setItemLocal(id, patch);
     const { ok, data: r } = await call(`${base}/items/${id}`, { method: "PATCH", body: JSON.stringify(patch) });
     if (!ok) setMsg({ kind: "error", text: r.error || "That change didn't save." });
+    else record({ before: snap([item]), after: snap([{ ...item, ...patch }]) });
     // Clone set-asides can make pending requests stale, and the inspector's inputs follow the item.
     if (!ok || "assembly_id" in patch || "shape" in patch) await load();
   }
@@ -154,8 +227,10 @@ export function SeatingManager({ eventId, eventName }: { eventId: string; eventN
   async function createItems(newItems: Omit<SeatingItem, "id">[]): Promise<string | null> {
     const { ok, data: r } = await call(`${base}/items`, { method: "POST", body: JSON.stringify({ items: newItems }) });
     if (!ok) return r.error || "Something went wrong.";
+    const made: SeatingItem[] = r.items || [];
+    record({ before: gone(made.map((i) => i.id)), after: snap(made) });
     await load();
-    if (r.items?.length === 1) selectOne(r.items[0].id);
+    if (made.length === 1) selectOne(made[0].id);
     return null;
   }
 
@@ -163,7 +238,7 @@ export function SeatingManager({ eventId, eventName }: { eventId: string; eventN
     const def = (kind === "table" ? TABLE_SHAPES : FIXTURE_SHAPES)[shape];
     const [pos] = placeBelow(items, 1, def.width, def.height);
     const err = await createItems([{
-      kind, shape, ...pos, width: def.width, height: def.height, rotation: 0,
+      kind, shape, ...pos, width: def.width, height: def.height, rotation: 0, color: null,
       label: kind === "table" ? `Table ${nextTableNumber(items)}` : def.label,
       capacity: kind === "table" ? def.seats ?? 8 : null, assembly_id: null,
     }]);
@@ -174,7 +249,7 @@ export function SeatingManager({ eventId, eventName }: { eventId: string; eventN
     const def = TABLE_SHAPES[spec.shape];
     const start = nextTableNumber(items);
     return createItems(placeBelow(items, spec.count, def.width, def.height).map((pos, n) => ({
-      kind: "table" as const, shape: spec.shape, ...pos, width: def.width, height: def.height, rotation: 0,
+      kind: "table" as const, shape: spec.shape, ...pos, width: def.width, height: def.height, rotation: 0, color: null,
       label: `${spec.prefix} ${start + n}`, capacity: spec.seats, assembly_id: spec.assemblyId,
     })));
   }
@@ -185,32 +260,48 @@ export function SeatingManager({ eventId, eventName }: { eventId: string; eventN
     if (err) setMsg({ kind: "error", text: err });
   }
 
-  async function remove(item: SeatingItem) {
-    const n = d?.usage[item.id]?.guests || 0;
-    if (!confirm(n ? `Delete ${item.label}? Its ${n} guest${n === 1 ? "" : "s"} will need a new table.` : `Delete ${item.label}?`)) return;
-    const { ok, data: r } = await call(`${base}/items/${item.id}`, { method: "DELETE" });
+  /** Delete items (one or many); undo brings them back with their guests. */
+  async function deleteItems(doomed: SeatingItem[]) {
+    const guests = doomed.reduce((n, i) => n + (d?.usage[i.id]?.guests || 0), 0);
+    const what = doomed.length === 1 ? doomed[0].label : `${doomed.length} items`;
+    if (guests && !confirm(`Delete ${what}? ${guests} seated guest${guests === 1 ? "" : "s"} will need a new table (Undo puts them back).`)) return;
+    const seats = Object.fromEntries(doomed.filter((i) => i.kind === "table").map((i) => [i.id, (guestsAt.get(i.id) || []).map((g) => g.id)]));
+    const { ok, data: r } = await call(`${base}/items`, { method: "DELETE", body: JSON.stringify({ ids: doomed.map((i) => i.id) }) });
     if (!ok) setMsg({ kind: "error", text: r.error || "Something went wrong." });
+    else record({ before: snap(doomed), after: gone(doomed.map((i) => i.id)), seats });
     setSelectedIds(new Set());
     await load();
+  }
+  const remove = (item: SeatingItem) => deleteItems([item]);
+  async function removeMany() {
+    const doomed = items.filter((i) => selectedIds.has(i.id));
+    if (doomed.length) await deleteItems(doomed);
   }
 
   // ---------- several items ----------
   async function moveItems(moves: { id: string; x: number; y: number }[]) {
     if (moves.length === 0) return;
     const at = new Map(moves.map((m) => [m.id, m]));
+    const before = items.filter((i) => at.has(i.id));
     setData((prev) => prev && { ...prev, items: prev.items.map((i) => (at.has(i.id) ? { ...i, x: at.get(i.id)!.x, y: at.get(i.id)!.y } : i)) });
     const { ok, data: r } = await call(`${base}/items`, { method: "PATCH", body: JSON.stringify({ updates: moves }) });
-    if (!ok) { setMsg({ kind: "error", text: r.error || "That move didn't save." }); await load(); }
+    if (!ok) { setMsg({ kind: "error", text: r.error || "That move didn't save." }); await load(); return; }
+    record({ before: snap(before), after: snap(before.map((i) => ({ ...i, x: at.get(i.id)!.x, y: at.get(i.id)!.y }))) });
   }
 
-  /** Arrow keys: move the selection by one grid step (5 with Shift) right away; save after a pause. */
+  /** Resize / rotate / line ends, from the handles. */
+  const reshapeItem = (id: string, box: Box) => patchItem(id, box);
+
+  /** Arrow keys: move the selection by one grid step (5 with Shift) right away; save after a pause,
+   * as one undo step however many presses it took. */
+  const nudgeBefore = useRef<Record<string, Snap>>({});
   function nudge(dx: number, dy: number) {
     if (!d) return;
     const group = d.items.filter((i) => selectedIds.has(i.id));
     if (group.length === 0) return;
     const delta = clampGroupDelta(group, dx, dy);
     if (!delta.dx && !delta.dy) return;
-    group.forEach((i) => nudged.current.add(i.id));
+    group.forEach((i) => { nudged.current.add(i.id); if (!(i.id in nudgeBefore.current)) nudgeBefore.current[i.id] = { ...i }; });
     setData((prev) => prev && { ...prev, items: prev.items.map((i) => (selectedIds.has(i.id) ? { ...i, x: i.x + delta.dx, y: i.y + delta.dy } : i)) });
     clearTimeout(nudgeTimer.current);
     nudgeTimer.current = setTimeout(flushNudges, 400);
@@ -219,37 +310,31 @@ export function SeatingManager({ eventId, eventName }: { eventId: string; eventN
   const latest = useRef(data);
   latest.current = data;
   async function flushNudges() {
-    const ids = nudged.current;
+    clearTimeout(nudgeTimer.current);
+    const ids = nudged.current, before = nudgeBefore.current;
     nudged.current = new Set();
-    const moves = (latest.current?.items || []).filter((i) => ids.has(i.id)).map((i) => ({ id: i.id, x: i.x, y: i.y }));
-    if (!moves.length) return;
-    const { ok, data: r } = await call(`${base}/items`, { method: "PATCH", body: JSON.stringify({ updates: moves }) });
-    if (!ok) { setMsg({ kind: "error", text: r.error || "That move didn't save." }); await load(); }
+    nudgeBefore.current = {};
+    const now = (latest.current?.items || []).filter((i) => ids.has(i.id));
+    if (!now.length) return;
+    const { ok, data: r } = await call(`${base}/items`, { method: "PATCH", body: JSON.stringify({ updates: now.map((i) => ({ id: i.id, x: i.x, y: i.y })) }) });
+    if (!ok) { setMsg({ kind: "error", text: r.error || "That move didn't save." }); await load(); return; }
+    record({ before, after: snap(now) });
   }
 
   async function setAsideMany(assemblyId: string | null) {
-    const updates = items.filter((i) => selectedIds.has(i.id) && i.kind === "table").map((i) => ({ id: i.id, assembly_id: assemblyId }));
-    if (!updates.length) return;
-    const { ok, data: r } = await call(`${base}/items`, { method: "PATCH", body: JSON.stringify({ updates }) });
+    const chosen = items.filter((i) => selectedIds.has(i.id) && i.kind === "table");
+    if (!chosen.length) return;
+    const { ok, data: r } = await call(`${base}/items`, { method: "PATCH", body: JSON.stringify({ updates: chosen.map((i) => ({ id: i.id, assembly_id: assemblyId })) }) });
     if (!ok) setMsg({ kind: "error", text: r.error || "Something went wrong." });
-    await load();
-  }
-
-  async function removeMany() {
-    const doomed = items.filter((i) => selectedIds.has(i.id));
-    if (doomed.length === 0) return;
-    if (doomed.length === 1) return remove(doomed[0]);
-    const guests = doomed.reduce((n, i) => n + (d?.usage[i.id]?.guests || 0), 0);
-    if (!confirm(`Delete ${doomed.length} items?${guests ? ` ${guests} seated guest${guests === 1 ? "" : "s"} will need a new table.` : ""}`)) return;
-    const { ok, data: r } = await call(`${base}/items`, { method: "DELETE", body: JSON.stringify({ ids: doomed.map((i) => i.id) }) });
-    if (!ok) setMsg({ kind: "error", text: r.error || "Something went wrong." });
-    setSelectedIds(new Set());
+    else record({ before: snap(chosen), after: snap(chosen.map((i) => ({ ...i, assembly_id: assemblyId }))) });
     await load();
   }
 
   async function drawStructure(shape: string, box: Box) {
-    const err = await createItems([{ kind: "fixture", shape, label: FIXTURE_SHAPES[shape].label, capacity: null, assembly_id: null, ...box }]);
+    const err = await createItems([{ kind: "fixture", shape, label: FIXTURE_SHAPES[shape].label, capacity: null, assembly_id: null, color: null, ...box }]);
     if (err) setMsg({ kind: "error", text: err });
+    // A text box is placed one at a time: stop drawing so the planner can type into it.
+    if (shape === "text") setDrawTool(null);
   }
 
   async function decide(id: string, action: "approve" | "reject" | "withdraw") {
@@ -277,6 +362,12 @@ export function SeatingManager({ eventId, eventName }: { eventId: string; eventN
       return;
     }
     if (!me?.canEditLayout || view !== "floor") return;
+    const k = e.key.toLowerCase();
+    if ((e.metaKey || e.ctrlKey) && (k === "z" || k === "y")) {
+      e.preventDefault();
+      if (k === "y" || e.shiftKey) redo(); else undo();
+      return;
+    }
     if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "a" && floorBox.current?.contains(document.activeElement)) {
       e.preventDefault();
       setSelectedIds(new Set(items.map((i) => i.id)));
@@ -294,7 +385,7 @@ export function SeatingManager({ eventId, eventName }: { eventId: string; eventN
     return () => document.removeEventListener("keydown", h);
   }, []);
   // Don't lose a nudge that's still waiting to save when the page goes away.
-  useEffect(() => () => { clearTimeout(nudgeTimer.current); if (nudged.current.size) flushNudges(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => () => { if (nudged.current.size) flushNudges(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ---------- exports ----------
   const showClone = !isScoped && (d?.clones.length || 0) > 0;
@@ -336,7 +427,7 @@ export function SeatingManager({ eventId, eventName }: { eventId: string; eventN
   const multiTables = multi.filter((i) => i.kind === "table");
   const inspector = selected && (
     <TableInspector
-      key={`${selected.id}-${selected.label}-${selected.capacity}-${selected.width}-${selected.height}`}
+      key={`${selected.id}-${selected.label}-${selected.capacity}-${selected.width}-${selected.height}-${selected.rotation}`}
       item={selected}
       canEditLayout={me.canEditLayout}
       canSeat={me.canSeat && look(selected).enabled}
@@ -423,16 +514,15 @@ export function SeatingManager({ eventId, eventName }: { eventId: string; eventN
           ) : view === "floor" ? (
             <>
               {me.canEditLayout && (
-                <div className="flex items-center gap-1.5 flex-wrap text-sm" role="toolbar" aria-label="Draw structures">
-                  <span className="text-ink-faint mr-1">Draw</span>
-                  {STRUCTURE_TOOLS.map((t) => (
-                    <button key={t} aria-pressed={drawTool === t} onClick={() => { setDrawTool(drawTool === t ? null : t); setSelectedIds(new Set()); }}
-                      className={cn("rounded border px-2.5 py-1 text-xs", drawTool === t ? "border-wine-500 bg-wine-50 text-wine-700 font-medium" : "border-paper-line text-ink-soft hover:bg-paper-soft")}>
-                      {FIXTURE_SHAPES[t].label}
-                    </button>
-                  ))}
-                  {drawTool && <button className="text-xs text-ink-faint hover:text-ink ml-1" onClick={() => setDrawTool(null)}>Done</button>}
-                </div>
+                <DrawToolbar
+                  drawTool={drawTool}
+                  onTool={(t) => { setDrawTool(t); if (t) setSelectedIds(new Set()); }}
+                  canUndo={undoStack.current.length > 0 || nudged.current.size > 0}
+                  canRedo={redoStack.current.length > 0}
+                  busy={restoring}
+                  onUndo={undo}
+                  onRedo={redo}
+                />
               )}
               {multi.length > 1 && me.canEditLayout && (
                 <div className="flex items-center gap-3 flex-wrap rounded border border-wine-100 bg-wine-50 px-3 py-2 text-sm">
@@ -459,7 +549,7 @@ export function SeatingManager({ eventId, eventName }: { eventId: string; eventN
                       ? `Drag from one end of the ${FIXTURE_SHAPES[drawTool].label.toLowerCase()} to the other (angles snap to 15°). Esc when done.`
                       : `Drag to draw the ${FIXTURE_SHAPES[drawTool].label.toLowerCase()}, or click to drop one. Esc when done.`
                     : seatMode ? `Click a table to seat ${selectedGuests.size} selected.`
-                    : me.canEditLayout ? "Shift-click or drag a box to select several items. Drag guests onto tables."
+                    : me.canEditLayout ? (selected ? "Drag the handles to resize or rotate. Shift-click or drag a box to select several items." : "Shift-click or drag a box to select several items. Drag guests onto tables.")
                     : me.canSeat ? "Drag guests onto a table, or select them and click a table." : "Click a table to see who's there."}
                 </p>
                 <div className="flex items-center gap-1 shrink-0">
@@ -468,7 +558,7 @@ export function SeatingManager({ eventId, eventName }: { eventId: string; eventN
                   <button className="btn-ghost h-8 w-8 p-0" aria-label="Zoom in" onClick={() => setZoom((z) => Math.min(1.6, +(z + 0.1).toFixed(2)))}>+</button>
                 </div>
               </div>
-              <div className="relative">
+              <div ref={floorWrap} className="relative">
                 <div ref={floorBox} tabIndex={-1} className="card relative overflow-auto h-[calc(100vh-14rem)] min-h-[28rem] outline-none">
                   <FloorPlan
                     ref={floorRef}
@@ -484,10 +574,26 @@ export function SeatingManager({ eventId, eventName }: { eventId: string; eventN
                     onDropGuests={(ids, tid) => seat(ids, tid)}
                     onMove={moveItems}
                     onDraw={drawStructure}
+                    onReshape={reshapeItem}
+                    onGesture={setGestureActive}
                   />
                 </div>
-                {wide && inspector && <div className="absolute right-3 top-3 w-72 max-h-[calc(100%-1.5rem)] overflow-y-auto z-20 shadow-lifted rounded-lg">{inspector}</div>}
+                {wide && selected && (
+                  <FloatingInspector
+                    wrapRef={floorWrap}
+                    scrollRef={floorBox}
+                    itemId={selected.id}
+                    layoutKey={`${selected.x},${selected.y},${selected.width},${selected.height},${selected.rotation},${selected.shape},${zoom},${d.usage[selected.id]?.guests || 0}`}
+                    hidden={gestureActive}
+                    onDocked={setDocked}
+                  >
+                    {inspector}
+                  </FloatingInspector>
+                )}
               </div>
+              {/* No clear spot over the floor (or a narrow screen): the inspector sits below it instead,
+                  so it never covers the selected item. */}
+              {selected && (!wide || docked) && <div className="max-w-xl">{inspector}</div>}
               <Legend clones={d.clones} isScoped={isScoped} />
             </>
           ) : (
@@ -504,7 +610,7 @@ export function SeatingManager({ eventId, eventName }: { eventId: string; eventN
         </div>
       </div>
 
-      {selected && (!wide || view === "list") && (
+      {selected && view === "list" && (
         <Modal title={selected.label} onClose={() => setSelectedIds(new Set())}>{inspector}</Modal>
       )}
       {generate !== null && (

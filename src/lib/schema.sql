@@ -395,6 +395,8 @@ CREATE TABLE IF NOT EXISTS seating_items (
   updated_at TEXT NOT NULL DEFAULT to_char(now() AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')
 );
 CREATE INDEX IF NOT EXISTS idx_seating_items_event ON seating_items(event_id);
+-- Optional color (#rrggbb) for drawn shapes, lines/arrows and text; NULL = the default ink color.
+ALTER TABLE seating_items ADD COLUMN IF NOT EXISTS color TEXT;
 
 -- One table per guest (table-level seating, no specific chairs). Deleting a table unseats its guests.
 CREATE TABLE IF NOT EXISTS seating_assignments (

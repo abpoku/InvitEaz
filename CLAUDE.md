@@ -392,6 +392,21 @@ per invitee; `seating_requests` holds clone planners' pending changes.
   toolbar (`structureFromDrag`). Walls/doors/windows (`LINE_SHAPES`) store width = length, height =
   thickness and rotation = the drag's angle snapped to 15°, positioned so the rotation (about the
   centre) lands the line on the drag; use `itemBounds()` wherever the rotated extent matters.
+  Raw `x`/`y` can be negative for a steep line near the edge (its rotated bounds are still on the
+  floor) — don't clamp them; edge limits go through `itemBounds()`.
+- **Annotations**: text (`label` is the text, size follows the box height), shapes (`shape_*`), lines
+  and arrows, with an optional `seating_items.color`. Paint order is `itemLayer()`: areas, shapes,
+  structures/room items, tables, then text/lines/arrows on top.
+- **Handles** on a single selected item: 8 resize + rotate (`resizeBox`/`rotateToward`, anchored on the
+  opposite side in the item's rotated frame), or one per end for line shapes (`lineFromPointer`).
+- **Undo/redo** (layout only, not guest seating) lives client-side in `SeatingManager`: each step is
+  the before/after of every item it touched, written back through `POST /seating/items/sync` (same
+  ids, one transaction; refuses an id from another event). Deleting tables records who sat there and
+  undo re-seats them if they're still unseated. Any new layout write must call `record()`.
+- **Inspector placement** (`FloatingInspector` + pure `choosePanelSpot`): it must never cover the
+  selected item's on-screen footprint (chairs, door arcs and handles included); it picks a clear corner
+  or a spot beside the item, can be dragged by its grip (dropped on the item → nearest clear spot),
+  hides during gestures, and docks below the floor when nothing is clear.
 
 ### Messages tab
 

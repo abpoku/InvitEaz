@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { cn, fullName } from "@/lib/utils";
-import { FIXTURE_SHAPES, LINE_SHAPES, TABLE_SHAPES, WARNING_TEXT, guestWarning, seatsFor, type SeatingGuest, type SeatingItem } from "@/lib/seating";
+import { COLORED_SHAPES, DEFAULT_ITEM_COLOR, FIXTURE_SHAPES, ITEM_COLORS, LINE_SHAPES, TABLE_SHAPES, WARNING_TEXT, shapeFamily, guestWarning, seatsFor, type SeatingGuest, type SeatingItem } from "@/lib/seating";
 import { GUEST_DRAG, type SeatingRequest } from "./types";
 
 interface Props {
@@ -27,7 +27,8 @@ interface Props {
 export function TableInspector({ item, canEditLayout, canSeat, clones, isScoped, seated, usage, incoming, tableLabel, onPatch, onDuplicate, onDelete, onUnseat, onClose }: Props) {
   const isTable = item.kind === "table";
   const line = LINE_SHAPES.has(item.shape);
-  const shapes = isTable ? TABLE_SHAPES : FIXTURE_SHAPES;
+  const isText = item.shape === "text";
+  const shapes = isTable ? TABLE_SHAPES : Object.fromEntries(shapeFamily(item.shape).map((k) => [k, FIXTURE_SHAPES[k]]));
   const [label, setLabel] = useState(item.label);
   const [capacity, setCapacity] = useState(item.capacity === null ? "" : String(item.capacity));
   const [width, setWidth] = useState(String(item.width));
@@ -105,10 +106,35 @@ export function TableInspector({ item, canEditLayout, canSeat, clones, isScoped,
       {canEditLayout && (
         <div className="pt-3 border-t border-paper-line space-y-3">
           <div>
-            <label className="label">Name</label>
-            <input className="input py-1.5" value={label} maxLength={60} onChange={(e) => setLabel(e.target.value)}
-              onBlur={() => { if (label.trim() && label.trim() !== item.label) onPatch({ label: label.trim() }); else setLabel(item.label); }} />
+            <label className="label" htmlFor={`label-${item.id}`}>{isText ? "Text" : "Name"}</label>
+            {isText ? (
+              // A fresh text box still says "Text": focus it so the planner can type straight away.
+              <textarea id={`label-${item.id}`} className="input py-1.5 min-h-[4.5rem]" value={label} maxLength={200} rows={3}
+                autoFocus={item.label === FIXTURE_SHAPES.text.label}
+                onFocus={(e) => { if (item.label === FIXTURE_SHAPES.text.label) e.currentTarget.select(); }}
+                onChange={(e) => setLabel(e.target.value)}
+                onBlur={() => { if (label.trim() && label.trim() !== item.label) onPatch({ label: label.trim() }); else setLabel(item.label); }} />
+            ) : (
+              <input id={`label-${item.id}`} className="input py-1.5" value={label} maxLength={isTable ? 60 : 200} onChange={(e) => setLabel(e.target.value)}
+                onBlur={() => { if (label.trim() && label.trim() !== item.label) onPatch({ label: label.trim() }); else setLabel(item.label); }} />
+            )}
           </div>
+          {COLORED_SHAPES.has(item.shape) && (
+            <div>
+              <p className="label">Color</p>
+              <div className="flex flex-wrap gap-1.5" role="radiogroup" aria-label="Color">
+                {ITEM_COLORS.map((c) => {
+                  const on = (item.color || DEFAULT_ITEM_COLOR).toLowerCase() === c.value.toLowerCase();
+                  return (
+                    <button key={c.value} role="radio" aria-checked={on} aria-label={c.label} title={c.label}
+                      onClick={() => !on && onPatch({ color: c.value })}
+                      className={cn("h-6 w-6 rounded-full border-2", on ? "border-ink ring-2 ring-offset-1 ring-ink/30" : "border-white shadow")}
+                      style={{ backgroundColor: c.value }} />
+                  );
+                })}
+              </div>
+            </div>
+          )}
           <div className="grid grid-cols-2 gap-2">
             <div>
               <label className="label">Shape</label>
@@ -143,7 +169,7 @@ export function TableInspector({ item, canEditLayout, canSeat, clones, isScoped,
             </div>
           )}
           <div className="flex items-center gap-2 flex-wrap">
-            <span className="text-sm text-ink-soft">Rotate</span>
+            <span className="text-sm text-ink-soft">Rotate <span className="tabular-nums text-ink-faint">({Math.round(item.rotation)}°)</span></span>
             <button className="btn-secondary py-1 px-2 text-xs" onClick={() => onPatch({ rotation: (item.rotation - 15) % 360 })}>⟲ 15°</button>
             <button className="btn-secondary py-1 px-2 text-xs" onClick={() => onPatch({ rotation: (item.rotation + 15) % 360 })}>⟳ 15°</button>
             {item.rotation !== 0 && <button className="btn-ghost py-1 px-2 text-xs" onClick={() => onPatch({ rotation: 0 })}>Reset</button>}
@@ -152,7 +178,9 @@ export function TableInspector({ item, canEditLayout, canSeat, clones, isScoped,
             <button className="btn-secondary py-1.5 text-sm" onClick={onDuplicate}>Duplicate</button>
             <button className="btn-ghost py-1.5 text-sm text-clay-600 hover:text-clay-600" onClick={onDelete}>Delete</button>
           </div>
-          <p className="text-[11px] text-ink-faint">Tip: drag to move; arrow keys nudge (Shift for bigger steps).</p>
+          <p className="text-[11px] text-ink-faint">
+            Tip: drag to move; drag the handles to {line ? "change length and angle" : "resize or rotate"} (Shift for {line ? "any angle" : "same proportions"}); arrow keys nudge.
+          </p>
         </div>
       )}
     </div>
