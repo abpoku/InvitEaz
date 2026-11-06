@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { cn, fullName } from "@/lib/utils";
 import {
   FIXTURE_SHAPES, LINE_SHAPES, STRUCTURE_TOOLS, TABLE_SHAPES, clampGroupDelta, cloneColor, guestWarning, nextTableNumber,
@@ -28,6 +28,8 @@ async function call(url: string, init?: RequestInit): Promise<{ ok: boolean; dat
   try { data = await res.json(); } catch {}
   return { ok: res.ok, data };
 }
+
+const ZOOM_MIN = 0.25, ZOOM_MAX = 2;
 
 const byLabel = (a: SeatingItem, b: SeatingItem) => a.label.localeCompare(b.label, undefined, { numeric: true });
 
@@ -387,6 +389,61 @@ export function SeatingManager({ eventId, eventName }: { eventId: string; eventN
   // Don't lose a nudge that's still waiting to save when the page goes away.
   useEffect(() => () => { if (nudged.current.size) flushNudges(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // ---------- zoom ----------
+  // Trackpad pinch (Chrome/Edge/Firefox send it as a wheel event with ctrlKey; Safari as gesture
+  // events) and Ctrl/⌘ + mouse wheel zoom the floor around the pointer: the floor point under it
+  // stays under it. A plain wheel/two-finger swipe still scrolls.
+  const zoomRef = useRef(zoom);
+  zoomRef.current = zoom;
+  const zoomAnchor = useRef<{ fx: number; fy: number; cx: number; cy: number } | null>(null);
+  const zoomAt = useCallback((next: number, clientX?: number, clientY?: number) => {
+    const box = floorBox.current, z = zoomRef.current;
+    const n = Math.round(Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, next)) * 1000) / 1000;
+    if (n === z) return;
+    if (box) {
+      const r = box.getBoundingClientRect();
+      const cx = (clientX ?? r.left + box.clientWidth / 2) - r.left - box.clientLeft;
+      const cy = (clientY ?? r.top + box.clientHeight / 2) - r.top - box.clientTop;
+      zoomAnchor.current = { fx: (box.scrollLeft + cx) / z, fy: (box.scrollTop + cy) / z, cx, cy };
+    }
+    zoomRef.current = n;
+    setZoom(n);
+  }, []);
+  useLayoutEffect(() => {
+    const a = zoomAnchor.current, box = floorBox.current;
+    zoomAnchor.current = null;
+    if (a && box) { box.scrollLeft = a.fx * zoom - a.cx; box.scrollTop = a.fy * zoom - a.cy; }
+  }, [zoom]);
+  const floorShown = view === "floor" && !!d && d.items.length > 0;
+  useEffect(() => {
+    const box = floorBox.current;
+    if (!box) return;
+    const wheel = (e: WheelEvent) => {
+      if (!e.ctrlKey && !e.metaKey) return;
+      e.preventDefault(); // otherwise the browser zooms the whole page
+      const dy = e.deltaMode === 1 ? e.deltaY * 16 : e.deltaY;
+      // A pinch sends many small deltas; a mouse wheel notch sends ~100 — cap it to a gentle step.
+      zoomAt(zoomRef.current * Math.exp(-Math.max(-25, Math.min(25, dy)) * 0.01), e.clientX, e.clientY);
+    };
+    let start = 1;
+    const gStart = (e: Event) => { e.preventDefault(); start = zoomRef.current; };
+    const gChange = (e: Event) => {
+      e.preventDefault();
+      const g = e as Event & { scale: number; clientX: number; clientY: number };
+      zoomAt(start * g.scale, g.clientX, g.clientY);
+    };
+    box.addEventListener("wheel", wheel, { passive: false });
+    box.addEventListener("gesturestart", gStart);
+    box.addEventListener("gesturechange", gChange);
+    box.addEventListener("gestureend", gStart);
+    return () => {
+      box.removeEventListener("wheel", wheel);
+      box.removeEventListener("gesturestart", gStart);
+      box.removeEventListener("gesturechange", gChange);
+      box.removeEventListener("gestureend", gStart);
+    };
+  }, [floorShown, zoomAt]);
+
   // ---------- exports ----------
   const showClone = !isScoped && (d?.clones.length || 0) > 0;
   const context = [eventName, ...(isScoped ? [cloneById.get(me!.assemblyId!)?.name || ""] : [])].filter(Boolean);
@@ -553,9 +610,9 @@ export function SeatingManager({ eventId, eventName }: { eventId: string; eventN
                     : me.canSeat ? "Drag guests onto a table, or select them and click a table." : "Click a table to see who's there."}
                 </p>
                 <div className="flex items-center gap-1 shrink-0">
-                  <button className="btn-ghost h-8 w-8 p-0" aria-label="Zoom out" onClick={() => setZoom((z) => Math.max(0.3, +(z - 0.1).toFixed(2)))}>−</button>
-                  <button className="text-xs text-ink-soft tabular-nums w-12" onClick={() => setZoom(1)} title="Reset zoom">{Math.round(zoom * 100)}%</button>
-                  <button className="btn-ghost h-8 w-8 p-0" aria-label="Zoom in" onClick={() => setZoom((z) => Math.min(1.6, +(z + 0.1).toFixed(2)))}>+</button>
+                  <button className="btn-ghost h-8 w-8 p-0" aria-label="Zoom out" title="Zoom out (or pinch / Ctrl+scroll)" onClick={() => zoomAt(Math.round((zoom - 0.1) * 10) / 10)}>−</button>
+                  <button className="text-xs text-ink-soft tabular-nums w-12" onClick={() => zoomAt(1)} title="Reset zoom">{Math.round(zoom * 100)}%</button>
+                  <button className="btn-ghost h-8 w-8 p-0" aria-label="Zoom in" title="Zoom in (or pinch / Ctrl+scroll)" onClick={() => zoomAt(Math.round((zoom + 0.1) * 10) / 10)}>+</button>
                 </div>
               </div>
               <div ref={floorWrap} className="relative">
