@@ -7,7 +7,9 @@ import type { TicketingSummary, CollectedEntry, DonationEntry } from "@/lib/mode
 export interface TicketBreakdown {
   collectionRate: number | null; // % of Expected collected; null when nothing is expected
   status: { paidInFull: number; partlyPaid: number; notPaid: number; nothingOwed: number };
-  tiers: { name: string; priceCents: number | null; people: number; expectedCents: number; paidCents: number }[];
+  /** people = holders who haven't declined (so people × price = expected); declined holders owe $0
+   * (owedFor) and are counted separately. paidCents covers everyone, declined included. */
+  tiers: { name: string; priceCents: number | null; people: number; declined: number; expectedCents: number; paidCents: number }[];
   methods: { key: string; label: string; cents: number; count: number }[];
   methodTotalCents: number; // = Collected + Donations
 }
@@ -38,7 +40,8 @@ export function ticketBreakdown(summary: TicketingSummary, collected: CollectedE
     .map((r) => ({
       name: r.name,
       priceCents: r.priceCents,
-      people: r.members.length,
+      people: r.members.filter((p) => p.rsvpStatus !== "declined").length,
+      declined: r.members.filter((p) => p.rsvpStatus === "declined").length,
       expectedCents: r.members.reduce((sum, p) => sum + p.owedCents, 0),
       paidCents: r.members.reduce((sum, p) => sum + p.paidCents, 0),
     }));

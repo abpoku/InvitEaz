@@ -137,6 +137,7 @@ function sectionRows(data: ReportData, generated: string): Cell[][] {
     const name = t.priceCents === null ? t.name : `${t.name} (${dollars(t.priceCents)})`;
     rows.push(
       ["By ticket type", `${name} — people`, t.people],
+      ["By ticket type", `${name} — declined (owe nothing)`, t.declined],
       ["By ticket type", `${name} — paid`, money(t.paidCents)],
       ["By ticket type", `${name} — expected`, money(t.expectedCents)],
     );

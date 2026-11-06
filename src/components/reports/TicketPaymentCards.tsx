@@ -71,7 +71,10 @@ export function TicketPaymentCards({
                         {r.name}
                         {r.priceCents !== null && <span className="text-ink-faint"> · {formatCurrency(r.priceCents)}</span>}
                       </span>
-                      <span className="text-ink-faint text-xs shrink-0">{formatNumber(r.people)} {r.people === 1 ? "person" : "people"}</span>
+                      <span className="text-ink-faint text-xs shrink-0">
+                        {formatNumber(r.people)} {r.people === 1 ? "person" : "people"}
+                        {r.declined > 0 && <> · {formatNumber(r.declined)} declined</>}
+                      </span>
                     </div>
                     <div className="mt-1 flex items-center justify-between text-xs tabular-nums">
                       <span className={PAID}>{formatCurrency(paid)} paid</span>
