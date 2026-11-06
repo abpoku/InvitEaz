@@ -382,6 +382,16 @@ per invitee; `seating_requests` holds clone planners' pending changes.
   allowed; the table just shows as over.
 - Guests drag with native HTML5 DnD (`GUEST_DRAG` dataTransfer type); tables move with pointer events.
   Phones (and keyboards) use select-guests-then-click/"Seat here" instead, and open on the Tables list.
+- **Layout editing** (owner/admin): selection is a set — Shift/⌘/Ctrl-click, a drag-box on empty floor
+  (mouse/pen only; on touch that drag scrolls), ⌘/Ctrl+A. Dragging a selected item or pressing arrow
+  keys moves the whole selection by one snapped delta (`clampGroupDelta`, so the group keeps its exact
+  shape and never crosses the top/left edge); arrow nudges save in one batch after a 400ms pause. Group
+  moves, group clone set-asides and group deletes go through `PATCH`/`DELETE /seating/items` (batch,
+  one transaction).
+- **Structures** (wall, door, window, pillar, stairs, area) are ordinary fixtures drawn with the Draw
+  toolbar (`structureFromDrag`). Walls/doors/windows (`LINE_SHAPES`) store width = length, height =
+  thickness and rotation = the drag's angle snapped to 15°, positioned so the rotation (about the
+  centre) lands the line on the drag; use `itemBounds()` wherever the rotated extent matters.
 
 ### Messages tab
 

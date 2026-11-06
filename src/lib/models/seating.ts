@@ -58,6 +58,28 @@ export async function updateItem(id: string, patch: Partial<Omit<NewItem, "kind"
   );
 }
 
+/** Several items at once (a group move, or setting a clone on a selection) — all or nothing. Only
+ * rows of this event are touched. */
+export async function updateItems(eventId: string, updates: ({ id: string } & Partial<Omit<NewItem, "kind">>)[]) {
+  const allowed = ["shape", "label", "capacity", "assembly_id", "x", "y", "width", "height", "rotation"] as const;
+  const now = new Date().toISOString();
+  await transaction(async (tx) => {
+    for (const { id, ...patch } of updates) {
+      const keys = allowed.filter((k) => k in patch);
+      if (keys.length === 0) continue;
+      await tx.exec(
+        `UPDATE seating_items SET ${keys.map((k) => `${k} = ?`).join(", ")}, updated_at = ? WHERE id = ? AND event_id = ?`,
+        [...keys.map((k) => (patch as any)[k]), now, id, eventId]
+      );
+    }
+  });
+}
+
+export async function deleteItems(eventId: string, ids: string[]) {
+  await exec("DELETE FROM seating_items WHERE event_id = ? AND id = ANY(?)", [eventId, ids]);
+  await supersedeStaleRequests(eventId);
+}
+
 /** Its guests become unseated (the assignment FK cascades); requests naming it go stale. */
 export async function deleteItem(eventId: string, id: string) {
   await exec("DELETE FROM seating_items WHERE id = ? AND event_id = ?", [id, eventId]);

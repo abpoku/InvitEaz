@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { cn, fullName } from "@/lib/utils";
-import { FIXTURE_SHAPES, TABLE_SHAPES, WARNING_TEXT, guestWarning, seatsFor, type SeatingGuest, type SeatingItem } from "@/lib/seating";
+import { FIXTURE_SHAPES, LINE_SHAPES, TABLE_SHAPES, WARNING_TEXT, guestWarning, seatsFor, type SeatingGuest, type SeatingItem } from "@/lib/seating";
 import { GUEST_DRAG, type SeatingRequest } from "./types";
 
 interface Props {
@@ -26,6 +26,7 @@ interface Props {
  * moves waiting on approval, and — for owner/admin — its name, size, shape, capacity and clone. */
 export function TableInspector({ item, canEditLayout, canSeat, clones, isScoped, seated, usage, incoming, tableLabel, onPatch, onDuplicate, onDelete, onUnseat, onClose }: Props) {
   const isTable = item.kind === "table";
+  const line = LINE_SHAPES.has(item.shape);
   const shapes = isTable ? TABLE_SHAPES : FIXTURE_SHAPES;
   const [label, setLabel] = useState(item.label);
   const [capacity, setCapacity] = useState(item.capacity === null ? "" : String(item.capacity));
@@ -123,12 +124,12 @@ export function TableInspector({ item, canEditLayout, canSeat, clones, isScoped,
               </div>
             )}
             <div>
-              <label className="label">Width</label>
-              <input className="input py-1.5" inputMode="numeric" value={width} onChange={(e) => setWidth(e.target.value.replace(/\D/g, ""))} onBlur={() => commitNumber(width, "width", 20)} />
+              <label className="label">{line ? "Length" : "Width"}</label>
+              <input className="input py-1.5" inputMode="numeric" value={width} onChange={(e) => setWidth(e.target.value.replace(/\D/g, ""))} onBlur={() => commitNumber(width, "width", 4)} />
             </div>
             <div>
-              <label className="label">Length</label>
-              <input className="input py-1.5" inputMode="numeric" value={height} onChange={(e) => setHeight(e.target.value.replace(/\D/g, ""))} onBlur={() => commitNumber(height, "height", 20)} />
+              <label className="label">{line ? "Thickness" : "Length"}</label>
+              <input className="input py-1.5" inputMode="numeric" value={height} onChange={(e) => setHeight(e.target.value.replace(/\D/g, ""))} onBlur={() => commitNumber(height, "height", 4)} />
             </div>
           </div>
           {isTable && clones.length > 0 && (

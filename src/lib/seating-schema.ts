@@ -9,7 +9,7 @@ export const seatingItemSchema = z.object({
   assembly_id: z.string().nullable().optional(),
   x: z.number().min(0).max(20000),
   y: z.number().min(0).max(20000),
-  width: z.number().min(20).max(3000),
-  height: z.number().min(20).max(3000),
+  width: z.number().min(4).max(3000),
+  height: z.number().min(4).max(3000),
   rotation: z.number().min(-360).max(360).optional(),
 });
