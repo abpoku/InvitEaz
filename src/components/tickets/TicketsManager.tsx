@@ -8,6 +8,7 @@ import { ReceivePaymentModal, type PaymentTarget } from "@/components/tickets/Re
 import { EditPaymentsModal } from "@/components/tickets/EditPaymentsModal";
 import { ChangeTicketTypeModal } from "@/components/tickets/ChangeTicketTypeModal";
 import { RefundModal } from "@/components/tickets/RefundModal";
+import { TransactionsModal } from "@/components/tickets/TransactionsModal";
 import { ViewToggle } from "@/components/ViewToggle";
 import { SortTh, useTableSort } from "@/components/SortableHeader";
 import { SortSelect, MobileListHeader } from "@/components/MobileList";
@@ -65,15 +66,18 @@ function MoneyStrip({ owedCents, paidCents, balanceCents, paidNote }: { owedCent
 }
 
 export function TicketsManager({
-  eventId, summary, canMutate,
+  eventId, summary, canMutate, clone = null, exportContext = [],
 }: {
   eventId: string;
   summary: TicketingSummary;
   canMutate: boolean;
+  clone?: string | null;        // the Tickets tab's clone filter, so All transactions lists the same clone
+  exportContext?: string[];
 }) {
   const router = useRouter();
   const [view, setView] = useState<View>("individual");
   const [dialog, setDialog] = useState<Dialog | null>(null);
+  const [showTransactions, setShowTransactions] = useState(false);
   const [q, setQ] = useState("");
   const [rsvp, setRsvp] = useState<RsvpFilter>("all");
   const [pay, setPay] = useState<PayFilter>("all");
@@ -162,9 +166,12 @@ export function TicketsManager({
     <div>
       <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
         {summary.hasGroups ? <ViewToggle value={view} onChange={setView} /> : <span />}
-        {canMutate && (
-          <button onClick={() => setDialog({ kind: "receive" })} className="btn-primary">Receive payment</button>
-        )}
+        <div className="flex flex-wrap items-center gap-2">
+          <button onClick={() => setShowTransactions(true)} className="btn-secondary">All transactions</button>
+          {canMutate && (
+            <button onClick={() => setDialog({ kind: "receive" })} className="btn-primary">Receive payment</button>
+          )}
+        </div>
       </div>
 
       <div className="mt-4 flex flex-wrap items-center gap-2">
@@ -367,6 +374,9 @@ export function TicketsManager({
         )}
       </div>
 
+      {showTransactions && (
+        <TransactionsModal eventId={eventId} clone={clone} donationsLabel={summary.donations.label} context={exportContext} onClose={() => setShowTransactions(false)} />
+      )}
       {dialog?.kind === "receive" && (
         <ReceivePaymentModal
           eventId={eventId}

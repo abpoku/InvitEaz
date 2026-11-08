@@ -341,6 +341,11 @@ Overview's config sections; clone-scoped roles never see it).
   refuses only a change that pushes a bucket *further* over its limit, so lowering a limit below what's
   taken never blocks unrelated edits or anything that frees a ticket. The check and the write aren't one
   transaction, so two guests saying yes at the same instant could both get the last ticket.
+- **All transactions** (Tickets tab button → `TransactionsModal`, `GET .../transactions` → `listTransactions`):
+  the raw ledger, every payment and refund with its ticket/donation split, sortable. Unlike Collected/
+  Donations it is a record, not a total: voided entries (struck through) and payments from removed
+  invitees stay in it, so its rows deliberately don't add up to the summary card. Read-only (viewers
+  see it too), clone-scoped like the rest of the tab.
 - **Tickets tab UI**: a "Receive payment" button (pick an invitee or group first) plus a ⋮
   `KebabMenu` per row — Edit (`EditPaymentsModal`: edit/void/split), Receive payment, Change
   ticket type (`ChangeTicketTypeModal` → `PATCH .../ticketing/assignments`, assembly-scoped

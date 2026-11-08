@@ -375,6 +375,60 @@ export async function listCollected(eventId: string, assemblyId?: string | null)
   }));
 }
 
+export interface TransactionEntry {
+  paymentId: string;
+  paidOn: string | null;
+  recordedAt: string;
+  who: string;
+  targetType: "invitee" | "group";
+  removed: boolean;        // the invitee has since been removed from the guest list
+  kind: "payment" | "refund";
+  amountCents: number;     // signed: refunds are negative
+  ticketCents: number;     // signed ticket portion
+  donationCents: number;   // signed donation portion
+  method: string | null;
+  methodOther: string | null;
+  note: string | null;
+  voided: boolean;
+}
+
+/** The whole ledger for the Tickets tab's "All transactions" list: every payment and refund, voided
+ * ones included (flagged), from removed invitees too (flagged), with each row's ticket/donation split.
+ * Unlike listCollected/listDonations this is a record of what was entered, not a total — so it keeps
+ * what those totals leave out. Clone scoping matches listDonations. Groups' rows vanish with the group
+ * (ticket_payments.group_id cascades), so a deleted group's payments can't appear here. */
+export async function listTransactions(eventId: string, assemblyId?: string | null): Promise<TransactionEntry[]> {
+  const rows = await query<TicketPaymentRow & { first_name: string | null; last_name: string | null; active: number | null; group_name: string | null }>(
+    `SELECT tp.*, iv.first_name, iv.last_name, iv.active, g.name as group_name
+     FROM ticket_payments tp
+     LEFT JOIN invitees iv ON iv.id = tp.invitee_id
+     LEFT JOIN groups g ON g.id = tp.group_id
+     WHERE tp.event_id = ?
+     ${assemblyId ? "AND COALESCE(iv.assembly_id, g.assembly_id) = ?" : ""}
+     ORDER BY tp.paid_on DESC NULLS LAST, tp.recorded_at DESC`,
+    assemblyId ? [eventId, assemblyId] : [eventId]
+  );
+  return rows.map((r) => {
+    const sign = r.kind === "refund" ? -1 : 1;
+    return {
+      paymentId: r.id,
+      paidOn: r.paid_on,
+      recordedAt: r.recorded_at,
+      who: r.group_id ? r.group_name || "Group" : fullName(r.first_name || "", r.last_name || ""),
+      targetType: r.group_id ? "group" : "invitee",
+      removed: !r.group_id && Number(r.active) === 0,
+      kind: r.kind,
+      amountCents: sign * r.amount_cents,
+      ticketCents: sign * (r.amount_cents - r.donation_cents),
+      donationCents: sign * r.donation_cents,
+      method: r.method,
+      methodOther: r.method_other,
+      note: r.note,
+      voided: !!r.voided_at,
+    };
+  });
+}
+
 /** Every non-voided transaction that touched the donations bucket, newest first — the list behind
  * the summary card's Donations figure. */
 export async function listDonations(eventId: string, assemblyId?: string | null): Promise<DonationEntry[]> {

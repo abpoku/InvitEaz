@@ -39,7 +39,9 @@ export default async function TicketsPage({ params, searchParams }: { params: { 
           Ticketing isn&apos;t set up for this event yet — enable it from Overview.
         </p>
       ) : (
-        <TicketsManager eventId={params.id} summary={summary!} canMutate={!membership || membership.role !== "viewer"} />
+        <TicketsManager eventId={params.id} summary={summary!} canMutate={!membership || membership.role !== "viewer"}
+          clone={selectedClone}
+          exportContext={[event.name, ...(assemblyId ? [clones.find((c) => c.id === assemblyId)?.name || ""] : [])].filter(Boolean)} />
       )}
     </div>
   );
