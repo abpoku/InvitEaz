@@ -18,6 +18,7 @@ export interface SeatingData {
   guests: SeatingGuest[];
   requests: SeatingRequest[];
   clones: { id: string; name: string; index: number }[];
+  guestsCanSee: boolean;   // guests see their table on their invitation link
   me: {
     role: string;
     email: string;

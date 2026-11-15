@@ -373,6 +373,9 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_ticket_caps_scope ON ticket_caps (event_id
 -- Seating chart (src/lib/seating.ts, models/seating.ts, the Seating tab). Clone planners only see the
 -- tab when the owner turns on their seating_access; the floor layout itself is owner/admin-only.
 ALTER TABLE event_members ADD COLUMN IF NOT EXISTS seating_access INTEGER NOT NULL DEFAULT 0;
+-- Guests see their own table (name, tablemates, where it is on the floor) on their /r/ and /g/ links
+-- only once an owner/admin switches this on from the Seating tab, so a half-done plan never leaks.
+ALTER TABLE events ADD COLUMN IF NOT EXISTS seating_visible INTEGER NOT NULL DEFAULT 0;
 
 -- Everything on the floor plan: tables (kind 'table', with a capacity) and fixtures (stage, bar, …).
 -- x/y/width/height are in floor units (1 unit ≈ 1px at 100% zoom), x/y the top-left corner before

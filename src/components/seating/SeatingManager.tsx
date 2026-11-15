@@ -169,6 +169,14 @@ export function SeatingManager({ eventId, eventName }: { eventId: string; eventN
     await load();
   }
 
+  /** Owner/admin: let guests see their table (name, tablemates, place on the floor) on their link. */
+  async function shareWithGuests(on: boolean) {
+    setData((prev) => prev && { ...prev, guestsCanSee: on });
+    const { ok, data: r } = await call(base, { method: "PATCH", body: JSON.stringify({ guestsCanSee: on }) });
+    if (!ok) { setMsg({ kind: "error", text: r.error || "That didn't save." }); await load(); return; }
+    setMsg({ kind: "info", text: on ? "Guests can now see their table on their invitation link." : "Seating is hidden from guests again." });
+  }
+
   /** Owner/admin: guests at one table trade places with guests at another. */
   async function swap(a: string[], b: string[]) {
     setMsg(null);
@@ -586,6 +594,17 @@ export function SeatingManager({ eventId, eventName }: { eventId: string; eventN
       <div className="grid gap-4 lg:grid-cols-[19rem_minmax(0,1fr)]">
         <div className="space-y-4 lg:sticky lg:top-4 lg:self-start">
           <SeatingSummary n={summary} onGenerate={me.canEditLayout ? (k) => setGenerate(k) : undefined} />
+          {me.canEditLayout && (
+            <label className="card p-4 flex items-start gap-3 cursor-pointer">
+              <input type="checkbox" className="mt-1" checked={d.guestsCanSee} onChange={(e) => shareWithGuests(e.target.checked)} />
+              <span>
+                <span className="block text-sm font-medium text-ink">Show guests their table</span>
+                <span className="block mt-0.5 text-xs text-ink-faint leading-relaxed">
+                  Attending guests who have a table see it on their invitation link: the table name, who else sits there, and where it is in the room (other tables blurred).
+                </span>
+              </span>
+            </label>
+          )}
           <div className="lg:h-[calc(100vh-22rem)] lg:min-h-[24rem] max-lg:max-h-[60vh] flex flex-col">
             <GuestPanel
               guests={d.guests}

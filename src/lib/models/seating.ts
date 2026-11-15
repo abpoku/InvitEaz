@@ -1,6 +1,6 @@
 import { query, queryOne, exec, transaction, type Tx } from "@/lib/db";
 import { newId, fullName } from "@/lib/utils";
-import { seatsFor, type SeatingGuest, type SeatingItem, type SeatingKind } from "@/lib/seating";
+import { seatsFor, seatingOrder, type SeatingGuest, type SeatingItem, type SeatingKind } from "@/lib/seating";
 
 /** A refusal the route should pass straight back to the planner (capacity, scope, stale request). */
 export class SeatingError extends Error {
@@ -337,4 +337,55 @@ export async function decideRequest(eventId: string, requestId: string, approve:
 export async function withdrawRequest(requestId: string, actorEmail: string) {
   await exec("UPDATE seating_requests SET status = 'withdrawn', decided_by = ?, decided_at = ? WHERE id = ? AND status = 'pending'",
     [actorEmail, new Date().toISOString(), requestId]);
+}
+
+// ---------- What a guest sees ----------
+
+/** One item on the guest's copy of the floor. Other tables keep their shape and position (so the
+ * room makes sense) but lose their name; nothing about who sits at them is included. */
+export interface GuestFloorItem {
+  id: string; kind: SeatingKind; shape: string; label: string; capacity: number | null; color: string | null;
+  x: number; y: number; width: number; height: number; rotation: number;
+  mine: boolean;   // one of this guest's (or household's) tables
+  taken: number;   // chairs taken — only for `mine`
+}
+export interface GuestTable { id: string; label: string; guests: { name: string; ours: boolean }[]; } // ours = one of the invitees asked about
+export interface GuestSeating {
+  tables: GuestTable[];               // the tables these invitees sit at, with everyone at them
+  seatOf: Record<string, string>;     // invitee id → table id, for the invitees asked about
+  floor: GuestFloorItem[];
+}
+
+/** Seating for a guest link (/r/ for one invitee, /g/ for a household): null unless the planner has
+ * shared seating and at least one of them is seated and not declined. Tablemates are listed only for
+ * their own tables; declined guests still sitting somewhere are left out, as they won't be there. */
+export async function guestSeatingFor(event: { id: string; seating_visible: number }, inviteeIds: string[]): Promise<GuestSeating | null> {
+  if (!event.seating_visible || inviteeIds.length === 0) return null;
+  const seated = (await query<SeatingGuest>(`${GUEST_SELECT} WHERE iv.event_id = ? AND iv.active = 1 AND sa.table_id IS NOT NULL`, [event.id]))
+    .filter((g) => g.rsvp_status !== "declined");
+  const asked = new Set(inviteeIds);
+  const mine = seated.filter((g) => asked.has(g.id));
+  if (mine.length === 0) return null;
+  const tableIds = new Set(mine.map((g) => g.table_id!));
+  const items = await listItems(event.id);
+  const at = (id: string) => seatingOrder(seated.filter((g) => g.table_id === id));
+  const tables = items
+    .filter((i) => tableIds.has(i.id))
+    .sort((a, b) => a.label.localeCompare(b.label, undefined, { numeric: true }))
+    .map((t) => ({
+      id: t.id,
+      label: t.label,
+      guests: at(t.id).map((g) => ({ name: fullName(g.first_name, g.last_name) + (seatsFor(g) > 1 ? ` +${seatsFor(g) - 1}` : ""), ours: asked.has(g.id) })),
+    }));
+  const floor = items.map((i): GuestFloorItem => {
+    const own = tableIds.has(i.id);
+    return {
+      id: i.id, kind: i.kind, shape: i.shape, color: i.color, capacity: i.capacity,
+      label: i.kind === "table" && !own ? "" : i.label,
+      x: i.x, y: i.y, width: i.width, height: i.height, rotation: i.rotation,
+      mine: own,
+      taken: own ? at(i.id).reduce((n, g) => n + seatsFor(g), 0) : 0,
+    };
+  });
+  return { tables, seatOf: Object.fromEntries(mine.map((g) => [g.id, g.table_id!])), floor };
 }

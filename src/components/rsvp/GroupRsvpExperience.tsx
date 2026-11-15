@@ -5,6 +5,8 @@ import { Shell, MessageScreen, EventHeader, QuestionField, DonationNote, type Qu
 import { InviteeFieldInput } from "@/components/invitees/InviteeFieldInput";
 import type { InviteeField } from "@/components/invitees/InviteesManager";
 import { formatCurrency } from "@/lib/utils";
+import { GuestSeatingCard } from "@/components/rsvp/GuestSeating";
+import type { GuestSeating } from "@/lib/models/seating";
 
 interface Member {
   id: string;
@@ -33,6 +35,7 @@ interface Data {
   responder: { name: string; email: string; phone: string } | null;
   locked: boolean;
   donationNote: { label: string; message: string } | null;
+  seating: GuestSeating | null;   // the household's tables, once the planner shares seating
 }
 
 export function GroupRsvpExperience({ token }: { token: string }) {
@@ -133,6 +136,7 @@ function GroupConfirmation({ data, onEdit }: { data: Data; onEdit: () => void })
           {data.locked && <p className="mt-4 text-xs text-ink-faint">RSVPs are closed — these are your final responses.</p>}
         </div>
       </div>
+      {attending > 0 && data.seating && <GuestSeatingCard seating={data.seating} household />}
       {data.tickets && <TicketSummary tickets={data.tickets} />}
     </Shell>
   );

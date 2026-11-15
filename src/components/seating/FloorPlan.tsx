@@ -551,7 +551,7 @@ function Peek({ item, look, zoom, floorWidth }: { item: SeatingItem; look: Table
 
 /** Chair dots around a table: filled in each guest's clone color for taken seats. With names on,
  * each guest's name sits just outside their chair, reading outward. Capped so a huge table stays readable. */
-function Chairs({ item, chairs, showNames, zoom }: { item: SeatingItem; chairs: Chair[]; showNames: boolean; zoom: number }) {
+export function Chairs({ item, chairs, showNames, zoom }: { item: SeatingItem; chairs: Chair[]; showNames: boolean; zoom: number }) {
   const n = Math.min(item.capacity ?? 0, 30);
   if (n === 0) return null;
   const C = 14, gap = 6;

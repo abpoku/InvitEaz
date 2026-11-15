@@ -4,6 +4,8 @@ import { useEffect, useState } from "react";
 import { EnvelopeMark } from "@/components/EnvelopeMark";
 import { formatDate, formatTime } from "@/lib/utils";
 import { personExtraGuests } from "@/lib/guest-allowance";
+import { GuestSeatingCard } from "@/components/rsvp/GuestSeating";
+import type { GuestSeating } from "@/lib/models/seating";
 
 export interface Question {
   id: string; label: string; type: string; options_json: string | null; required: number; show_if_attending: "yes" | "no" | null;
@@ -18,6 +20,7 @@ interface Data {
   existingResponse: any | null;
   locked: boolean;
   donationNote: { label: string; message: string } | null;
+  seating: GuestSeating | null;   // their table, once the planner shares seating
 }
 
 export function RsvpExperience({ token }: { token: string }) {
@@ -147,6 +150,7 @@ function Confirmation({ data, onEdit }: { data: Data; onEdit: () => void }) {
         )}
         {data.locked && <p className="mt-4 text-xs text-ink-faint">RSVPs are closed — this is your final response.</p>}
       </div>
+      {attending && data.seating && <GuestSeatingCard seating={data.seating} />}
     </Shell>
   );
 }

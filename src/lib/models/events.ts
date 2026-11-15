@@ -59,6 +59,7 @@ export interface EventRow {
   donations_label: string | null;
   donations_message_enabled: number;
   donations_message: string | null;
+  seating_visible: number;
   created_at: string;
   updated_at: string;
 }
@@ -172,6 +173,7 @@ export async function updateEvent(id: string, patch: Partial<EventRow>) {
     "cancellation_message", "theme", "rsvp_reopened", "invitee_name_format",
     "ticketing_enabled", "ticket_field_id", "guest_allowance_mode", "guest_allowance_count",
     "donations_enabled", "donations_label", "donations_message_enabled", "donations_message",
+    "seating_visible",
   ];
   const keys = Object.keys(patch).filter((k) => allowed.includes(k));
   if (keys.length === 0) return;

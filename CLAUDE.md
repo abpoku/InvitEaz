@@ -410,6 +410,12 @@ per invitee; `seating_requests` holds clone planners' pending changes.
 - **Inspector seated list** is multi-select: Unseat, Move to… (both via `/assign`, so clone planners'
   moves still become requests), and Swap… (owner/admin only, `POST /seating/swap` → `swapGuests`:
   both directions in one transaction, both tables locked in id order, capacity checked on the result).
+- **Guests see their table** on `/r/` and `/g/` (`GuestSeatingCard` + read-only `GuestFloor` in
+  `components/rsvp/GuestSeating.tsx`) only after an owner/admin ticks "Show guests their table"
+  (`events.seating_visible`, `PATCH /seating`). `guestSeatingFor()` builds the payload: the guest's
+  own table(s) with tablemates' names, and the floor with other tables' names blanked and no guest or
+  clone data for them. Declined guests are left out (still seated, but won't be there). Shown only on
+  the attending confirmation screen.
 - **Handles** (not on tables — they're sized from the inspector) on a single selected item: 8 resize + rotate (`resizeBox`/`rotateToward`, anchored on the
   opposite side in the item's rotated frame), or one per end for line shapes (`lineFromPointer`).
 - **Undo/redo** (layout only, not guest seating) lives client-side in `SeatingManager`: each step is

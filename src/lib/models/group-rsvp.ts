@@ -11,6 +11,7 @@ import { getUserById, PLAN_LIMITS } from "@/lib/models/users";
 import { getGroupTicketBalance } from "@/lib/models/ticketing";
 import { groupExtraGuests } from "@/lib/guest-allowance";
 import { donationNoteFor } from "@/lib/donation-note";
+import { guestSeatingFor } from "@/lib/models/seating";
 import { isPastDeadline, fullName } from "@/lib/utils";
 
 /** The household-level RSVP link (/g/[token]) — one link per group that lets whoever opens it
@@ -120,6 +121,7 @@ export async function loadGroupInvitation(token: string) {
   const latest = members.filter((m) => m.responded_at).sort((a, b) => (b.responded_at! > a.responded_at! ? 1 : -1))[0];
 
   const plannerMembers = members.filter((m) => !m.added_by_guest);
+  const seating = await guestSeatingFor(event, members.map((m) => m.id));
   return {
     event: { ...event, effective_status: computeEffectiveStatus(event) },
     group: { id: group.id, name: group.name },
@@ -143,6 +145,7 @@ export async function loadGroupInvitation(token: string) {
       : null,
     tickets,
     donationNote: donationNoteFor(event),
+    seating,
     locked: isLocked(event),
   };
 }

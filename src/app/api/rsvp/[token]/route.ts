@@ -6,6 +6,7 @@ import { sendConfirmationEmail } from "@/lib/notify";
 import { isPastDeadline, fullName } from "@/lib/utils";
 import { donationNoteFor } from "@/lib/donation-note";
 import { checkTicketCaps } from "@/lib/models/ticket-caps";
+import { guestSeatingFor } from "@/lib/models/seating";
 
 export async function GET(_req: Request, { params }: { params: { token: string } }) {
   const invitation = await getInvitationByToken(params.token);
@@ -20,6 +21,7 @@ export async function GET(_req: Request, { params }: { params: { token: string }
   const latest = await getLatestResponse(invitation.id);
   const answers = latest ? await getAnswersForResponse(latest.id) : [];
   const members = invitation.invitee?.group_id ? await groupMembers(invitation.invitee.group_id) : [];
+  const seating = invitation.invitee ? await guestSeatingFor(event, [invitation.invitee.id]) : null;
 
   const locked = event.status === "cancelled"
     ? false
@@ -31,6 +33,7 @@ export async function GET(_req: Request, { params }: { params: { token: string }
     questions,
     groupMembers: members,
     donationNote: donationNoteFor(event),
+    seating,
     existingResponse: latest ? { ...latest, answers } : null,
     locked,
   });
