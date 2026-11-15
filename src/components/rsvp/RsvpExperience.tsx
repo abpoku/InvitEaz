@@ -20,7 +20,7 @@ interface Data {
   existingResponse: any | null;
   locked: boolean;
   donationNote: { label: string; message: string } | null;
-  seating: GuestSeating | null;   // their table, once the planner shares seating
+  seating: GuestSeating | null;   // their table, once the planner shares seating (null if declined/unseated)
 }
 
 export function RsvpExperience({ token }: { token: string }) {
@@ -68,7 +68,9 @@ export function RsvpExperience({ token }: { token: string }) {
         title="RSVPs are closed"
         body="The RSVP deadline for this event has passed. If you believe this is a mistake, please contact the organizer."
         eventName={event.name}
-      />
+      >
+        {data.seating && <GuestSeatingCard seating={data.seating} />}
+      </MessageScreen>
     );
   }
 
@@ -84,7 +86,7 @@ export function Shell({ children }: { children: React.ReactNode }) {
   );
 }
 
-export function MessageScreen({ title, body, eventName, loading }: { title: string; body: string; eventName?: string; loading?: boolean }) {
+export function MessageScreen({ title, body, eventName, loading, children }: { title: string; body: string; eventName?: string; loading?: boolean; children?: React.ReactNode }) {
   return (
     <Shell>
       <div className="card p-8 text-center">
@@ -93,6 +95,7 @@ export function MessageScreen({ title, body, eventName, loading }: { title: stri
         {body && <p className="mt-2.5 text-sm text-ink-soft leading-relaxed">{body}</p>}
         {loading && <div className="mt-4 mx-auto w-6 h-6 border-2 border-wine-300 border-t-wine-500 rounded-full animate-spin" />}
       </div>
+      {children}
     </Shell>
   );
 }
@@ -150,7 +153,7 @@ function Confirmation({ data, onEdit }: { data: Data; onEdit: () => void }) {
         )}
         {data.locked && <p className="mt-4 text-xs text-ink-faint">RSVPs are closed — this is your final response.</p>}
       </div>
-      {attending && data.seating && <GuestSeatingCard seating={data.seating} />}
+      {data.seating && <GuestSeatingCard seating={data.seating} />}
     </Shell>
   );
 }
@@ -343,6 +346,7 @@ function RsvpForm({ data, token, onSubmitted }: { data: Data; token: string; onS
           </>
         )}
       </form>
+      {data.seating && <GuestSeatingCard seating={data.seating} />}
     </Shell>
   );
 }

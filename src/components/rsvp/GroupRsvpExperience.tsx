@@ -87,7 +87,9 @@ export function GroupRsvpExperience({ token }: { token: string }) {
         title="RSVPs are closed"
         body="The RSVP deadline for this event has passed. If you believe this is a mistake, please contact the organizer."
         eventName={event.name}
-      />
+      >
+        {data.seating && <GuestSeatingCard seating={data.seating} household />}
+      </MessageScreen>
     );
   }
   return <GroupRsvpForm data={data} token={token} onSubmitted={() => { setEditing(false); load(); }} />;
@@ -136,7 +138,7 @@ function GroupConfirmation({ data, onEdit }: { data: Data; onEdit: () => void })
           {data.locked && <p className="mt-4 text-xs text-ink-faint">RSVPs are closed — these are your final responses.</p>}
         </div>
       </div>
-      {attending > 0 && data.seating && <GuestSeatingCard seating={data.seating} household />}
+      {data.seating && <GuestSeatingCard seating={data.seating} household />}
       {data.tickets && <TicketSummary tickets={data.tickets} />}
     </Shell>
   );
@@ -423,6 +425,7 @@ function GroupRsvpForm({ data, token, onSubmitted }: { data: Data; token: string
           </button>
         </div>
       </form>
+      {data.seating && <GuestSeatingCard seating={data.seating} household />}
     </Shell>
   );
 }

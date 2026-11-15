@@ -414,8 +414,9 @@ per invitee; `seating_requests` holds clone planners' pending changes.
   `components/rsvp/GuestSeating.tsx`) only after an owner/admin ticks "Show guests their table"
   (`events.seating_visible`, `PATCH /seating`). `guestSeatingFor()` builds the payload: the guest's
   own table(s) with tablemates' names, and the floor with other tables' names blanked and no guest or
-  clone data for them. Declined guests are left out (still seated, but won't be there). Shown only on
-  the attending confirmation screen.
+  clone data for them. Declined guests are left out (still seated, but won't be there). Shown on every
+  guest screen (form, confirmation, RSVPs closed) whenever it's non-null — a guest the planner seated
+  before they replied on their own link still sees their table.
 - **Handles** (not on tables — they're sized from the inspector) on a single selected item: 8 resize + rotate (`resizeBox`/`rotateToward`, anchored on the
   opposite side in the item's rotated frame), or one per end for line shapes (`lineFromPointer`).
 - **Undo/redo** (layout only, not guest seating) lives client-side in `SeatingManager`: each step is
