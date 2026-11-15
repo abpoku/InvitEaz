@@ -402,7 +402,15 @@ per invitee; `seating_requests` holds clone planners' pending changes.
 - **Annotations**: text (`label` is the text, size follows the box height), shapes (`shape_*`), lines
   and arrows, with an optional `seating_items.color`. Paint order is `itemLayer()`: areas, shapes,
   structures/room items, tables, then text/lines/arrows on top.
-- **Handles** on a single selected item: 8 resize + rotate (`resizeBox`/`rotateToward`, anchored on the
+- **Chairs show who sits there**: each taken chair is filled in the seated guest's clone color
+  (`cloneColor`, same palette as set-aside table outlines; `NO_CLONE_SEAT_COLOR` / `HIDDEN_SEAT_COLOR`
+  for no clone / another clone's guest a clone planner can't see), in `seatingOrder()` (households
+  together). Hovering a table shows its guest list; "Show names" labels each chair. Built per table in
+  `SeatingManager`'s `look()`.
+- **Inspector seated list** is multi-select: Unseat, Move to… (both via `/assign`, so clone planners'
+  moves still become requests), and Swap… (owner/admin only, `POST /seating/swap` → `swapGuests`:
+  both directions in one transaction, both tables locked in id order, capacity checked on the result).
+- **Handles** (not on tables — they're sized from the inspector) on a single selected item: 8 resize + rotate (`resizeBox`/`rotateToward`, anchored on the
   opposite side in the item's rotated frame), or one per end for line shapes (`lineFromPointer`).
 - **Undo/redo** (layout only, not guest seating) lives client-side in `SeatingManager`: each step is
   the before/after of every item it touched, written back through `POST /seating/items/sync` (same

@@ -4,11 +4,11 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import { cn, fullName } from "@/lib/utils";
 import {
   FIXTURE_SHAPES, LINE_SHAPES, STRUCTURE_TOOLS, TABLE_SHAPES, clampGroupDelta, cloneColor, guestWarning, nextTableNumber,
-  placeBelow, seatsFor, GRID, type Box, type SeatingGuest, type SeatingItem, type SeatingKind,
+  placeBelow, seatsFor, seatingOrder, GRID, HIDDEN_SEAT_COLOR, NO_CLONE_SEAT_COLOR, SEAT_COLOR, type Box, type SeatingGuest, type SeatingItem, type SeatingKind,
 } from "@/lib/seating";
 import type { ExportDoc } from "@/lib/table-export";
 import { Modal } from "@/components/Modal";
-import { FloorPlan, type TableLook } from "./FloorPlan";
+import { FloorPlan, type Chair, type TableLook } from "./FloorPlan";
 import { GuestPanel } from "./GuestPanel";
 import { TableInspector } from "./TableInspector";
 import { RequestsPanel } from "./RequestsPanel";
@@ -46,6 +46,14 @@ export function SeatingManager({ eventId, eventName }: { eventId: string; eventN
   const [selectedGuests, setSelectedGuests] = useState<Set<string>>(new Set());
   const [view, setView] = useState<"floor" | "list">("floor");
   const [zoom, setZoom] = useState(1);
+  const [showNames, setShowNames] = useState(false);
+  useEffect(() => { try { setShowNames(localStorage.getItem("seating:showNames") === "1"); } catch {} }, []);
+  function toggleNames() {
+    setShowNames((v) => {
+      try { localStorage.setItem("seating:showNames", v ? "0" : "1"); } catch {}
+      return !v;
+    });
+  }
   const [generate, setGenerate] = useState<number | null>(null);
   const [wide, setWide] = useState(true);
   const floorRef = useRef<HTMLDivElement>(null);
@@ -88,6 +96,7 @@ export function SeatingManager({ eventId, eventName }: { eventId: string; eventN
   const guestsAt = useMemo(() => {
     const m = new Map<string, SeatingGuest[]>();
     for (const g of d?.guests || []) if (g.table_id) m.set(g.table_id, [...(m.get(g.table_id) || []), g]);
+    for (const [k, v] of m) m.set(k, seatingOrder(v));
     return m;
   }, [d]);
   const pendingTo = useMemo(() => {
@@ -98,16 +107,36 @@ export function SeatingManager({ eventId, eventName }: { eventId: string; eventN
   const pendingIds = useMemo(() => new Set((d?.requests || []).map((r) => r.invitee_id)), [d]);
   const tableLabel = useCallback((id: string | null) => (id ? itemById.get(id)?.label || "a removed table" : "no table"), [itemById]);
 
+  /** A seated guest's chair color: their clone's color (the same one the legend and set-aside
+   * tables use), or a neutral one when they're in no clone. */
+  const seatColor = useCallback((g: SeatingGuest) => {
+    if (!d?.clones.length && !g.assembly_id) return SEAT_COLOR;
+    const c = g.assembly_id ? cloneById.get(g.assembly_id) : undefined;
+    return c ? cloneColor(c.index) : g.assembly_id ? HIDDEN_SEAT_COLOR : NO_CLONE_SEAT_COLOR;
+  }, [d, cloneById]);
+
   const look = useCallback((t: SeatingItem): TableLook => {
     const clone = t.assembly_id ? cloneById.get(t.assembly_id) : undefined;
+    const here = guestsAt.get(t.id) || [];
+    const usage = d?.usage[t.id] || { seats: 0, guests: 0 };
+    const chairs: Chair[] = [];
+    for (const g of here) {
+      const color = seatColor(g), n = seatsFor(g), name = fullName(g.first_name, g.last_name);
+      for (let k = 0; k < n; k++) chairs.push({ color, label: k === 0 ? name : `${name} +${k}` });
+    }
+    // Other clones' guests (a clone planner sees only how many chairs they take).
+    while (chairs.length < usage.seats) chairs.push({ color: HIDDEN_SEAT_COLOR, label: null });
     return {
-      used: d?.usage[t.id]?.seats || 0,
+      used: usage.seats,
+      chairs,
+      guests: here.map((g) => ({ id: g.id, name: fullName(g.first_name, g.last_name), color: seatColor(g), extra: seatsFor(g) - 1, warning: !!guestWarning(g, t) })),
+      hiddenGuests: Math.max(0, usage.guests - here.length),
       pending: pendingTo.get(t.id) || 0,
       color: t.assembly_id ? (clone ? cloneColor(clone.index) : "#83879A") : null,
       enabled: !!me?.canSeat && (!me.assemblyId || t.assembly_id === me.assemblyId),
-      warnings: (guestsAt.get(t.id) || []).filter((g) => guestWarning(g, t)).length,
+      warnings: here.filter((g) => guestWarning(g, t)).length,
     };
-  }, [d, me, cloneById, pendingTo, guestsAt]);
+  }, [d, me, cloneById, pendingTo, guestsAt, seatColor]);
 
   const summary = useMemo(() => {
     const guests = d?.guests || [];
@@ -138,6 +167,16 @@ export function SeatingManager({ eventId, eventName }: { eventId: string; eventN
     if (parts.length) setMsg({ kind: "info", text: parts.join(" ") });
     setSelectedGuests(new Set());
     await load();
+  }
+
+  /** Owner/admin: guests at one table trade places with guests at another. */
+  async function swap(a: string[], b: string[]) {
+    setMsg(null);
+    const { ok, data: r } = await call(`${base}/swap`, { method: "POST", body: JSON.stringify({ a, b }) });
+    if (!ok) { setMsg({ kind: "error", text: r.error || "Something went wrong." }); await load(); return false; }
+    setMsg({ kind: "info", text: `Swapped ${a.length} guest${a.length === 1 ? "" : "s"} with ${b.length}.` });
+    await load();
+    return true;
   }
 
   // ---------- undo / redo (floor layout only) ----------
@@ -491,6 +530,10 @@ export function SeatingManager({ eventId, eventName }: { eventId: string; eventN
       clones={d.clones}
       isScoped={isScoped}
       seated={guestsAt.get(selected.id) || []}
+      otherTables={[...tables].sort(byLabel).filter((t) => t.id !== selected.id && look(t).enabled)
+        .map((t) => ({ id: t.id, label: t.label, used: d.usage[t.id]?.seats || 0, capacity: t.capacity }))}
+      guestsAt={(id) => guestsAt.get(id) || []}
+      canSwap={!isScoped}
       usage={d.usage[selected.id] || { seats: 0, guests: 0 }}
       incoming={d.requests.filter((r) => r.to_table_id === selected.id)}
       tableLabel={tableLabel}
@@ -498,6 +541,8 @@ export function SeatingManager({ eventId, eventName }: { eventId: string; eventN
       onDuplicate={() => duplicate(selected)}
       onDelete={() => remove(selected)}
       onUnseat={(ids) => seat(ids, null)}
+      onMoveTo={(ids, tid) => seat(ids, tid)}
+      onSwap={swap}
       onClose={() => setSelectedIds(new Set())}
     />
   );
@@ -606,10 +651,14 @@ export function SeatingManager({ eventId, eventName }: { eventId: string; eventN
                       ? `Drag from one end of the ${FIXTURE_SHAPES[drawTool].label.toLowerCase()} to the other (angles snap to 15°). Esc when done.`
                       : `Drag to draw the ${FIXTURE_SHAPES[drawTool].label.toLowerCase()}, or click to drop one. Esc when done.`
                     : seatMode ? `Click a table to seat ${selectedGuests.size} selected.`
-                    : me.canEditLayout ? (selected ? "Drag the handles to resize or rotate. Shift-click or drag a box to select several items." : "Shift-click or drag a box to select several items. Drag guests onto tables.")
+                    : me.canEditLayout ? (selected && selected.kind !== "table" ? "Drag the handles to resize or rotate. Shift-click or drag a box to select several items." : "Shift-click or drag a box to select several items. Drag guests onto tables.")
                     : me.canSeat ? "Drag guests onto a table, or select them and click a table." : "Click a table to see who's there."}
                 </p>
                 <div className="flex items-center gap-1 shrink-0">
+                  <button onClick={toggleNames} aria-pressed={showNames} title="Show each guest's name next to their chair"
+                    className={cn("mr-2 rounded border px-2.5 py-1 text-xs", showNames ? "border-wine-200 bg-wine-50 text-wine-700 font-medium" : "border-paper-line text-ink-soft hover:bg-paper-soft")}>
+                    {showNames ? "Hide names" : "Show names"}
+                  </button>
                   <button className="btn-ghost h-8 w-8 p-0" aria-label="Zoom out" title="Zoom out (or pinch / Ctrl+scroll)" onClick={() => zoomAt(Math.round((zoom - 0.1) * 10) / 10)}>−</button>
                   <button className="text-xs text-ink-soft tabular-nums w-12" onClick={() => zoomAt(1)} title="Reset zoom">{Math.round(zoom * 100)}%</button>
                   <button className="btn-ghost h-8 w-8 p-0" aria-label="Zoom in" title="Zoom in (or pinch / Ctrl+scroll)" onClick={() => zoomAt(Math.round((zoom + 0.1) * 10) / 10)}>+</button>
@@ -624,6 +673,7 @@ export function SeatingManager({ eventId, eventName }: { eventId: string; eventN
                     selected={selectedIds}
                     canEditLayout={me.canEditLayout}
                     seatMode={seatMode}
+                    showNames={showNames}
                     drawTool={drawTool}
                     look={look}
                     onSelect={setSelectedIds}
@@ -651,7 +701,7 @@ export function SeatingManager({ eventId, eventName }: { eventId: string; eventN
               {/* No clear spot over the floor (or a narrow screen): the inspector sits below it instead,
                   so it never covers the selected item. */}
               {selected && (!wide || docked) && <div className="max-w-xl">{inspector}</div>}
-              <Legend clones={d.clones} isScoped={isScoped} />
+              <Legend clones={d.clones} isScoped={isScoped} anyNoClone={d.guests.some((g) => g.table_id && !g.assembly_id)} />
             </>
           ) : (
             <TableListView
@@ -711,16 +761,25 @@ function AddMenu({ onAdd, onSeveral }: { onAdd: (kind: SeatingKind, shape: strin
   );
 }
 
-function Legend({ clones, isScoped }: { clones: { id: string; name: string; index: number }[]; isScoped: boolean }) {
+function Legend({ clones, isScoped, anyNoClone }: { clones: { id: string; name: string; index: number }[]; isScoped: boolean; anyNoClone: boolean }) {
+  const dot = (color: string) => <span className="h-3 w-3 rounded-full border border-ink/30" style={{ backgroundColor: color }} />;
   return (
-    <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-ink-soft">
-      {clones.map((c) => (
-        <span key={c.id} className="inline-flex items-center gap-1.5"><span className="h-3 w-3 rounded-sm border-2" style={{ borderColor: cloneColor(c.index) }} />{c.name}</span>
-      ))}
-      {isScoped && <span className="inline-flex items-center gap-1.5"><span className="h-3 w-3 rounded-sm border-2 border-ink-faint opacity-50" />Other clones&apos; tables</span>}
-      <span className="inline-flex items-center gap-1.5"><span className="h-3 w-3 rounded-full bg-wine-400" />Taken seat</span>
-      <span className="inline-flex items-center gap-1.5"><span className="h-4 min-w-4 px-1 rounded-full bg-clay-500 text-paper text-[9px] font-semibold flex items-center justify-center">!</span>Needs a second look</span>
-      <span className="inline-flex items-center gap-1.5"><span className="h-4 min-w-4 px-1 rounded-full bg-brass-400 text-ink text-[9px] font-semibold flex items-center justify-center">+1</span>Awaiting approval</span>
+    <div className="space-y-1 text-xs text-ink-soft">
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
+        {clones.length === 0 && <span className="inline-flex items-center gap-1.5">{dot(SEAT_COLOR)}Taken seat</span>}
+        {clones.map((c) => (
+          <span key={c.id} className="inline-flex items-center gap-1.5">{dot(cloneColor(c.index))}{c.name}</span>
+        ))}
+        {clones.length > 0 && anyNoClone && <span className="inline-flex items-center gap-1.5">{dot(NO_CLONE_SEAT_COLOR)}No clone</span>}
+        {isScoped && <span className="inline-flex items-center gap-1.5">{dot(HIDDEN_SEAT_COLOR)}Other clones&apos; guests</span>}
+        <span className="inline-flex items-center gap-1.5"><span className="h-4 min-w-4 px-1 rounded-full bg-clay-500 text-paper text-[9px] font-semibold flex items-center justify-center">!</span>Needs a second look</span>
+        <span className="inline-flex items-center gap-1.5"><span className="h-4 min-w-4 px-1 rounded-full bg-brass-400 text-ink text-[9px] font-semibold flex items-center justify-center">+1</span>Awaiting approval</span>
+      </div>
+      {clones.length > 0 && (
+        <p className="text-ink-faint">
+          Each chair takes the color of the guest&apos;s clone. A table&apos;s outline shows the clone it&apos;s set aside for{isScoped && <>; faded tables belong to other clones</>}.
+        </p>
+      )}
     </div>
   );
 }

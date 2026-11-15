@@ -176,6 +176,17 @@ export function cloneColor(index: number): string {
   return CLONE_COLORS[((index % CLONE_COLORS.length) + CLONE_COLORS.length) % CLONE_COLORS.length];
 }
 
+/** Chair colors for seated guests: their clone's color, or one of these. */
+export const SEAT_COLOR = "#B84D6E";          // event has no clones
+export const NO_CLONE_SEAT_COLOR = "#4A4F63"; // guest isn't in any clone
+export const HIDDEN_SEAT_COLOR = "#B9BCC8";   // another clone's guest (a clone planner can't see who)
+
+/** Guests in the order they fill a table's chairs: households together, then by name. */
+export function seatingOrder<T extends Pick<SeatingGuest, "group_name" | "first_name" | "last_name">>(guests: T[]): T[] {
+  const key = (g: T) => `${(g.group_name || g.last_name || g.first_name).toLowerCase()}\u0000${g.first_name.toLowerCase()}\u0000${g.last_name.toLowerCase()}`;
+  return [...guests].sort((a, b) => key(a).localeCompare(key(b)));
+}
+
 /** Tables needed to seat `seatsNeeded` more people at `perTable` each. */
 export function tablesNeeded(seatsNeeded: number, perTable: number): number {
   return seatsNeeded <= 0 || perTable <= 0 ? 0 : Math.ceil(seatsNeeded / perTable);

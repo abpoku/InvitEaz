@@ -12,6 +12,9 @@ interface Props {
   clones: { id: string; name: string }[];
   isScoped: boolean;
   seated: SeatingGuest[];          // the guests at this table the viewer may see
+  otherTables: { id: string; label: string; used: number; capacity: number | null }[]; // tables the viewer can seat at
+  guestsAt: (tableId: string) => SeatingGuest[];
+  canSwap: boolean;                // owner/admin
   usage: { seats: number; guests: number };
   incoming: SeatingRequest[];      // pending moves onto this table
   tableLabel: (id: string | null) => string;
@@ -19,12 +22,14 @@ interface Props {
   onDuplicate: () => void;
   onDelete: () => void;
   onUnseat: (ids: string[]) => void;
+  onMoveTo: (ids: string[], tableId: string) => void;
+  onSwap: (here: string[], there: string[]) => Promise<boolean>;
   onClose: () => void;
 }
 
 /** Details for the selected table/fixture: who's seated (with anything that needs a second look),
  * moves waiting on approval, and — for owner/admin — its name, size, shape, capacity and clone. */
-export function TableInspector({ item, canEditLayout, canSeat, clones, isScoped, seated, usage, incoming, tableLabel, onPatch, onDuplicate, onDelete, onUnseat, onClose }: Props) {
+export function TableInspector({ item, canEditLayout, canSeat, clones, isScoped, seated, otherTables, guestsAt, canSwap, usage, incoming, tableLabel, onPatch, onDuplicate, onDelete, onUnseat, onMoveTo, onSwap, onClose }: Props) {
   const isTable = item.kind === "table";
   const line = LINE_SHAPES.has(item.shape);
   const isText = item.shape === "text";
@@ -34,6 +39,24 @@ export function TableInspector({ item, canEditLayout, canSeat, clones, isScoped,
   const [width, setWidth] = useState(String(item.width));
   const [height, setHeight] = useState(String(item.height));
   const hidden = usage.guests - seated.length;
+  // Guests picked in the Seated list, for Unseat / Move / Swap. Anyone who has left the table drops out.
+  const [picked, setPicked] = useState<Set<string>>(new Set());
+  const chosen = seated.filter((g) => picked.has(g.id));
+  const allPicked = seated.length > 0 && chosen.length === seated.length;
+  const [swapTable, setSwapTable] = useState<string | null>(null);
+  const [swapWith, setSwapWith] = useState<Set<string>>(new Set());
+  const [busy, setBusy] = useState(false);
+  const swapGuests = swapTable ? guestsAt(swapTable) : [];
+  const swapChosen = swapGuests.filter((g) => swapWith.has(g.id));
+  const toggle = (set: Set<string>, id: string) => { const n = new Set(set); if (n.has(id)) n.delete(id); else n.add(id); return n; };
+  function done() { setPicked(new Set()); setSwapTable(null); setSwapWith(new Set()); }
+  async function doSwap() {
+    if (!chosen.length || !swapChosen.length) return;
+    setBusy(true);
+    const ok = await onSwap(chosen.map((g) => g.id), swapChosen.map((g) => g.id));
+    setBusy(false);
+    if (ok) done();
+  }
   const over = item.capacity !== null && usage.seats > item.capacity;
   const cloneName = item.assembly_id ? clones.find((c) => c.id === item.assembly_id)?.name || "another clone" : null;
 
@@ -60,7 +83,15 @@ export function TableInspector({ item, canEditLayout, canSeat, clones, isScoped,
 
       {isTable && (
         <div>
-          <p className="text-xs uppercase tracking-wide text-ink-faint">Seated</p>
+          <div className="flex items-center justify-between gap-2">
+            <p className="text-xs uppercase tracking-wide text-ink-faint">Seated</p>
+            {canSeat && seated.length > 1 && (
+              <label className="inline-flex items-center gap-1.5 text-xs text-ink-soft cursor-pointer">
+                <input type="checkbox" checked={allPicked} onChange={() => { setPicked(allPicked ? new Set() : new Set(seated.map((g) => g.id))); setSwapTable(null); }} />
+                Select all
+              </label>
+            )}
+          </div>
           {over && <p className="mt-1 text-xs text-clay-600">Over capacity by {usage.seats - item.capacity!} — move someone or raise the capacity.</p>}
           <ul className="mt-1.5 space-y-1">
             {seated.map((g) => {
@@ -71,8 +102,12 @@ export function TableInspector({ item, canEditLayout, canSeat, clones, isScoped,
                   key={g.id}
                   draggable={canSeat}
                   onDragStart={(e) => { e.dataTransfer.setData(GUEST_DRAG, JSON.stringify([g.id])); e.dataTransfer.effectAllowed = "move"; }}
-                  className={cn("flex items-center gap-2 text-sm rounded px-1.5 py-1", canSeat && "cursor-grab hover:bg-paper-soft")}
+                  className={cn("flex items-center gap-2 text-sm rounded px-1.5 py-1", canSeat && "cursor-grab hover:bg-paper-soft", picked.has(g.id) && "bg-wine-50")}
                 >
+                  {canSeat && (
+                    <input type="checkbox" aria-label={`Select ${fullName(g.first_name, g.last_name)}`} checked={picked.has(g.id)}
+                      onChange={() => { setPicked((p) => toggle(p, g.id)); setSwapTable(null); }} className="shrink-0" />
+                  )}
                   <span className="truncate text-ink">{fullName(g.first_name, g.last_name)}</span>
                   {seats > 1 && <span className="chip bg-ink/5 text-ink-soft">+{seats - 1}</span>}
                   {w && <span title={WARNING_TEXT[w]} className="chip bg-clay-500/10 text-clay-600">{w === "other_clone" ? "Other clone" : w === "no_response" ? "No response" : w === "maybe" ? "Maybe" : "Declined"}</span>}
@@ -88,6 +123,60 @@ export function TableInspector({ item, canEditLayout, canSeat, clones, isScoped,
             {hidden > 0 && <li className="text-xs text-ink-faint px-1.5">+{hidden} guest{hidden === 1 ? "" : "s"} from other clones</li>}
             {usage.guests === 0 && <li className="text-sm text-ink-faint px-1.5">Nobody yet — drag guests here.</li>}
           </ul>
+          {canSeat && chosen.length > 0 && (
+            <div className="mt-2 rounded border border-wine-100 bg-wine-50/60 p-2 space-y-2">
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="text-xs font-medium text-wine-700">{chosen.length} selected</span>
+                <button className="btn-secondary py-1 px-2 text-xs" disabled={busy}
+                  onClick={() => { onUnseat(chosen.map((g) => g.id)); done(); }}>
+                  {isScoped ? "Ask to unseat" : "Unseat"}
+                </button>
+                {otherTables.length > 0 && (
+                  <select className="input py-1 text-xs w-auto" value="" disabled={busy} aria-label="Move selected guests to another table"
+                    onChange={(e) => { if (e.target.value) { onMoveTo(chosen.map((g) => g.id), e.target.value); done(); } }}>
+                    <option value="">{isScoped ? "Ask to move to…" : "Move to…"}</option>
+                    {otherTables.map((t) => <option key={t.id} value={t.id}>{t.label} ({t.used}/{t.capacity ?? "∞"})</option>)}
+                  </select>
+                )}
+                {canSwap && otherTables.length > 0 && (
+                  <button className={cn("btn-secondary py-1 px-2 text-xs", swapTable !== null && "ring-2 ring-wine-200")} disabled={busy}
+                    onClick={() => { setSwapTable(swapTable === null ? "" : null); setSwapWith(new Set()); }}>
+                    Swap…
+                  </button>
+                )}
+              </div>
+              {swapTable !== null && (
+                <div className="space-y-1.5">
+                  <select className="input py-1 text-xs" value={swapTable} aria-label="Table to swap with"
+                    onChange={(e) => { setSwapTable(e.target.value); setSwapWith(new Set()); }}>
+                    <option value="">Swap with guests at…</option>
+                    {otherTables.filter((t) => guestsAt(t.id).length > 0).map((t) => <option key={t.id} value={t.id}>{t.label} ({t.used}/{t.capacity ?? "∞"})</option>)}
+                  </select>
+                  {swapTable && (
+                    <>
+                      <ul className="max-h-40 overflow-y-auto rounded border border-paper-line bg-white">
+                        {swapGuests.map((g) => (
+                          <li key={g.id}>
+                            <label className="flex items-center gap-2 px-2 py-1 text-sm cursor-pointer hover:bg-paper-soft">
+                              <input type="checkbox" checked={swapWith.has(g.id)} onChange={() => setSwapWith((s) => toggle(s, g.id))} />
+                              <span className="truncate">{fullName(g.first_name, g.last_name)}</span>
+                              {seatsFor(g) > 1 && <span className="chip bg-ink/5 text-ink-soft">+{seatsFor(g) - 1}</span>}
+                            </label>
+                          </li>
+                        ))}
+                      </ul>
+                      <div className="flex items-center gap-2">
+                        <button className="btn-primary py-1 px-2.5 text-xs whitespace-nowrap shrink-0" disabled={busy || swapChosen.length === 0} onClick={doSwap}>
+                          {busy ? "Swapping…" : `Swap ${chosen.length} ↔ ${swapChosen.length || "…"}`}
+                        </button>
+                        <span className="text-[11px] text-ink-faint">Selected guests here go to {tableLabel(swapTable)}; the ones you tick there come here.</span>
+                      </div>
+                    </>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
           {incoming.length > 0 && (
             <div className="mt-3">
               <p className="text-xs uppercase tracking-wide text-ink-faint">Awaiting approval</p>
@@ -179,7 +268,9 @@ export function TableInspector({ item, canEditLayout, canSeat, clones, isScoped,
             <button className="btn-ghost py-1.5 text-sm text-clay-600 hover:text-clay-600" onClick={onDelete}>Delete</button>
           </div>
           <p className="text-[11px] text-ink-faint">
-            Tip: drag to move; drag the handles to {line ? "change length and angle" : "resize or rotate"} (Shift for {line ? "any angle" : "same proportions"}); arrow keys nudge.
+            {isTable
+              ? "Tip: drag to move; change its size and seats above; arrow keys nudge."
+              : <>Tip: drag to move; drag the handles to {line ? "change length and angle" : "resize or rotate"} (Shift for {line ? "any angle" : "same proportions"}); arrow keys nudge.</>}
           </p>
         </div>
       )}

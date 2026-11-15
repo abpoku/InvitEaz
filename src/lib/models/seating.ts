@@ -153,13 +153,13 @@ export async function tableUsage(eventId: string): Promise<Record<string, { seat
 
 /** Locks the table, then refuses if seating `incoming` there would put it over capacity. Guests
  * already at that table aren't double-counted. Must run inside the same transaction as the write. */
-async function checkCapacity(tx: Tx, eventId: string, tableId: string, incoming: SeatingGuest[]) {
+async function checkCapacity(tx: Tx, eventId: string, tableId: string, incoming: SeatingGuest[], leaving: Set<string> = new Set()) {
   const [table] = await tx.query("SELECT label, capacity, kind FROM seating_items WHERE id = ? AND event_id = ? FOR UPDATE", [tableId, eventId]);
   if (!table || table.kind !== "table") throw new SeatingError("That table no longer exists.", 404);
   if (table.capacity === null) return;
   const incomingIds = new Set(incoming.map((g) => g.id));
   const seated = await tx.query<SeatingGuest>(`${GUEST_SELECT} WHERE iv.event_id = ? AND iv.active = 1 AND sa.table_id = ?`, [eventId, tableId]);
-  const used = seated.filter((g) => !incomingIds.has(g.id)).reduce((n, g) => n + seatsFor(g), 0);
+  const used = seated.filter((g) => !incomingIds.has(g.id) && !leaving.has(g.id)).reduce((n, g) => n + seatsFor(g), 0);
   const need = incoming.reduce((n, g) => n + seatsFor(g), 0);
   if (used + need > Number(table.capacity)) {
     const left = Math.max(0, Number(table.capacity) - used);
@@ -224,6 +224,32 @@ export async function seatGuests(eventId: string, inviteeIds: string[], tableId:
       );
     }
     return { seated: direct.length, requested: asks.length };
+  });
+  await supersedeStaleRequests(eventId);
+  return result;
+}
+
+/** Owner/admin: trade places — `aIds` (all at one table) go to the other table and `bIds` (all at
+ * that other table) come the other way, in one transaction. Capacity is checked on the result, so a
+ * swap between two full tables works when the numbers balance. */
+export async function swapGuests(eventId: string, aIds: string[], bIds: string[], actor: SeatActor) {
+  if (actor.assemblyId) throw new SeatingError("Only the event owner or an admin can swap guests between tables.", 403);
+  if (aIds.some((id) => bIds.includes(id))) throw new SeatingError("A guest can't be on both sides of a swap.", 400);
+  const result = await transaction(async (tx) => {
+    const a = await loadGuests(tx, eventId, aIds);
+    const b = await loadGuests(tx, eventId, bIds);
+    const ta = a[0]?.table_id, tb = b[0]?.table_id;
+    if (!ta || !tb || a.some((g) => g.table_id !== ta) || b.some((g) => g.table_id !== tb)) {
+      throw new SeatingError("Someone in this swap has moved since you opened it. Refresh and try again.", 409);
+    }
+    if (ta === tb) throw new SeatingError("Those guests are already at the same table.", 400);
+    // Lock both tables in a fixed order so two swaps between the same pair can't deadlock.
+    for (const id of [ta, tb].sort()) await tx.query("SELECT id FROM seating_items WHERE id = ? AND event_id = ? FOR UPDATE", [id, eventId]);
+    await checkCapacity(tx, eventId, ta, b, new Set(aIds));
+    await checkCapacity(tx, eventId, tb, a, new Set(bIds));
+    await writeSeats(tx, eventId, a, tb, actor.email);
+    await writeSeats(tx, eventId, b, ta, actor.email);
+    return { swapped: a.length + b.length };
   });
   await supersedeStaleRequests(eventId);
   return result;

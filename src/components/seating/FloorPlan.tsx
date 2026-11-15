@@ -3,14 +3,23 @@
 import { forwardRef, useRef, useState } from "react";
 import { cn } from "@/lib/utils";
 import {
-  clampGroupDelta, floorSize, itemLayer, itemsInRect, lineEnds, lineFromPointer, resizeBox, rotateToward, structureFromDrag,
+  clampGroupDelta, floorSize, itemBounds, itemLayer, itemsInRect, lineEnds, lineFromPointer, resizeBox, rotateToward, structureFromDrag,
   DEFAULT_ITEM_COLOR, FIXTURE_SHAPES, GRID, LINE_SHAPES, RESIZE_HANDLES, SQUARE_SHAPES, UNLABELED_SHAPES,
   type Box, type Handle, type SeatingItem,
 } from "@/lib/seating";
 import { GUEST_DRAG } from "./types";
 
+/** One chair around a table, in the order they're drawn. `label` is shown when names are on. */
+export interface Chair { color: string; label: string | null; }
+
+/** One seated guest, for the hover list. */
+export interface PeekGuest { id: string; name: string; color: string; extra: number; warning: boolean; }
+
 export interface TableLook {
   used: number;
+  chairs: Chair[];        // taken chairs, colored by each guest's clone
+  guests: PeekGuest[];    // guests the viewer may see
+  hiddenGuests: number;   // other clones' guests (clone planners only)
   pending: number;
   color: string | null;   // clone color when set aside for a clone
   enabled: boolean;       // can the viewer seat guests here
@@ -23,6 +32,7 @@ interface Props {
   selected: Set<string>;
   canEditLayout: boolean;
   seatMode: boolean;           // guests are selected: clicking a table seats them
+  showNames: boolean;          // each guest's name next to their chair
   drawTool: string | null;     // a shape being drawn, or null
   look: (table: SeatingItem) => TableLook;
   onSelect: (ids: Set<string>) => void;
@@ -51,7 +61,7 @@ type Gesture =
  * draws that item instead. Everyone: guests are dropped onto tables with native drag-and-drop from the
  * guest panel, or seated by selecting them and clicking a table — the tap path phones and keyboards use. */
 export const FloorPlan = forwardRef<HTMLDivElement, Props>(function FloorPlan(
-  { items, zoom, selected, canEditLayout, seatMode, drawTool, look, onSelect, onSeatSelected, onDropGuests, onMove, onDraw, onReshape, onGesture }, exportRef
+  { items, zoom, selected, canEditLayout, seatMode, showNames, drawTool, look, onSelect, onSeatSelected, onDropGuests, onMove, onDraw, onReshape, onGesture }, exportRef
 ) {
   const gesture = useRef<Gesture | null>(null);
   const layer = useRef<HTMLDivElement | null>(null);
@@ -60,9 +70,13 @@ export const FloorPlan = forwardRef<HTMLDivElement, Props>(function FloorPlan(
   const [marquee, setMarquee] = useState<{ left: number; top: number; right: number; bottom: number } | null>(null);
   const [preview, setPreview] = useState<{ shape: string; box: Box } | null>(null);
   const [hover, setHover] = useState<string | null>(null);
+  const [peek, setPeek] = useState<string | null>(null);   // table under the mouse
   const size = floorSize(items);
   const ordered = [...items].sort((a, b) => itemLayer(a) - itemLayer(b));
-  const handlesFor = canEditLayout && !drawTool && selected.size === 1 ? [...selected][0] : null;
+  // Tables are resized from the inspector (width / length / seats), so they get no handles.
+  const one = canEditLayout && !drawTool && selected.size === 1 ? items.find((i) => selected.has(i.id)) : undefined;
+  const handlesFor = one && one.kind !== "table" ? one.id : null;
+  const peekItem = peek && !offset && !reshape && !marquee && !preview ? items.find((i) => i.id === peek && i.kind === "table") : undefined;
 
   /** Pointer position in floor units. */
   function floorPoint(e: React.PointerEvent) {
@@ -259,6 +273,8 @@ export const FloorPlan = forwardRef<HTMLDivElement, Props>(function FloorPlan(
               onPointerMove={move}
               onPointerUp={() => itemUp(item)}
               onPointerCancel={cancel}
+              onPointerEnter={(e) => { if (isTable && e.pointerType === "mouse") setPeek(item.id); }}
+              onPointerLeave={() => setPeek((p) => (p === item.id ? null : p))}
               onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); activate(item, e.shiftKey); } }}
               onDragOver={(e) => {
                 if (!isTable || !l!.enabled || !e.dataTransfer.types.includes(GUEST_DRAG)) return;
@@ -285,7 +301,7 @@ export const FloorPlan = forwardRef<HTMLDivElement, Props>(function FloorPlan(
             >
               {isTable ? (
                 <>
-                  <Chairs item={shown} used={l!.used} over={over} />
+                  <Chairs item={shown} chairs={l!.chairs} showNames={showNames} zoom={zoom} />
                   <div
                     className={cn(
                       "absolute inset-0 flex items-center justify-center text-center border-2 transition-shadow",
@@ -328,6 +344,7 @@ export const FloorPlan = forwardRef<HTMLDivElement, Props>(function FloorPlan(
           );
         })}
 
+        {peekItem && <Peek item={peekItem} look={look(peekItem)} zoom={zoom} floorWidth={size.width} />}
         {preview && (
           <div className="absolute pointer-events-none opacity-60" style={{ left: preview.box.x, top: preview.box.y, width: preview.box.width, height: preview.box.height, transform: `rotate(${preview.box.rotation}deg)` }}>
             <Fixture item={{ shape: preview.shape, label: FIXTURE_SHAPES[preview.shape]?.label || "", color: null, ...preview.box }} selected={false} />
@@ -501,45 +518,96 @@ export function Fixture({ item, selected }: { item: Pick<SeatingItem, "shape" | 
   }
 }
 
-/** Chair dots around a table: filled for taken seats, red if over. Capped so a huge table stays readable. */
-function Chairs({ item, used, over }: { item: SeatingItem; used: number; over: boolean }) {
+/** Hover card beside a table listing who sits there. Drawn at the same on-screen size at any zoom. */
+function Peek({ item, look, zoom, floorWidth }: { item: SeatingItem; look: TableLook; zoom: number; floorWidth: number }) {
+  const W = 220; // screen px
+  const b = itemBounds(item);
+  const reach = 30; // clear the chairs
+  const right = b.right + reach + W / zoom <= floorWidth;
+  const left = right ? b.right + reach : Math.max(0, b.left - reach - W / zoom);
+  return (
+    <div className="absolute z-40 pointer-events-none origin-top-left" style={{ left, top: Math.max(0, b.top), width: W, transform: `scale(${1 / zoom})` }}>
+      <div className="card px-3 py-2 shadow-lg text-left">
+        <p className="text-sm font-medium text-ink">{item.label} <span className="text-xs font-normal text-ink-faint tabular-nums">· {look.used}/{item.capacity ?? "∞"}</span></p>
+        {look.guests.length === 0 && look.hiddenGuests === 0 ? (
+          <p className="mt-1 text-xs text-ink-faint">Nobody seated yet.</p>
+        ) : (
+          <ul className="mt-1 space-y-0.5 max-h-72 overflow-hidden">
+            {look.guests.map((g) => (
+              <li key={g.id} className="flex items-center gap-1.5 text-xs text-ink">
+                <span className="h-2 w-2 rounded-full shrink-0" style={{ backgroundColor: g.color }} />
+                <span className="truncate">{g.name}</span>
+                {g.extra > 0 && <span className="text-ink-faint shrink-0">+{g.extra}</span>}
+                {g.warning && <span className="text-clay-600 font-semibold shrink-0" title="Needs a second look">!</span>}
+              </li>
+            ))}
+            {look.hiddenGuests > 0 && <li className="text-xs text-ink-faint">+{look.hiddenGuests} from other clones</li>}
+          </ul>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/** Chair dots around a table: filled in each guest's clone color for taken seats. With names on,
+ * each guest's name sits just outside their chair, reading outward. Capped so a huge table stays readable. */
+function Chairs({ item, chairs, showNames, zoom }: { item: SeatingItem; chairs: Chair[]; showNames: boolean; zoom: number }) {
   const n = Math.min(item.capacity ?? 0, 30);
   if (n === 0) return null;
   const C = 14, gap = 6;
-  const spots: { x: number; y: number }[] = [];
+  // a = the direction (degrees) pointing away from the table, for name labels.
+  const spots: { x: number; y: number; a: number }[] = [];
   const w = item.width, h = item.height;
   if (item.shape === "round") {
     const r = Math.max(w, h) / 2 + gap + C / 2;
     for (let i = 0; i < n; i++) {
       const a = (i / n) * Math.PI * 2 - Math.PI / 2;
-      spots.push({ x: w / 2 + Math.cos(a) * r, y: h / 2 + Math.sin(a) * r });
+      spots.push({ x: w / 2 + Math.cos(a) * r, y: h / 2 + Math.sin(a) * r, a: (a * 180) / Math.PI });
     }
   } else if (item.shape === "head") {
-    for (let i = 0; i < n; i++) spots.push({ x: ((i + 0.5) / n) * w, y: -gap - C / 2 });
+    for (let i = 0; i < n; i++) spots.push({ x: ((i + 0.5) / n) * w, y: -gap - C / 2, a: -90 });
   } else if (item.shape === "square") {
     // Round-robin across the four sides.
     const sides = [0, 1, 2, 3].map((s) => Math.floor(n / 4) + (s < n % 4 ? 1 : 0));
     sides.forEach((count, s) => {
       for (let i = 0; i < count; i++) {
         const t = (i + 0.5) / count;
-        spots.push([{ x: t * w, y: -gap - C / 2 }, { x: w + gap + C / 2, y: t * h }, { x: (1 - t) * w, y: h + gap + C / 2 }, { x: -gap - C / 2, y: (1 - t) * h }][s]);
+        spots.push([{ x: t * w, y: -gap - C / 2, a: -90 }, { x: w + gap + C / 2, y: t * h, a: 0 }, { x: (1 - t) * w, y: h + gap + C / 2, a: 90 }, { x: -gap - C / 2, y: (1 - t) * h, a: 180 }][s]);
       }
     });
   } else {
     const top = Math.ceil(n / 2), bottom = n - top;
-    for (let i = 0; i < top; i++) spots.push({ x: ((i + 0.5) / top) * w, y: -gap - C / 2 });
-    for (let i = 0; i < bottom; i++) spots.push({ x: ((i + 0.5) / bottom) * w, y: h + gap + C / 2 });
+    for (let i = 0; i < top; i++) spots.push({ x: ((i + 0.5) / top) * w, y: -gap - C / 2, a: -90 });
+    for (let i = 0; i < bottom; i++) spots.push({ x: ((i + 0.5) / bottom) * w, y: h + gap + C / 2, a: 90 });
   }
+  // Names stay legible when zoomed out, without growing past a sensible size when zoomed in.
+  const font = Math.min(16, Math.max(10, 9 / zoom));
   return (
     <>
-      {spots.map((s, i) => (
-        <span
-          key={i}
-          className={cn("absolute rounded-full border pointer-events-none",
-            i < used ? (over ? "bg-clay-500 border-clay-600" : "bg-wine-400 border-wine-500") : "bg-white border-ink/25")}
-          style={{ width: C, height: C, left: s.x - C / 2, top: s.y - C / 2 }}
-        />
-      ))}
+      {spots.map((s, i) => {
+        const chair = chairs[i];
+        // Flip text that would read upside down (pointing left once the table's rotation is added).
+        const facing = (((s.a + item.rotation) % 360) + 360) % 360;
+        const flip = facing > 90 && facing < 270;
+        return (
+          <span key={i}>
+            <span
+              className={cn("absolute rounded-full border pointer-events-none", !chair && "bg-white border-ink/25")}
+              style={{ width: C, height: C, left: s.x - C / 2, top: s.y - C / 2, ...(chair ? { backgroundColor: chair.color, borderColor: "rgba(30,34,51,0.35)" } : {}) }}
+            />
+            {showNames && chair?.label && (
+              <span className="absolute pointer-events-none origin-left" style={{ left: s.x, top: s.y, transform: `rotate(${s.a}deg)` }}>
+                <span
+                  className="absolute top-0 whitespace-nowrap max-w-[130px] truncate rounded-sm bg-white/85 px-0.5 font-medium leading-none text-ink"
+                  style={{ left: C / 2 + 3, fontSize: font, transform: `translateY(-50%)${flip ? " rotate(180deg)" : ""}` }}
+                >
+                  {chair.label}
+                </span>
+              </span>
+            )}
+          </span>
+        );
+      })}
     </>
   );
 }
