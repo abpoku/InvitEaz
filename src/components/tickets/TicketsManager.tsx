@@ -9,6 +9,8 @@ import { EditPaymentsModal } from "@/components/tickets/EditPaymentsModal";
 import { ChangeTicketTypeModal } from "@/components/tickets/ChangeTicketTypeModal";
 import { RefundModal } from "@/components/tickets/RefundModal";
 import { TransactionsModal } from "@/components/tickets/TransactionsModal";
+import { TableExportMenu } from "@/components/TableExportMenu";
+import type { ExportDoc } from "@/lib/table-export";
 import { ViewToggle } from "@/components/ViewToggle";
 import { SortTh, useTableSort } from "@/components/SortableHeader";
 import { SortSelect, MobileListHeader } from "@/components/MobileList";
@@ -133,6 +135,48 @@ export function TicketsManager({
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [groups, sort]);
 
+  const RSVP_LABEL: Record<string, string> = { attending: "Attending", maybe: "Maybe", declined: "Declined" };
+  const PAY_LABEL: Record<PayFilter, string> = { all: "", due: "Balance due", paid: "Paid in full", credit: "Credit (overpaid)", none: "Nothing owed" };
+
+  /** The table as it's shown — current view, filters and sort — as a file (Export menu). */
+  function exportTable(): ExportDoc {
+    const label = summary.fieldLabel || "Ticket type";
+    const filters = [
+      q.trim() && `Search: "${q.trim()}"`,
+      rsvp !== "all" && (rsvp === "no_response" ? "No response" : RSVP_LABEL[rsvp]),
+      pay !== "all" && PAY_LABEL[pay],
+      tier !== "all" && (tier === NO_TIER ? `No ${label.toLowerCase()}` : tier),
+    ].filter(Boolean);
+    const context = [...exportContext, ...(filters.length ? [`Filtered: ${filters.join(" · ")} (${shown} of ${total})`] : [])];
+    const base = { context, note: "Balance is what's still owed; a negative balance is a credit (overpaid)." };
+    if (view === "individual") {
+      return {
+        ...base, title: "Tickets — individuals", fileBase: `${exportContext[0] || "event"}-tickets`,
+        tables: [{
+          name: "Individuals",
+          columns: [{ label: "Name" }, { label: "Group/Household" }, { label }, { label: "RSVP" },
+            { label: "Owed", align: "right" }, { label: "Paid", align: "right" }, { label: "Paid by group", align: "right" }, { label: "Balance", align: "right" }],
+          rows: sortedInvitees.map((i) => [
+            i.name, i.groupName || "", i.tier || "", i.rsvpStatus ? RSVP_LABEL[i.rsvpStatus] || i.rsvpStatus : "No response",
+            { cents: i.owedCents }, { cents: i.paidCents }, { cents: i.groupShareCents }, { cents: i.balanceCents },
+          ]),
+        }],
+      };
+    }
+    return {
+      ...base, title: "Tickets — groups", fileBase: `${exportContext[0] || "event"}-tickets-groups`,
+      tables: [{
+        name: "Groups",
+        columns: [{ label: "Group/Household" }, { label: "Members", align: "right" }, { label },
+          { label: "Owed", align: "right" }, { label: "Paid", align: "right" }, { label: "Balance", align: "right" }],
+        rows: sortedGroups.map((g) => [
+          g.name, g.memberCount, g.tierBreakdown.map((t) => `${t.tier || `No ${label.toLowerCase()}`} x${t.count}`).join(", "),
+          { cents: g.owedCents }, { cents: g.paidCents }, { cents: g.balanceCents },
+        ]),
+      }],
+    };
+  }
+
   function rowActions(target: PaymentTarget) {
     return (
       <KebabMenu
@@ -167,6 +211,7 @@ export function TicketsManager({
       <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
         {summary.hasGroups ? <ViewToggle value={view} onChange={setView} /> : <span />}
         <div className="flex flex-wrap items-center gap-2">
+          {shown > 0 && <TableExportMenu doc={exportTable()} />}
           <button onClick={() => setShowTransactions(true)} className="btn-secondary">All transactions</button>
           {canMutate && (
             <button onClick={() => setDialog({ kind: "receive" })} className="btn-primary">Receive payment</button>

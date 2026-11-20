@@ -346,7 +346,9 @@ Overview's config sections; clone-scoped roles never see it).
   Donations it is a record, not a total: voided entries (struck through) and payments from removed
   invitees stay in it, so its rows deliberately don't add up to the summary card. Read-only (viewers
   see it too), clone-scoped like the rest of the tab.
-- **Tickets tab UI**: a "Receive payment" button (pick an invitee or group first) plus a ⋮
+- **Tickets tab UI**: an Export menu (PDF / PNG / Excel / CSV via `TableExportMenu` + `lib/table-export.ts`)
+  that writes exactly the rows on screen — current Individual/Group view, filters (named in the file's
+  header) and sort; a "Receive payment" button (pick an invitee or group first) plus a ⋮
   `KebabMenu` per row — Edit (`EditPaymentsModal`: edit/void/split), Receive payment, Change
   ticket type (`ChangeTicketTypeModal` → `PATCH .../ticketing/assignments`, assembly-scoped
   like payments, only configured tier names accepted). `KebabMenu` positions its panel
