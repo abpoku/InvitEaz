@@ -1,10 +1,11 @@
 "use client";
 
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { Search } from "lucide-react";
 import { cn, fullName } from "@/lib/utils";
 import {
   FIXTURE_SHAPES, LINE_SHAPES, STRUCTURE_TOOLS, TABLE_SHAPES, clampGroupDelta, cloneColor, guestWarning, nextTableNumber,
-  placeBelow, seatsFor, seatingOrder, GRID, HIDDEN_SEAT_COLOR, NO_CLONE_SEAT_COLOR, SEAT_COLOR, type Box, type SeatingGuest, type SeatingItem, type SeatingKind,
+  matchesGuestSearch, placeBelow, seatsFor, seatingOrder, GRID, HIDDEN_SEAT_COLOR, NO_CLONE_SEAT_COLOR, SEAT_COLOR, type Box, type SeatingGuest, type SeatingItem, type SeatingKind,
 } from "@/lib/seating";
 import type { ExportDoc } from "@/lib/table-export";
 import { Modal } from "@/components/Modal";
@@ -16,7 +17,7 @@ import { SeatingSummary } from "./SeatingSummary";
 import { GenerateTablesModal, type GenerateSpec } from "./GenerateTablesModal";
 import { SeatingExportMenu } from "./SeatingExportMenu";
 import { TableListView } from "./TableListView";
-import { DrawToolbar } from "./DrawToolbar";
+import { DrawToolbar, HistoryButtons } from "./DrawToolbar";
 import { FloatingInspector } from "./FloatingInspector";
 import type { SeatingData } from "./types";
 
@@ -68,6 +69,7 @@ export function SeatingManager({ eventId, eventName }: { eventId: string; eventN
     if (!ok) { setLoadError(data.error || "We couldn't load seating. Try refreshing the page."); return; }
     setLoadError(null);
     setData(data);
+    return data as SeatingData;
   }, [base]);
 
   useEffect(() => { load(); }, [load]);
@@ -107,6 +109,27 @@ export function SeatingManager({ eventId, eventName }: { eventId: string; eventN
   const pendingIds = useMemo(() => new Set((d?.requests || []).map((r) => r.invitee_id)), [d]);
   const tableLabel = useCallback((id: string | null) => (id ? itemById.get(id)?.label || "a removed table" : "no table"), [itemById]);
 
+  // ---------- find a seated guest ----------
+  const [find, setFind] = useState("");
+  const [findOpen, setFindOpen] = useState(false);
+  const found = useMemo(() => {
+    if (!find.trim()) return null;
+    const hits = (d?.guests || []).filter((g) => g.table_id && itemById.has(g.table_id) && matchesGuestSearch(g, find))
+      .sort((a, b) => fullName(a.first_name, a.last_name).localeCompare(fullName(b.first_name, b.last_name)));
+    return { hits, ids: new Set(hits.map((g) => g.id)), tables: new Set(hits.map((g) => g.table_id!)) };
+  }, [d, find, itemById]);
+  /** Scroll the floor so a table is in the middle, and open it. */
+  function goToTable(id: string) {
+    const t = itemById.get(id), box = floorBox.current;
+    selectOne(id);
+    if (!t || !box || view !== "floor") return;
+    box.scrollTo({
+      left: Math.max(0, (t.x + t.width / 2) * zoom - box.clientWidth / 2),
+      top: Math.max(0, (t.y + t.height / 2) * zoom - box.clientHeight / 2),
+      behavior: "smooth",
+    });
+  }
+
   /** A seated guest's chair color: their clone's color (the same one the legend and set-aside
    * tables use), or a neutral one when they're in no clone. */
   const seatColor = useCallback((g: SeatingGuest) => {
@@ -122,7 +145,8 @@ export function SeatingManager({ eventId, eventName }: { eventId: string; eventN
     const chairs: Chair[] = [];
     for (const g of here) {
       const color = seatColor(g), n = seatsFor(g), name = fullName(g.first_name, g.last_name);
-      for (let k = 0; k < n; k++) chairs.push({ color, label: k === 0 ? name : `${name} +${k}` });
+      const match = !!found?.ids.has(g.id);
+      for (let k = 0; k < n; k++) chairs.push({ color, label: k === 0 ? name : `${name} +${k}`, match: match && k === 0 });
     }
     // Other clones' guests (a clone planner sees only how many chairs they take).
     while (chairs.length < usage.seats) chairs.push({ color: HIDDEN_SEAT_COLOR, label: null });
@@ -136,7 +160,7 @@ export function SeatingManager({ eventId, eventName }: { eventId: string; eventN
       enabled: !!me?.canSeat && (!me.assemblyId || t.assembly_id === me.assemblyId),
       warnings: here.filter((g) => guestWarning(g, t)).length,
     };
-  }, [d, me, cloneById, pendingTo, guestsAt, seatColor]);
+  }, [d, me, cloneById, pendingTo, guestsAt, seatColor, found]);
 
   const summary = useMemo(() => {
     const guests = d?.guests || [];
@@ -159,14 +183,32 @@ export function SeatingManager({ eventId, eventName }: { eventId: string; eventN
   async function seat(ids: string[], tableId: string | null) {
     if (!me?.canSeat || ids.length === 0) return;
     setMsg(null);
+    const was = tablesOf(d?.guests || [], ids);
     const { ok, data: r } = await call(`${base}/assign`, { method: "POST", body: JSON.stringify({ inviteeIds: ids, tableId }) });
     if (!ok) { setMsg({ kind: "error", text: r.error || "Something went wrong." }); return; }
     const parts = [];
-    if (r.seated) parts.push(tableId ? `Seated ${r.seated} at ${tableLabel(tableId)}.` : `Unseated ${r.seated}.`);
+    const what = r.seated ? (tableId ? `Seated ${r.seated} at ${tableLabel(tableId)}` : `Unseated ${r.seated}`) : "";
+    if (what) parts.push(`${what}.`);
     if (r.requested) parts.push(`${r.requested} change${r.requested === 1 ? "" : "s"} sent to the event owner for approval.`);
     if (parts.length) setMsg({ kind: "info", text: parts.join(" ") });
     setSelectedGuests(new Set());
-    await load();
+    const fresh = await load();
+    // Only guests whose table really changed go into undo — changes sent for approval didn't happen yet.
+    if (fresh) recordSeating(was, tablesOf(fresh.guests, ids), what);
+  }
+
+  /** Who sits where right now, for the given guests (null = no table). */
+  function tablesOf(guests: SeatingGuest[], ids: string[]): Record<string, string | null> {
+    const want = new Set(ids);
+    return Object.fromEntries(guests.filter((g) => want.has(g.id)).map((g) => [g.id, g.table_id]));
+  }
+  function recordSeating(before: Record<string, string | null>, after: Record<string, string | null>, label: string) {
+    const moved = Object.keys(after).filter((id) => id in before && before[id] !== after[id]);
+    if (!moved.length) return;
+    record({
+      before: {}, after: {}, label,
+      guests: { before: Object.fromEntries(moved.map((id) => [id, before[id]])), after: Object.fromEntries(moved.map((id) => [id, after[id]])) },
+    });
   }
 
   /** Owner/admin: let guests see their table (name, tablemates, place on the floor) on their link. */
@@ -182,17 +224,26 @@ export function SeatingManager({ eventId, eventName }: { eventId: string; eventN
     setMsg(null);
     const { ok, data: r } = await call(`${base}/swap`, { method: "POST", body: JSON.stringify({ a, b }) });
     if (!ok) { setMsg({ kind: "error", text: r.error || "Something went wrong." }); await load(); return false; }
-    setMsg({ kind: "info", text: `Swapped ${a.length} guest${a.length === 1 ? "" : "s"} with ${b.length}.` });
+    const label = `Swapped ${a.length} guest${a.length === 1 ? "" : "s"} with ${b.length}`;
+    setMsg({ kind: "info", text: `${label}.` });
     await load();
+    record({ before: {}, after: {}, label, swap: { a, b } });
     return true;
   }
 
-  // ---------- undo / redo (floor layout only) ----------
-  // Each step is the before/after state of every item it touched (null = didn't exist). Undo writes
-  // `before` back through /items/sync (same ids), redo writes `after`. Deleting tables also remembers
-  // who sat there, so undoing it re-seats them (if they haven't been given a table since).
+  // ---------- undo / redo (floor layout and guest seating, one history) ----------
+  // A layout step is the before/after state of every item it touched (null = didn't exist). Undo
+  // writes `before` back through /items/sync (same ids), redo writes `after`. Deleting tables also
+  // remembers who sat there, so undoing it re-seats them (if they haven't been given a table since).
+  // A seating step is each moved guest's table before/after (null = no table), replayed through
+  // /assign; a swap step is undone (and redone) by swapping the same two sets back.
   type Snap = SeatingItem | null;
-  interface Step { before: Record<string, Snap>; after: Record<string, Snap>; seats?: Record<string, string[]> }
+  interface Step {
+    before: Record<string, Snap>; after: Record<string, Snap>; seats?: Record<string, string[]>;
+    label?: string;
+    guests?: { before: Record<string, string | null>; after: Record<string, string | null> };
+    swap?: { a: string[]; b: string[] };
+  }
   const undoStack = useRef<Step[]>([]);
   const redoStack = useRef<Step[]>([]);
   const [, setHistoryTick] = useState(0);
@@ -230,13 +281,51 @@ export function SeatingManager({ eventId, eventName }: { eventId: string; eventN
     return true;
   }
 
+  /** Put guests back at `target` tables — but only those still where `expect` says (someone else
+   * may have moved them since; those are left alone and mentioned). */
+  async function restoreSeating(target: Record<string, string | null>, expect: Record<string, string | null>, verb: "Undid" | "Redid", label?: string): Promise<boolean> {
+    const now = new Map((d?.guests || []).map((g) => [g.id, g.table_id]));
+    const ids = Object.keys(target).filter((id) => now.has(id) && now.get(id) === expect[id]);
+    const skipped = Object.keys(target).length - ids.length;
+    // Unseat first, so guests going back to a table never wait on chairs others are about to free.
+    const byTable = new Map<string | null, string[]>();
+    for (const id of ids) byTable.set(target[id], [...(byTable.get(target[id]) || []), id]);
+    const order = [...byTable.keys()].sort((a, b) => (a === null ? -1 : b === null ? 1 : 0));
+    let seated = 0, requested = 0;
+    const errors: string[] = [];
+    for (const tid of order) {
+      const r = await call(`${base}/assign`, { method: "POST", body: JSON.stringify({ inviteeIds: byTable.get(tid), tableId: tid }) });
+      if (!r.ok) errors.push(r.data.error || "Something went wrong.");
+      else { seated += r.data.seated || 0; requested += r.data.requested || 0; }
+    }
+    await load();
+    const parts = [];
+    if (seated) parts.push(`${verb}: ${label || "seating change"}.`);
+    if (requested) parts.push(`${requested} change${requested === 1 ? "" : "s"} sent to the event owner for approval.`);
+    if (skipped) parts.push(`${skipped} guest${skipped === 1 ? " was" : "s were"} moved by someone else since, so left where they are.`);
+    if (errors.length) setMsg({ kind: "error", text: [...errors, ...parts].join(" ") });
+    else if (parts.length) setMsg({ kind: "info", text: parts.join(" ") });
+    return seated > 0;
+  }
+
+  async function swapBack(step: Step, verb: "Undid" | "Redid"): Promise<boolean> {
+    const { ok, data: r } = await call(`${base}/swap`, { method: "POST", body: JSON.stringify(step.swap) });
+    await load();
+    if (!ok) { setMsg({ kind: "error", text: r.error || "That couldn't be undone." }); return false; }
+    setMsg({ kind: "info", text: `${verb}: ${step.label}.` });
+    return true;
+  }
+
   async function undo() {
     if (restoring) return;
     await flushNudges();
     const step = undoStack.current.pop();
     if (!step) return;
     setRestoring(true);
-    if (await restore(step.before, step.seats)) redoStack.current.push(step);
+    const ok = step.swap ? await swapBack(step, "Undid")
+      : step.guests ? await restoreSeating(step.guests.before, step.guests.after, "Undid", step.label)
+      : await restore(step.before, step.seats);
+    if (ok) redoStack.current.push(step);
     setRestoring(false);
     setHistoryTick((n) => n + 1);
   }
@@ -245,7 +334,10 @@ export function SeatingManager({ eventId, eventName }: { eventId: string; eventN
     const step = redoStack.current.pop();
     if (!step) return;
     setRestoring(true);
-    if (await restore(step.after)) undoStack.current.push(step);
+    const ok = step.swap ? await swapBack(step, "Redid")
+      : step.guests ? await restoreSeating(step.guests.after, step.guests.before, "Redid", step.label)
+      : await restore(step.after);
+    if (ok) undoStack.current.push(step);
     setRestoring(false);
     setHistoryTick((n) => n + 1);
   }
@@ -410,13 +502,13 @@ export function SeatingManager({ eventId, eventName }: { eventId: string; eventN
       if (drawTool) setDrawTool(null); else if (selectedIds.size) setSelectedIds(new Set());
       return;
     }
-    if (!me?.canEditLayout || view !== "floor") return;
     const k = e.key.toLowerCase();
-    if ((e.metaKey || e.ctrlKey) && (k === "z" || k === "y")) {
+    if ((e.metaKey || e.ctrlKey) && (k === "z" || k === "y") && (me?.canEditLayout || me?.canSeat)) {
       e.preventDefault();
       if (k === "y" || e.shiftKey) redo(); else undo();
       return;
     }
+    if (!me?.canEditLayout || view !== "floor") return;
     if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "a" && floorBox.current?.contains(document.activeElement)) {
       e.preventDefault();
       setSelectedIds(new Set(items.map((i) => i.id)));
@@ -663,6 +755,54 @@ export function SeatingManager({ eventId, eventName }: { eventId: string; eventN
                   </div>
                 </div>
               )}
+              <div className="flex items-center gap-2 flex-wrap">
+                {!me.canEditLayout && me.canSeat && (
+                  <div className="flex items-center gap-0.5">
+                    <HistoryButtons canUndo={undoStack.current.length > 0} canRedo={redoStack.current.length > 0} busy={restoring} onUndo={undo} onRedo={redo} />
+                  </div>
+                )}
+                <div className="relative w-full sm:w-80">
+                  <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-ink-faint" aria-hidden="true" />
+                  <input
+                    type="search"
+                    className="input pl-8 py-1.5 text-sm"
+                    placeholder="Find a seated guest…"
+                    aria-label="Find a seated guest"
+                    value={find}
+                    onChange={(e) => { setFind(e.target.value); setFindOpen(true); }}
+                    onFocus={() => setFindOpen(true)}
+                    onBlur={() => setTimeout(() => setFindOpen(false), 150)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Escape") { setFind(""); setFindOpen(false); }
+                      if (e.key === "Enter" && found?.hits[0]) { goToTable(found.hits[0].table_id!); setFindOpen(false); }
+                    }}
+                  />
+                  {findOpen && found && (
+                    <div className="absolute left-0 right-0 z-40 mt-1 card max-h-72 overflow-auto py-1 text-sm" role="listbox" aria-label="Seated guests found">
+                      {found.hits.length === 0 ? (
+                        <p className="px-3 py-2 text-ink-faint">No seated guest matches &ldquo;{find.trim()}&rdquo;.</p>
+                      ) : found.hits.map((g) => (
+                        <button key={g.id} role="option" aria-selected={false}
+                          onMouseDown={(e) => e.preventDefault()}
+                          onClick={() => { goToTable(g.table_id!); setFindOpen(false); }}
+                          className="flex w-full items-center justify-between gap-3 px-3 py-1.5 text-left hover:bg-paper-soft">
+                          <span className="min-w-0 truncate">
+                            <span className="text-ink">{fullName(g.first_name, g.last_name)}</span>
+                            {g.group_name && <span className="ml-1.5 text-xs text-ink-faint">{g.group_name}</span>}
+                          </span>
+                          <span className="shrink-0 text-xs font-medium text-wine-700">{tableLabel(g.table_id)}</span>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+                {found && (
+                  <span className="text-xs text-ink-faint">
+                    {found.hits.length === 0 ? "No matches" : `${found.hits.length} found at ${found.tables.size} table${found.tables.size === 1 ? "" : "s"}`}
+                    <button className="ml-2 underline hover:text-ink" onClick={() => setFind("")}>Clear</button>
+                  </span>
+                )}
+              </div>
               <div className="flex items-center justify-between gap-2 text-sm">
                 <p className="text-ink-faint">
                   {drawTool
@@ -694,6 +834,7 @@ export function SeatingManager({ eventId, eventName }: { eventId: string; eventN
                     seatMode={seatMode}
                     showNames={showNames}
                     drawTool={drawTool}
+                    highlight={found?.hits.length ? found.tables : null}
                     look={look}
                     onSelect={setSelectedIds}
                     onSeatSelected={(tid) => seat([...selectedGuests], tid)}

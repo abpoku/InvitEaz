@@ -315,3 +315,13 @@ export function itemLayer(i: Pick<SeatingItem, "kind" | "shape">): number {
   if (i.shape === "text" || (LINE_TOOLS as readonly string[]).includes(i.shape)) return 4;
   return 2;
 }
+
+/** Guest search on the floor plan: every word typed must appear in the guest's name or household
+ * name, ignoring case and accents ("ann john" finds "Anne Johnson"). Blank matches nobody. */
+export function matchesGuestSearch(g: { first_name: string; last_name: string; group_name: string | null }, q: string): boolean {
+  const fold = (s: string) => s.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
+  const words = fold(q).split(/\s+/).filter(Boolean);
+  if (!words.length) return false;
+  const hay = fold(`${g.first_name} ${g.last_name} ${g.group_name || ""}`);
+  return words.every((w) => hay.includes(w));
+}

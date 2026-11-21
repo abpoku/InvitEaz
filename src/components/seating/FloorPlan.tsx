@@ -10,7 +10,7 @@ import {
 import { GUEST_DRAG } from "./types";
 
 /** One chair around a table, in the order they're drawn. `label` is shown when names are on. */
-export interface Chair { color: string; label: string | null; }
+export interface Chair { color: string; label: string | null; match?: boolean; }   // match: found by the guest search
 
 /** One seated guest, for the hover list. */
 export interface PeekGuest { id: string; name: string; color: string; extra: number; warning: boolean; }
@@ -34,6 +34,7 @@ interface Props {
   seatMode: boolean;           // guests are selected: clicking a table seats them
   showNames: boolean;          // each guest's name next to their chair
   drawTool: string | null;     // a shape being drawn, or null
+  highlight?: Set<string> | null; // guest search: tables holding a match stand out, the rest fade
   look: (table: SeatingItem) => TableLook;
   onSelect: (ids: Set<string>) => void;
   onSeatSelected: (tableId: string) => void;
@@ -61,7 +62,7 @@ type Gesture =
  * draws that item instead. Everyone: guests are dropped onto tables with native drag-and-drop from the
  * guest panel, or seated by selecting them and clicking a table — the tap path phones and keyboards use. */
 export const FloorPlan = forwardRef<HTMLDivElement, Props>(function FloorPlan(
-  { items, zoom, selected, canEditLayout, seatMode, showNames, drawTool, look, onSelect, onSeatSelected, onDropGuests, onMove, onDraw, onReshape, onGesture }, exportRef
+  { items, zoom, selected, canEditLayout, seatMode, showNames, drawTool, highlight, look, onSelect, onSeatSelected, onDropGuests, onMove, onDraw, onReshape, onGesture }, exportRef
 ) {
   const gesture = useRef<Gesture | null>(null);
   const layer = useRef<HTMLDivElement | null>(null);
@@ -294,7 +295,7 @@ export const FloorPlan = forwardRef<HTMLDivElement, Props>(function FloorPlan(
                 "absolute touch-none outline-none",
                 drawTool && "pointer-events-none",
                 canEditLayout ? (shifted ? "cursor-grabbing z-20" : "cursor-grab") : "cursor-pointer",
-                isTable && !l!.enabled && "opacity-45",
+                isTable && highlight ? (highlight.has(item.id) ? "z-10" : "opacity-25") : isTable && !l!.enabled && "opacity-45",
                 handlesFor === item.id && "z-30",
               )}
               style={{ left: box.x, top: box.y, width: box.width, height: box.height, transform: `rotate(${box.rotation}deg)` }}
@@ -307,7 +308,7 @@ export const FloorPlan = forwardRef<HTMLDivElement, Props>(function FloorPlan(
                       "absolute inset-0 flex items-center justify-center text-center border-2 transition-shadow",
                       item.shape === "round" ? "rounded-full" : "rounded-md",
                       over ? "bg-[#F6E3DE] border-clay-500" : full ? "bg-brass-50" : "bg-white",
-                      isSelected && "ring-2 ring-wine-500 ring-offset-2",
+                      isSelected ? "ring-2 ring-wine-500 ring-offset-2" : highlight?.has(item.id) && "ring-4 ring-brass-400 ring-offset-2",
                       hover === item.id && "ring-2 ring-moss-400 ring-offset-2",
                       seatMode && l!.enabled && "hover:ring-2 hover:ring-moss-400",
                     )}
@@ -595,10 +596,14 @@ export function Chairs({ item, chairs, showNames, zoom }: { item: SeatingItem; c
               className={cn("absolute rounded-full border pointer-events-none", !chair && "bg-white border-ink/25")}
               style={{ width: C, height: C, left: s.x - C / 2, top: s.y - C / 2, ...(chair ? { backgroundColor: chair.color, borderColor: "rgba(30,34,51,0.35)" } : {}) }}
             />
-            {showNames && chair?.label && (
+            {chair?.match && (
+              <span className="absolute rounded-full pointer-events-none ring-[3px] ring-brass-400 animate-pulse"
+                style={{ width: C + 8, height: C + 8, left: s.x - C / 2 - 4, top: s.y - C / 2 - 4 }} />
+            )}
+            {(showNames || chair?.match) && chair?.label && (
               <span className="absolute pointer-events-none origin-left" style={{ left: s.x, top: s.y, transform: `rotate(${s.a}deg)` }}>
                 <span
-                  className="absolute top-0 whitespace-nowrap max-w-[130px] truncate rounded-sm bg-white/85 px-0.5 font-medium leading-none text-ink"
+                  className={cn("absolute top-0 whitespace-nowrap max-w-[130px] truncate rounded-sm px-0.5 font-medium leading-none text-ink", chair.match ? "bg-brass-100 ring-1 ring-brass-400" : "bg-white/85")}
                   style={{ left: C / 2 + 3, fontSize: font, transform: `translateY(-50%)${flip ? " rotate(180deg)" : ""}` }}
                 >
                   {chair.label}

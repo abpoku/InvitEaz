@@ -8,6 +8,19 @@ import { Fixture } from "./FloorPlan";
 
 const isMac = () => typeof navigator !== "undefined" && /Mac|iPhone|iPad/.test(navigator.platform);
 
+/** Undo / redo — layout edits and guest seating share one history (⌘Z / ⇧⌘Z, Ctrl+Z / Ctrl+Y). */
+export function HistoryButtons({ canUndo, canRedo, onUndo, onRedo, busy }: {
+  canUndo: boolean; canRedo: boolean; busy: boolean; onUndo: () => void; onRedo: () => void;
+}) {
+  const mod = isMac() ? "⌘" : "Ctrl+";
+  return (
+    <>
+      <button className="btn-ghost h-7 w-7 p-0" onClick={onUndo} disabled={!canUndo || busy} aria-label="Undo" title={`Undo (${mod}Z)`}><Undo2 className="h-4 w-4" aria-hidden="true" /></button>
+      <button className="btn-ghost h-7 w-7 p-0" onClick={onRedo} disabled={!canRedo || busy} aria-label="Redo" title={`Redo (${isMac() ? "⇧⌘Z" : "Ctrl+Y"})`}><Redo2 className="h-4 w-4" aria-hidden="true" /></button>
+    </>
+  );
+}
+
 /** Owner/admin floor-plan toolbar: undo/redo, the structure tools, Text, and a Shapes dropdown
  * (shapes, lines and arrows). Picking a tool turns on drawing until Esc/Done (Text: one box). */
 export function DrawToolbar({ drawTool, onTool, canUndo, canRedo, onUndo, onRedo, busy }: {
@@ -27,7 +40,6 @@ export function DrawToolbar({ drawTool, onTool, canUndo, canRedo, onUndo, onRedo
     return () => { document.removeEventListener("mousedown", close); document.removeEventListener("keydown", esc); };
   }, [open]);
 
-  const mod = isMac() ? "⌘" : "Ctrl+";
   const btn = (on: boolean) => cn("inline-flex items-center gap-1 rounded border px-2.5 py-1 text-xs",
     on ? "border-wine-500 bg-wine-50 text-wine-700 font-medium" : "border-paper-line text-ink-soft hover:bg-paper-soft");
   const pick = (t: string) => onTool(drawTool === t ? null : t);
@@ -35,8 +47,7 @@ export function DrawToolbar({ drawTool, onTool, canUndo, canRedo, onUndo, onRedo
 
   return (
     <div className="flex items-center gap-1.5 flex-wrap text-sm" role="toolbar" aria-label="Draw structures">
-      <button className="btn-ghost h-7 w-7 p-0" onClick={onUndo} disabled={!canUndo || busy} aria-label="Undo" title={`Undo (${mod}Z)`}><Undo2 className="h-4 w-4" aria-hidden="true" /></button>
-      <button className="btn-ghost h-7 w-7 p-0" onClick={onRedo} disabled={!canRedo || busy} aria-label="Redo" title={`Redo (${isMac() ? "⇧⌘Z" : "Ctrl+Y"})`}><Redo2 className="h-4 w-4" aria-hidden="true" /></button>
+      <HistoryButtons canUndo={canUndo} canRedo={canRedo} busy={busy} onUndo={onUndo} onRedo={onRedo} />
       <span className="mx-1 h-5 w-px bg-paper-line" aria-hidden="true" />
       <span className="text-ink-faint mr-1">Draw</span>
       {STRUCTURE_TOOLS.map((t) => (

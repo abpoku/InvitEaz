@@ -421,10 +421,18 @@ per invitee; `seating_requests` holds clone planners' pending changes.
   before they replied on their own link still sees their table.
 - **Handles** (not on tables — they're sized from the inspector) on a single selected item: 8 resize + rotate (`resizeBox`/`rotateToward`, anchored on the
   opposite side in the item's rotated frame), or one per end for line shapes (`lineFromPointer`).
-- **Undo/redo** (layout only, not guest seating) lives client-side in `SeatingManager`: each step is
-  the before/after of every item it touched, written back through `POST /seating/items/sync` (same
-  ids, one transaction; refuses an id from another event). Deleting tables records who sat there and
-  undo re-seats them if they're still unseated. Any new layout write must call `record()`.
+- **Undo/redo** lives client-side in `SeatingManager`, one history for layout *and* guest seating
+  (⌘Z / ⇧⌘Z / Ctrl+Y; buttons in the Draw toolbar, or beside the search box for clone planners). A
+  layout step is the before/after of every item it touched, written back through `POST
+  /seating/items/sync` (same ids, one transaction; refuses an id from another event); deleting tables
+  records who sat there and undo re-seats them if they're still unseated. Any new layout write must
+  call `record()`. A seating step (`seat()`) holds each guest whose table *actually* changed (changes
+  that became approval requests aren't recorded) and replays through `/assign` — unseats first, and
+  skipping anyone someone else has moved since; a clone planner's undo of an already-seated guest
+  becomes a request like any other move. A swap step is undone by swapping the same two sets again.
+- **Find a seated guest** (search box above the floor, `matchesGuestSearch()`): name or household,
+  every word, accent-insensitive. Matching tables get a brass ring and the rest fade; matching chairs
+  pulse with the name shown; Enter / a result scrolls the floor to that table and opens it.
 - **Inspector placement** (`FloatingInspector` + pure `choosePanelSpot`): it must never cover the
   selected item's on-screen footprint (chairs, door arcs and handles included); it picks a clear corner
   or a spot beside the item, can be dragged by its grip (dropped on the item → nearest clear spot),
