@@ -49,13 +49,15 @@ export interface AssemblyStats {
 }
 
 export async function getAssemblyStats(eventId: string, assemblyId: string | null): Promise<AssemblyStats> {
-  const rows = await query<{ invitation_id: string; rsvp_status: string | null; num_attending: number | null }>(
+  const rows = await query<{ invitation_id: string | null; rsvp_status: string | null; num_attending: number | null }>(
     `SELECT i.id as invitation_id,
       (SELECT r.rsvp_status FROM rsvp_responses r WHERE r.invitation_id = i.id ORDER BY r.responded_at DESC LIMIT 1) as rsvp_status,
       (SELECT r.num_attending FROM rsvp_responses r WHERE r.invitation_id = i.id ORDER BY r.responded_at DESC LIMIT 1) as num_attending
-     FROM invitations i
-     JOIN invitees iv ON iv.id = i.invitee_id
-     WHERE i.event_id = ? AND iv.active = 1 AND iv.assembly_id ${assemblyId ? "= ?" : "IS NULL"}`,
+     FROM invitees iv
+     LEFT JOIN invitations i ON i.id = (
+       SELECT i2.id FROM invitations i2 WHERE i2.invitee_id = iv.id ORDER BY i2.created_at ASC LIMIT 1
+     )
+     WHERE iv.event_id = ? AND iv.active = 1 AND iv.assembly_id ${assemblyId ? "= ?" : "IS NULL"}`,
     assemblyId ? [eventId, assemblyId] : [eventId]
   );
 
